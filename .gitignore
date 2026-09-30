@@ -1,0 +1,47 @@
+# dependencies & build output
+node_modules/
+dist/
+build/
+.pnpm-store/
+coverage/
+
+# environment/secrets - never commit real .env files, only .env.example
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# local data / runtime state
+storage/
+prisma/dev.db
+prisma/dev.db-journal
+*.sqlite
+*.sqlite3
+
+# logs
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# editor/IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# misc
+*.tgz
+*.tar.gz
+*.zip
+.env.local

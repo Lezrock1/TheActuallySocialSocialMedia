@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # TODO: minio/minio is no longer pullable anonymously from Docker Hub/Quay
+  # (MinIO restricted public images after their AGPL re-licensing). Using
+  # SeaweedFS's single-binary S3 gateway as a freely pullable replacement.
+  storage:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    command: server -dir=/data -s3 -s3.port=8333 -ip=0.0.0.0
+    ports:
+      - "8333:8333"
+    volumes:
+      - storage_data:/data
+
+volumes:
+  postgres_data:
+  storage_data:

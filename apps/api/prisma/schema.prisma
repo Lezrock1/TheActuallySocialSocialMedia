@@ -1,0 +1,254 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+  displayName  String?
+  bio          String?
+  avatarKey    String?
+  createdAt    DateTime @default(now())
+
+  // last post the user has scrolled to -> drives the "you're all caught up" marker
+  lastSeenPostId        String?
+  lastSeenPostCreatedAt DateTime?
+
+  posts             Post[]
+  comments          Comment[]
+  stories           Story[]
+  sentSnaps         Snap[]              @relation("SnapSender")
+  receivedSnaps     SnapRecipient[]
+  following         Follow[]            @relation("Follower")
+  followers         Follow[]            @relation("Followee")
+  closeFriendOf     CloseFriend[]       @relation("CloseFriendOwner")
+  closeFriendedBy   CloseFriend[]       @relation("CloseFriendTarget")
+  blockedUsers      BlockedUser[]       @relation("Blocker")
+  blockedBy         BlockedUser[]       @relation("Blocked")
+  reports           Report[]
+  aiProviderConfigs AiProviderConfig[]
+  aiConversations   AiConversation[]
+  conversations     ConversationMember[]
+  messages          Message[]
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followeeId  String
+  createdAt   DateTime @default(now())
+
+  follower User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followee User @relation("Followee", fields: [followeeId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followeeId])
+  @@index([followeeId])
+}
+
+model Post {
+  id           String   @id @default(cuid())
+  authorId     String
+  text         String?
+  imageKey     String?
+  createdAt    DateTime @default(now())
+  // "public" | "close_friends"
+  visibility   String   @default("public")
+  // set when this post is a reply to another post (Twitter-style thread)
+  parentPostId String?
+
+  // opt-in shared FactCheck transparency log, cached so viewers don't need
+  // their own AI provider configured just to see the summary
+  factCheckSummary String?
+  factCheckCount   Int     @default(0)
+
+  author          User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent          Post?            @relation("PostReplies", fields: [parentPostId], references: [id], onDelete: Cascade)
+  replies         Post[]           @relation("PostReplies")
+  comments        Comment[]
+  aiConversations AiConversation[]
+
+  @@index([authorId, createdAt])
+  @@index([parentPostId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  text      String
+  createdAt DateTime @default(now())
+
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+}
+
+model Story {
+  id         String   @id @default(cuid())
+  authorId   String
+  imageKey   String
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  // "public" | "close_friends"
+  visibility String   @default("public")
+
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([authorId, expiresAt])
+}
+
+model CloseFriend {
+  id        String   @id @default(cuid())
+  ownerId   String
+  friendId  String
+  createdAt DateTime @default(now())
+
+  owner  User @relation("CloseFriendOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  friend User @relation("CloseFriendTarget", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, friendId])
+  @@index([friendId])
+}
+
+model BlockedUser {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+model Report {
+  id         String   @id @default(cuid())
+  reporterId String
+  // "post" | "user"
+  targetType String
+  targetId   String
+  reason     String
+  createdAt  DateTime @default(now())
+
+  reporter User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([targetType, targetId])
+}
+
+model Snap {
+  id        String   @id @default(cuid())
+  senderId  String
+  imageKey  String
+  text      String?
+  createdAt DateTime @default(now())
+  // hard expiry regardless of whether it was viewed
+  expiresAt DateTime
+
+  sender     User            @relation("SnapSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipients SnapRecipient[]
+}
+
+model SnapRecipient {
+  id         String    @id @default(cuid())
+  snapId     String
+  userId     String
+  viewedAt   DateTime?
+
+  snap Snap @relation(fields: [snapId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([snapId, userId])
+  @@index([userId])
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  // set for group chats with more than 2 members; null for 1:1 DMs
+  name      String?
+  createdAt DateTime @default(now())
+
+  members  ConversationMember[]
+  messages Message[]
+}
+
+model ConversationMember {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  text           String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model AiProviderConfig {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String
+  type      String // "openai_compatible" | "anthropic"
+  baseUrl   String
+  model     String
+  // AES-256-GCM encrypted, never returned to the client in plaintext
+  encryptedApiKey String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AiConversation {
+  id            String   @id @default(cuid())
+  userId        String
+  postId        String
+  mode          String // "factcheck" | "explain" | "custom"
+  providerLabel String // snapshot of the provider label used, for display
+  // opt-in: include this factcheck result (anonymized) in the post's public
+  // transparency summary. Only meaningful for mode === "factcheck".
+  shared        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  user     User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post     Post                    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  messages AiConversationMessage[]
+
+  @@index([userId, postId])
+}
+
+model AiConversationMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String // "user" | "assistant"
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}

@@ -1,0 +1,246 @@
+import { z } from "zod";
+
+export const registerSchema = z.object({
+  email: z.string().email(),
+  username: z
+    .string()
+    .min(3)
+    .max(30)
+    .regex(/^[a-zA-Z0-9_]+$/, "only letters, numbers, underscore"),
+  password: z.string().min(8),
+});
+export type RegisterInput = z.infer<typeof registerSchema>;
+
+export const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+export type LoginInput = z.infer<typeof loginSchema>;
+
+export const POST_VISIBILITY = ["public", "close_friends"] as const;
+export type PostVisibility = (typeof POST_VISIBILITY)[number];
+
+export const createPostSchema = z.object({
+  text: z.string().max(2000).optional(),
+  imageKey: z.string().optional(),
+  parentPostId: z.string().optional(),
+  visibility: z.enum(POST_VISIBILITY).optional(),
+});
+export type CreatePostInput = z.infer<typeof createPostSchema>;
+
+export interface PublicUser {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarKey: string | null;
+  createdAt: string;
+}
+
+export interface FeedPost {
+  id: string;
+  author: PublicUser;
+  text: string | null;
+  imageKey: string | null;
+  createdAt: string;
+  visibility: PostVisibility;
+  parentPostId: string | null;
+  replyCount: number;
+  factCheckCount: number;
+}
+
+export interface FeedPage {
+  posts: FeedPost[];
+  nextCursor: string | null;
+  // true once the user has scrolled past all posts newer than their last visit
+  caughtUp: boolean;
+  // index within `posts` where previously-seen content starts, null if not in this page
+  boundaryIndex: number | null;
+}
+
+export const AI_PROVIDER_TYPES = ["openai_compatible", "anthropic"] as const;
+export type AiProviderType = (typeof AI_PROVIDER_TYPES)[number];
+
+export const createAiProviderConfigSchema = z.object({
+  label: z.string().min(1).max(50),
+  type: z.enum(AI_PROVIDER_TYPES),
+  baseUrl: z.string().url(),
+  model: z.string().min(1),
+  apiKey: z.string().min(1).optional(), // optional for local Ollama without auth
+  isDefault: z.boolean().optional(),
+});
+export type CreateAiProviderConfigInput = z.infer<
+  typeof createAiProviderConfigSchema
+>;
+
+export interface AiProviderConfigPublic {
+  id: string;
+  label: string;
+  type: AiProviderType;
+  baseUrl: string;
+  model: string;
+  isDefault: boolean;
+  // never includes the api key
+}
+
+export const updateAiProviderConfigSchema = z.object({
+  label: z.string().min(1).max(50).optional(),
+  baseUrl: z.string().url().optional(),
+  model: z.string().min(1).optional(),
+  // omit to keep the existing key, pass "" to clear it, or a new value to replace it
+  apiKey: z.string().optional(),
+  isDefault: z.boolean().optional(),
+});
+export type UpdateAiProviderConfigInput = z.infer<
+  typeof updateAiProviderConfigSchema
+>;
+
+export const AI_MODES = ["factcheck", "explain", "custom"] as const;
+export type AiMode = (typeof AI_MODES)[number];
+
+export const startAiConversationSchema = z.object({
+  postId: z.string(),
+  providerConfigId: z.string(),
+  mode: z.enum(AI_MODES),
+  // required when mode === "custom": the user's own instruction/question
+  customPrompt: z.string().min(1).max(2000).optional(),
+  // opt-in: only meaningful for mode === "factcheck" - include this result
+  // (anonymized) in the post's public FactCheck transparency summary
+  shared: z.boolean().optional(),
+});
+export type StartAiConversationInput = z.infer<
+  typeof startAiConversationSchema
+>;
+
+export const sendAiMessageSchema = z.object({
+  text: z.string().min(1).max(2000),
+});
+export type SendAiMessageInput = z.infer<typeof sendAiMessageSchema>;
+
+export interface AiConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+}
+
+export interface AiConversation {
+  id: string;
+  postId: string;
+  mode: AiMode;
+  providerLabel: string;
+  messages: AiConversationMessage[];
+}
+
+export interface FactCheckSummary {
+  count: number;
+  // "1".. "10" exact, or "10+" once more than 10 shared results exist
+  bucketLabel: string;
+  summary: string | null;
+}
+
+export const createCommentSchema = z.object({
+  text: z.string().min(1).max(1000),
+});
+export type CreateCommentInput = z.infer<typeof createCommentSchema>;
+
+export interface Comment {
+  id: string;
+  author: PublicUser;
+  text: string;
+  createdAt: string;
+}
+
+export const createStorySchema = z.object({
+  imageKey: z.string().min(1),
+  visibility: z.enum(POST_VISIBILITY).optional(),
+});
+export type CreateStoryInput = z.infer<typeof createStorySchema>;
+
+export interface Story {
+  id: string;
+  imageKey: string;
+  createdAt: string;
+  expiresAt: string;
+  visibility: PostVisibility;
+}
+
+export interface StoryGroup {
+  author: PublicUser;
+  stories: Story[];
+}
+
+export const createSnapSchema = z.object({
+  imageKey: z.string().min(1),
+  text: z.string().max(500).optional(),
+  recipientUsernames: z.array(z.string()).min(1).max(50),
+});
+export type CreateSnapInput = z.infer<typeof createSnapSchema>;
+
+export interface InboxSnap {
+  id: string;
+  sender: PublicUser;
+  imageKey: string;
+  text: string | null;
+  createdAt: string;
+  viewedAt: string | null;
+}
+
+export const sendMessageSchema = z.object({
+  text: z.string().min(1).max(4000),
+});
+export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+
+export const startConversationSchema = z.object({
+  username: z.string().min(1),
+});
+export type StartConversationInput = z.infer<typeof startConversationSchema>;
+
+export const createGroupConversationSchema = z.object({
+  name: z.string().min(1).max(60).optional(),
+  usernames: z.array(z.string()).min(1).max(50),
+});
+export type CreateGroupConversationInput = z.infer<
+  typeof createGroupConversationSchema
+>;
+
+export interface ConversationSummary {
+  id: string;
+  name: string | null;
+  isGroup: boolean;
+  members: PublicUser[];
+  otherMember: PublicUser | null;
+  lastMessage: { text: string; createdAt: string; senderId: string } | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  senderId: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface UserProfile extends PublicUser {
+  bio: string | null;
+  followerCount: number;
+  followingCount: number;
+  postCount: number;
+  isFollowedByMe: boolean;
+  isMe: boolean;
+}
+
+export const updateProfileSchema = z.object({
+  displayName: z.string().max(60).optional(),
+  bio: z.string().max(280).optional(),
+  avatarKey: z.string().optional(),
+});
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+export const REPORT_TARGET_TYPES = ["post", "user"] as const;
+export type ReportTargetType = (typeof REPORT_TARGET_TYPES)[number];
+
+export const createReportSchema = z.object({
+  targetType: z.enum(REPORT_TARGET_TYPES),
+  targetId: z.string(),
+  reason: z.string().min(1).max(500),
+});
+export type CreateReportInput = z.infer<typeof createReportSchema>;
