@@ -35,6 +35,7 @@ model User {
   reports           Report[]
   aiProviderConfigs AiProviderConfig[]
   aiConversations   AiConversation[]
+  mediaAssets       MediaAsset[]
   conversations     ConversationMember[]
   messages          Message[]
 }
@@ -143,6 +144,16 @@ model Report {
   reporter User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
 
   @@index([targetType, targetId])
+}
+
+model MediaAsset {
+  key       String   @id
+  ownerId   String
+  createdAt DateTime @default(now())
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
 }
 
 model Snap {

@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeedPost, UserProfile } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
-import { uploadMedia } from "../lib/upload.js";
+import { mediaUrl, uploadMedia } from "../lib/upload.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";

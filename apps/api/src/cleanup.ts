@@ -1,5 +1,5 @@
 import { prisma } from "./db.js";
-import { deleteMedia } from "./storage.js";
+import { deleteMediaIfUnreferenced } from "./storage.js";
 
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -12,9 +12,6 @@ export async function cleanupExpiredMedia(): Promise<void> {
   const expiredStories = await prisma.story.findMany({
     where: { expiresAt: { lte: now } },
   });
-  for (const story of expiredStories) {
-    await deleteMedia(story.imageKey);
-  }
   if (expiredStories.length > 0) {
     await prisma.story.deleteMany({
       where: { id: { in: expiredStories.map((s) => s.id) } },
@@ -24,13 +21,18 @@ export async function cleanupExpiredMedia(): Promise<void> {
   const expiredSnaps = await prisma.snap.findMany({
     where: { expiresAt: { lte: now } },
   });
-  for (const snap of expiredSnaps) {
-    await deleteMedia(snap.imageKey);
-  }
   if (expiredSnaps.length > 0) {
     await prisma.snap.deleteMany({
       where: { id: { in: expiredSnaps.map((s) => s.id) } },
     });
+  }
+
+  const expiredKeys = new Set([
+    ...expiredStories.map((story) => story.imageKey),
+    ...expiredSnaps.map((snap) => snap.imageKey),
+  ]);
+  for (const key of expiredKeys) {
+    await deleteMediaIfUnreferenced(key);
   }
 }
 

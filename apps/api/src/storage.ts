@@ -7,6 +7,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
+import { prisma } from "./db.js";
 import { env } from "./env.js";
 
 const s3 = new S3Client({
@@ -69,4 +70,17 @@ export async function deleteMedia(key: string): Promise<void> {
   } catch {
     // best-effort: don't fail the calling request if the object is already gone
   }
+}
+
+export async function deleteMediaIfUnreferenced(key: string): Promise<void> {
+  const [posts, stories, snaps, users] = await Promise.all([
+    prisma.post.count({ where: { imageKey: key } }),
+    prisma.story.count({ where: { imageKey: key } }),
+    prisma.snap.count({ where: { imageKey: key } }),
+    prisma.user.count({ where: { avatarKey: key } }),
+  ]);
+  if (posts + stories + snaps + users > 0) return;
+
+  await deleteMedia(key);
+  await prisma.mediaAsset.deleteMany({ where: { key } });
 }

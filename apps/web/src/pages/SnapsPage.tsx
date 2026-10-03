@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InboxSnap, PublicUser } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
-import { mediaUrl, uploadMedia } from "../lib/upload.js";
+import { downloadMediaObjectUrl, uploadMedia } from "../lib/upload.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
@@ -27,6 +27,8 @@ export default function SnapsPage() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [viewing, setViewing] = useState<InboxSnap | null>(null);
+  const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
+  const [snapError, setSnapError] = useState<string | null>(null);
 
   const { data: snaps = [] } = useQuery({
     queryKey: ["snaps-inbox"],
@@ -37,6 +39,12 @@ export default function SnapsPage() {
     queryFn: () => fetchFollowing(user!.username),
     enabled: !!user,
   });
+
+  useEffect(() => {
+    return () => {
+      if (viewingImageUrl) URL.revokeObjectURL(viewingImageUrl);
+    };
+  }, [viewingImageUrl]);
 
   function toggleRecipient(username: string) {
     setSelectedRecipients((prev) =>
@@ -67,11 +75,22 @@ export default function SnapsPage() {
   }
 
   async function openSnap(snap: InboxSnap) {
-    setViewing(snap);
-    if (!snap.viewedAt) {
+    setSnapError(null);
+    try {
+      const imageUrl = await downloadMediaObjectUrl(snap.imageKey);
+      setViewingImageUrl(imageUrl);
+      setViewing(snap);
       await apiFetch(`/snaps/${snap.id}/view`, { method: "POST" });
       await queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] });
+    } catch {
+      setSnapError("Snap konnte nicht geladen werden. Bitte versuche es erneut.");
     }
+  }
+
+  function closeSnap() {
+    if (viewingImageUrl) URL.revokeObjectURL(viewingImageUrl);
+    setViewingImageUrl(null);
+    setViewing(null);
   }
 
   return (
@@ -127,6 +146,7 @@ export default function SnapsPage() {
       </div>
 
       <p className="mb-2 text-sm font-medium text-gray-700">Erhaltene Snaps</p>
+      {snapError && <p className="mb-2 text-sm text-red-600">{snapError}</p>}
       <div className="flex flex-col gap-2">
         {snaps.map((snap) => (
           <button
@@ -159,19 +179,19 @@ export default function SnapsPage() {
       {viewing && (
         <div
           className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black"
-          onClick={() => setViewing(null)}
+          onClick={closeSnap}
         >
           <div className="absolute left-0 right-0 top-0 flex items-center justify-between p-4 text-white">
             <span className="flex items-center gap-2 text-sm font-medium">
               <Avatar avatarKey={viewing.sender.avatarKey} username={viewing.sender.username} size={28} />
               @{viewing.sender.username}
             </span>
-            <button onClick={() => setViewing(null)} className="text-2xl leading-none">
+            <button onClick={closeSnap} className="text-2xl leading-none">
               ×
             </button>
           </div>
           <img
-            src={mediaUrl(viewing.imageKey)}
+            src={viewingImageUrl ?? undefined}
             alt=""
             className="max-h-screen max-w-full object-contain"
           />

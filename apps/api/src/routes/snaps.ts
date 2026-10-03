@@ -3,7 +3,9 @@ import { createSnapSchema } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
-import { deleteMedia } from "../storage.js";
+import { deleteMediaIfUnreferenced } from "../storage.js";
+import { ownsMedia } from "../mediaAccess.js";
+import { isBlocked } from "../visibility.js";
 
 const SNAP_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
@@ -13,6 +15,9 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
+    if (!(await ownsMedia(request.userId!, parsed.data.imageKey))) {
+      return reply.code(403).send({ error: "You can only attach your own uploads" });
+    }
 
     const recipients = await prisma.user.findMany({
       where: { username: { in: parsed.data.recipientUsernames } },
@@ -20,6 +25,13 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
     });
     if (recipients.length === 0) {
       return reply.code(400).send({ error: "No valid recipients" });
+    }
+    if (
+      await Promise.all(recipients.map((recipient) => isBlocked(request.userId!, recipient.id))).then(
+        (blocked) => blocked.some(Boolean)
+      )
+    ) {
+      return reply.code(403).send({ error: "A recipient is unavailable" });
     }
 
     const snap = await prisma.snap.create({
@@ -76,6 +88,12 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
       if (!recipient) {
         return reply.code(404).send({ error: "Snap not found" });
       }
+      const snap = await prisma.snap.findUnique({
+        where: { id: request.params.id },
+      });
+      if (!snap || snap.expiresAt <= new Date()) {
+        return reply.code(404).send({ error: "Snap not found" });
+      }
       if (!recipient.viewedAt) {
         await prisma.snapRecipient.update({
           where: { id: recipient.id },
@@ -86,13 +104,8 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
           where: { snapId: request.params.id, viewedAt: null },
         });
         if (remainingUnviewed === 0) {
-          const snap = await prisma.snap.findUnique({
-            where: { id: request.params.id },
-          });
-          if (snap) {
-            await deleteMedia(snap.imageKey);
-            await prisma.snap.delete({ where: { id: snap.id } });
-          }
+          await prisma.snap.delete({ where: { id: snap.id } });
+          await deleteMediaIfUnreferenced(snap.imageKey);
         }
       }
       return reply.code(204).send();

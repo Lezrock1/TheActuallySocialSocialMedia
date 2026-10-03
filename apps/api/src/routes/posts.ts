@@ -3,7 +3,8 @@ import { createPostSchema } from "@app/shared";
 import type { FeedPage } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
-import { deleteMedia } from "../storage.js";
+import { deleteMediaIfUnreferenced } from "../storage.js";
+import { ownsMedia } from "../mediaAccess.js";
 import { getBlockedUserIds, getCloseFriendGrantedAuthorIds } from "../visibility.js";
 import { postWithCountsInclude, toFeedPost } from "../postSerializer.js";
 
@@ -17,6 +18,12 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     }
     if (!parsed.data.text && !parsed.data.imageKey) {
       return reply.code(400).send({ error: "Post needs text or an image" });
+    }
+    if (
+      parsed.data.imageKey &&
+      !(await ownsMedia(request.userId!, parsed.data.imageKey))
+    ) {
+      return reply.code(403).send({ error: "You can only attach your own uploads" });
     }
     if (parsed.data.parentPostId) {
       const parent = await prisma.post.findUnique({
@@ -55,7 +62,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       // underlying image, nothing kept around
       await prisma.post.delete({ where: { id: post.id } });
       if (post.imageKey) {
-        await deleteMedia(post.imageKey);
+        await deleteMediaIfUnreferenced(post.imageKey);
       }
       return reply.code(204).send();
     }

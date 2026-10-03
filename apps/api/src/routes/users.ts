@@ -6,6 +6,7 @@ import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { postWithCountsInclude, toFeedPost } from "../postSerializer.js";
 import { isBlocked, getCloseFriendGrantedAuthorIds } from "../visibility.js";
+import { ownsMedia } from "../mediaAccess.js";
 
 const DEFAULT_LIMIT = 20;
 
@@ -14,6 +15,12 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const parsed = updateProfileSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+    if (
+      parsed.data.avatarKey &&
+      !(await ownsMedia(request.userId!, parsed.data.avatarKey))
+    ) {
+      return reply.code(403).send({ error: "You can only use your own uploads" });
     }
     const user = await prisma.user.update({
       where: { id: request.userId! },

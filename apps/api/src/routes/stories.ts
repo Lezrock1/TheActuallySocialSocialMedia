@@ -4,7 +4,8 @@ import type { PostVisibility, StoryGroup } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
-import { deleteMedia } from "../storage.js";
+import { deleteMediaIfUnreferenced } from "../storage.js";
+import { ownsMedia } from "../mediaAccess.js";
 import { getBlockedUserIds, getCloseFriendGrantedAuthorIds } from "../visibility.js";
 
 const STORY_LIFETIME_MS = 24 * 60 * 60 * 1000;
@@ -14,6 +15,9 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
     const parsed = createStorySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+    if (!(await ownsMedia(request.userId!, parsed.data.imageKey))) {
+      return reply.code(403).send({ error: "You can only attach your own uploads" });
     }
 
     const story = await prisma.story.create({
@@ -101,7 +105,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "Story not found" });
       }
       await prisma.story.delete({ where: { id: story.id } });
-      await deleteMedia(story.imageKey);
+      await deleteMediaIfUnreferenced(story.imageKey);
       return reply.code(204).send();
     }
   );

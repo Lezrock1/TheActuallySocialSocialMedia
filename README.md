@@ -166,8 +166,8 @@ Known limitations and next steps before this project should be run in production
 
 **Security & Privacy**
 - No end-to-end encryption for direct messages/group chats — messages are stored in plaintext server-side in the database. Would require real key management/exchange per client.
-- `/media/:key` is currently fully publicly readable (no access control), including for private DM/snap images — keys are not guessable (UUID), but there's no auth check.
-- Snaps are not yet "block-aware": a blocked user can currently still attempt to send you a snap.
+- `/media/:key` now requires authentication and checks access against upload ownership and the referenced post/story/snap visibility; responses are marked private/no-store. Keep the S3 service itself private in production.
+- Uploaded files that are never attached to a post, story, snap, or avatar do not yet have an orphan cleanup policy.
 
 **Moderation**
 - There is no admin interface to review reported content (the `Report` model is populated but never evaluated anywhere).
@@ -175,12 +175,12 @@ Known limitations and next steps before this project should be run in production
 
 **Infrastructure**
 - The cleanup job for expired story/snap media currently runs as a simple `setInterval` in the API process — for multi-instance deployments this should become a dedicated, coordinated worker/cron job.
-- SeaweedFS runs without auth in the dev setup (anonymous S3 credentials) — production needs access control on the storage service itself.
-- Docker Compose exposes Postgres on host port 5432 with the development-only `app`/`app` credentials. Do not expose this dev configuration to an untrusted network.
+- SeaweedFS runs without auth in the dev setup; Docker Compose binds its port and Postgres to loopback. Production needs private storage networking and real credentials.
+- Postgres still uses the development-only `app`/`app` credentials. Do not expose this dev configuration to an untrusted network.
 - No CI pipeline (lint/typecheck/test only run locally, manually).
 
 **Product/Legal**
-- License decision still pending (AGPL-3.0 proposed, to enforce transparency even for third-party hosting).
+- Project code is marked AGPL-3.0-only; `LICENSE` uses an SPDX identifier and links to the full canonical text rather than embedding it. Consider including the complete text for easier offline review and license detection.
 - No age verification or minor-safety measures.
 - No self-service data export/account deletion (GDPR right-of-access/right-to-erasure currently only possible manually via the database).
 
