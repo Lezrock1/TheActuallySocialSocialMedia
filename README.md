@@ -65,8 +65,8 @@ pnpm install
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
 
-# Apply the DB schema
-cd apps/api && pnpm prisma:migrate
+# Apply the DB schema (run from the project root)
+pnpm --filter @app/api prisma:migrate
 
 # Start the API (terminal 1, from the project root)
 pnpm dev:api
@@ -84,6 +84,8 @@ These steps were run repeatedly during development and work with the versions li
 Both apps load their configuration from `.env` files (see `apps/api/.env.example` and `apps/web/.env.example`). **These files only contain placeholders, no real secrets.**
 
 `apps/api/.env`:
+
+For non-local deployments, generate independent secrets (for example, run `openssl rand -hex 32` twice) and set `JWT_SECRET` and `AI_KEY_ENCRYPTION_SECRET` to the two outputs. The API refuses known placeholders and secrets shorter than 32 characters when `NODE_ENV=production`.
 
 | Variable | Purpose | Example/placeholder |
 |---|---|---|
@@ -146,13 +148,13 @@ Running this software (self-hosting) carries its own data-protection obligations
 
 ## License
 
-Not finalized yet. Proposal: AGPL-3.0, to ensure transparency even for third-party hosting (discussion welcome). **There is currently no `LICENSE` file** — without one, the code is "all rights reserved" by default, even in a public repository.
+The project's original code is licensed under **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**. See [`LICENSE`](LICENSE) for the SPDX identifier and link to the complete license text. This license does not replace the licenses of third-party dependencies or grant rights to material the project authors do not own.
 
 ## Third-Party Components / Dependency Licenses
 
-Automatically checked (`pnpm -r licenses list`, as of this session): all direct and transitive dependencies are under permissive open-source licenses — **MIT** (240 packages), **Apache-2.0** (37), **BSD-3-Clause** (5), **ISC** (10), **0BSD** (1), and **CC-BY-4.0** for the data package `caniuse-lite` (attribution "Ben Briggs", covered by the normal dependency declaration in `package.json`/`pnpm-lock.yaml`). No GPL/AGPL/LGPL dependencies were found that would trigger copyleft obligations of their own. No third-party images, fonts, icons, or datasets are included in the repository.
+Automatically checked (`pnpm -r licenses list`, as of this session): installed dependencies report **MIT** (240 packages), **Apache-2.0** (37), **BSD-3-Clause** (5), **ISC** (10), **0BSD** (1), and **CC-BY-4.0** (1). No GPL/AGPL/LGPL dependencies were reported. The CC-BY-4.0 package is the transitive build-data dependency `caniuse-lite`; its upstream project says the data is from [caniuse.com](https://caniuse.com/) and is available under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). If redistributing that data or an artifact containing it, attribute the source as caniuse.com, link the license, and identify modifications as required by the license. The dependency package includes its license text. No third-party images, fonts, or icons are included in this repository.
 
-This check does not replace a legal license review and only covers the versions installed at the time of the check.
+This automated metadata check does not replace a legal license review, verify every dependency's bundled notices, or cover future package versions. Redistributing built bundles may require shipping third-party license notices.
 
 ## Contributing
 
@@ -174,6 +176,7 @@ Known limitations and next steps before this project should be run in production
 **Infrastructure**
 - The cleanup job for expired story/snap media currently runs as a simple `setInterval` in the API process — for multi-instance deployments this should become a dedicated, coordinated worker/cron job.
 - SeaweedFS runs without auth in the dev setup (anonymous S3 credentials) — production needs access control on the storage service itself.
+- Docker Compose exposes Postgres on host port 5432 with the development-only `app`/`app` credentials. Do not expose this dev configuration to an untrusted network.
 - No CI pipeline (lint/typecheck/test only run locally, manually).
 
 **Product/Legal**

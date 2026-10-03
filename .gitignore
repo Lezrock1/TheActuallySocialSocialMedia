@@ -4,6 +4,7 @@ dist/
 build/
 .pnpm-store/
 coverage/
+*.tsbuildinfo
 
 # environment/secrets - never commit real .env files, only .env.example
 .env

@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: app
       POSTGRES_DB: app
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
     command: server -dir=/data -s3 -s3.port=8333 -ip=0.0.0.0
     ports:
-      - "8333:8333"
+      - "127.0.0.1:8333:8333"
     volumes:
       - storage_data:/data
 
