@@ -1,65 +1,219 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Comment } from "@app/shared";
-import { apiFetch } from "../lib/api.js";
+import { ApiError, apiFetch } from "../lib/api.js";
+import Avatar from "./Avatar.js";
 
 async function fetchComments(postId: string): Promise<Comment[]> {
   const res = await apiFetch<{ comments: Comment[] }>(`/posts/${postId}/comments`);
   return res.comments;
 }
 
-export default function CommentsSection({ postId }: { postId: string }) {
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
+function CommentItem({
+  comment,
+  onReply,
+  onToggleLike,
+  liking,
+}: {
+  comment: Comment;
+  onReply?: () => void;
+  onToggleLike: () => void;
+  liking: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <Link to={`/u/${comment.author.username}`} className="shrink-0">
+        <Avatar avatarKey={comment.author.avatarKey} username={comment.author.username} size={32} />
+      </Link>
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm leading-5 text-gray-800">
+          <Link to={`/u/${comment.author.username}`} className="mr-1 font-semibold text-gray-900 hover:underline">
+            @{comment.author.username}
+          </Link>
+          {comment.text}
+        </p>
+        <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
+          <time>{new Date(comment.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</time>
+          {onReply && (
+            <button type="button" onClick={onReply} className="font-semibold hover:text-black">
+              Reply
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onToggleLike}
+            disabled={liking}
+            aria-pressed={comment.likedByMe}
+            className={`font-semibold hover:text-black disabled:opacity-50 ${comment.likedByMe ? "text-red-600" : ""}`}
+          >
+            {comment.likedByMe ? "Liked" : "Like"}{comment.likeCount > 0 ? ` · ${comment.likeCount}` : ""}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  const { data: comments = [] } = useQuery({
+export default function CommentsSection({
+  postId,
+  commentCount,
+  onCommentAdded,
+}: {
+  postId: string;
+  commentCount: number;
+  onCommentAdded: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [showAllComments, setShowAllComments] = useState(false);
+  const [text, setText] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
+  const [likingId, setLikingId] = useState<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const { data: comments = [], isLoading } = useQuery({
     queryKey: ["comments", postId],
     queryFn: () => fetchComments(postId),
-    enabled: open,
   });
+
+  useEffect(() => {
+    if (replyTarget) inputRef.current?.focus();
+  }, [replyTarget]);
+
+  const repliesByParent = new Map<string, Comment[]>();
+  for (const comment of comments) {
+    if (!comment.parentCommentId) continue;
+    const replies = repliesByParent.get(comment.parentCommentId) ?? [];
+    replies.push(comment);
+    repliesByParent.set(comment.parentCommentId, replies);
+  }
+  const rootComments = comments.filter((comment) => !comment.parentCommentId);
+  const previewComments = showAllComments ? comments : comments.slice(0, 3);
+  const previewIds = new Set(previewComments.map((comment) => comment.id));
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!text.trim()) return;
-    await apiFetch(`/posts/${postId}/comments`, {
-      method: "POST",
-      body: JSON.stringify({ text }),
-    });
-    setText("");
-    await queryClient.invalidateQueries({ queryKey: ["comments", postId] });
+    if (!text.trim() || posting) return;
+    setPosting(true);
+    setError(null);
+    try {
+      const res = await apiFetch<{ comment: Comment }>(`/posts/${postId}/comments`, {
+        method: "POST",
+        body: JSON.stringify({
+          text: text.trim(),
+          parentCommentId: replyTarget?.id,
+        }),
+      });
+      queryClient.setQueryData<Comment[]>(["comments", postId], (current) => [
+        ...(current ?? []),
+        res.comment,
+      ]);
+      onCommentAdded();
+      setShowAllComments(true);
+      setText("");
+      setReplyTarget(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not post comment");
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  async function toggleLike(comment: Comment) {
+    setLikingId(comment.id);
+    setError(null);
+    try {
+      await apiFetch(`/comments/${comment.id}/like`, {
+        method: comment.likedByMe ? "DELETE" : "POST",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["comments", postId] });
+      await queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not update comment like");
+    } finally {
+      setLikingId(null);
+    }
   }
 
   return (
-    <div className="mt-3 text-xs">
-      <button onClick={() => setOpen((o) => !o)} className="font-medium text-gray-500 hover:underline">
-        {open ? "Kommentare ausblenden" : "Kommentare anzeigen"}
-      </button>
-      {open && (
-        <div className="mt-2 flex flex-col gap-2">
-          {comments.map((c) => (
-            <div key={c.id} className="rounded-lg bg-gray-50 px-3 py-2">
-              <span className="font-medium">@{c.author.username}</span>{" "}
-              <span className="text-gray-700">{c.text}</span>
-            </div>
-          ))}
-          {comments.length === 0 && (
-            <p className="text-gray-400">Noch keine Kommentare.</p>
-          )}
-          <form onSubmit={(e) => void onSubmit(e)} className="flex gap-2">
-            <input
+    <section className="mt-2 border-t border-gray-100 pt-2">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-xs font-semibold text-gray-600">Comments</h3>
+        <span className="text-[11px] text-gray-400">{commentCount}</span>
+      </div>
+      <div className="flex flex-col gap-3">
+          <div id={`comments-${postId}`} className="flex max-h-72 flex-col gap-3 overflow-y-auto">
+            {isLoading && <p className="text-sm text-gray-400">Loading comments...</p>}
+            {rootComments.filter((comment) => previewIds.has(comment.id)).map((comment) => (
+              <div key={comment.id} className="flex flex-col gap-2">
+                <CommentItem
+                  comment={comment}
+                  onReply={() => {
+                    setShowAllComments(true);
+                    setReplyTarget(comment);
+                  }}
+                  onToggleLike={() => void toggleLike(comment)}
+                  liking={likingId === comment.id}
+                />
+                {(repliesByParent.get(comment.id) ?? [])
+                  .filter((reply) => previewIds.has(reply.id))
+                  .map((reply) => (
+                  <div key={reply.id} className="ml-8 border-l-2 border-gray-100 pl-3">
+                    <CommentItem
+                      comment={reply}
+                      onToggleLike={() => void toggleLike(reply)}
+                      liking={likingId === reply.id}
+                    />
+                  </div>
+                ))}
+              </div>
+            ))}
+            {!isLoading && comments.length === 0 && (
+              <p className="text-sm text-gray-400">No comments yet. Start the conversation.</p>
+            )}
+          </div>
+          <form onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-2 border-t border-gray-100 pt-3">
+            {replyTarget && (
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Replying to @{replyTarget.author.username}</span>
+                <button type="button" onClick={() => setReplyTarget(null)} className="font-semibold hover:text-black">
+                  Cancel
+                </button>
+              </div>
+            )}
+            <div className="flex items-end gap-2">
+              <textarea
+                ref={inputRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Kommentar schreiben…"
-              className="w-full rounded-lg border border-gray-300 px-3 py-1.5"
-            />
-            <button className="shrink-0 rounded-lg bg-black px-3 py-1.5 font-medium text-white">
-              Senden
-            </button>
+                aria-label={replyTarget ? "Write a reply" : "Write a comment"}
+                placeholder={replyTarget ? `Reply to @${replyTarget.author.username}...` : "Add a comment..."}
+                maxLength={1000}
+                rows={1}
+                className="min-h-10 min-w-0 flex-1 resize-y rounded-2xl border border-gray-300 px-4 py-2 text-sm focus:border-black focus:outline-none"
+              />
+              <button
+                disabled={!text.trim() || posting}
+                className="min-h-10 shrink-0 px-2 text-sm font-semibold text-blue-700 disabled:text-gray-400"
+              >
+                {posting ? "Posting..." : replyTarget ? "Reply" : "Post"}
+              </button>
+            </div>
           </form>
-        </div>
-      )}
-    </div>
+          {!isLoading && comments.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setShowAllComments((value) => !value)}
+              className="self-start text-xs font-semibold text-gray-500 hover:text-black"
+            >
+              {showAllComments ? "Show fewer comments" : `View all ${commentCount} comments`}
+            </button>
+          )}
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+      </div>
+    </section>
   );
 }

@@ -42,14 +42,14 @@ export default function StoriesBar() {
   return (
     <div className="mb-6">
       <div className="mb-2 flex items-center gap-2 text-xs text-gray-400">
-        <span>Neue Story sichtbar für</span>
+        <span>New story visible to</span>
         <select
           value={visibility}
           onChange={(e) => setVisibility(e.target.value as PostVisibility)}
           className="rounded-md border border-gray-200 px-1.5 py-0.5"
         >
-          <option value="public">Alle Follower</option>
-          <option value="close_friends">Nur enge Freunde</option>
+          <option value="public">All followers</option>
+          <option value="close_friends">Close friends only</option>
         </select>
       </div>
       <div className="flex gap-4 overflow-x-auto pb-2">

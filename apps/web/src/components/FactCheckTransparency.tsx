@@ -19,7 +19,7 @@ export default function FactCheckTransparency({ postId }: { postId: string }) {
   return (
     <div className="mt-3 text-xs text-gray-500">
       <button onClick={() => setExpanded((e) => !e)} className="font-medium text-blue-700 hover:underline">
-        {data.bucketLabel} Nutzer haben diesen Post bereits FactCheck-geprüft
+        {data.bucketLabel} people have fact-checked this post
         {expanded ? " ▲" : " ▼"}
       </button>
       {expanded && data.summary && (

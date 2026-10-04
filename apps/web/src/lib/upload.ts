@@ -23,6 +23,10 @@ export function mediaUrl(key: string): string {
 }
 
 export async function downloadMediaObjectUrl(key: string): Promise<string> {
+  return URL.createObjectURL(await downloadMediaBlob(key));
+}
+
+export async function downloadMediaBlob(key: string): Promise<Blob> {
   const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
   const res = await fetch(`${API_BASE}/media/${key}`, {
     credentials: "include",
@@ -30,7 +34,7 @@ export async function downloadMediaObjectUrl(key: string): Promise<string> {
   if (!res.ok) {
     throw new Error("Media could not be loaded");
   }
-  return URL.createObjectURL(await res.blob());
+  return res.blob();
 }
 
 export { apiFetch };

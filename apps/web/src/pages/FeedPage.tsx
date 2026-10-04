@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FeedPage as FeedPageType } from "@app/shared";
+import type { FeedItem, FeedPage as FeedPageType } from "@app/shared";
 import type { PostVisibility } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import { mediaUrl, uploadMedia } from "../lib/upload.js";
@@ -12,11 +13,40 @@ import PageHeader from "../components/PageHeader.js";
 import StoriesBar from "../components/StoriesBar.js";
 import PostCard from "../components/PostCard.js";
 import FollowBox from "../components/FollowBox.js";
+import Avatar from "../components/Avatar.js";
 
 async function fetchFeed(cursor: string | null): Promise<FeedPageType> {
   const params = new URLSearchParams();
   if (cursor) params.set("cursor", cursor);
   return apiFetch<FeedPageType>(`/feed?${params.toString()}`);
+}
+
+function FollowActivityCard({ item }: { item: Extract<FeedItem, { type: "follow" }> }) {
+  return (
+    <article className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <Link to={`/u/${item.follower.username}`} aria-label={`View @${item.follower.username}'s profile`}>
+          <Avatar
+            avatarKey={item.follower.avatarKey}
+            username={item.follower.username}
+            size={36}
+          />
+        </Link>
+        <p className="min-w-0 flex-1 text-sm text-gray-700">
+          <Link to={`/u/${item.follower.username}`} className="font-semibold text-gray-900 hover:underline">
+            @{item.follower.username}
+          </Link>{" "}
+          started following{" "}
+          <Link to={`/u/${item.followee.username}`} className="font-semibold text-gray-900 hover:underline">
+            @{item.followee.username}
+          </Link>
+        </p>
+        <time className="shrink-0 text-right text-[11px] text-gray-400">
+          {new Date(item.createdAt).toLocaleString("en-US")}
+        </time>
+      </div>
+    </article>
+  );
 }
 
 export default function FeedPage() {
@@ -27,6 +57,7 @@ export default function FeedPage() {
   const [imageKey, setImageKey] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<PostVisibility>("public");
   const [posting, setPosting] = useState(false);
+  const [friendSearchRequest, setFriendSearchRequest] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const firstPageQuery = useQuery({
@@ -73,23 +104,24 @@ export default function FeedPage() {
     setImageKey(await uploadMedia(file));
   }
 
-  // Once the newest post in the feed has been displayed, advance the
-  // "caught up" marker so it doesn't show as new again next visit.
+  // Advance the seen marker to the newest item shown in the feed.
   async function markCaughtUp() {
-    const newestPost = allPages[0]?.posts[0];
-    if (newestPost) {
+    const newestItem = allPages[0]?.items[0];
+    if (newestItem) {
       await apiFetch("/feed/mark-seen", {
         method: "POST",
-        body: JSON.stringify({ postId: newestPost.id }),
+        body: JSON.stringify({ itemId: newestItem.id, itemType: newestItem.type }),
       });
     }
   }
 
-  const newestPostId = allPages[0]?.posts[0]?.id ?? null;
+  const newestItemKey = allPages[0]?.items[0]
+    ? `${allPages[0].items[0].type}:${allPages[0].items[0].id}`
+    : null;
   useEffect(() => {
-    if (newestPostId) void markCaughtUp();
+    if (newestItemKey) void markCaughtUp();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newestPostId]);
+  }, [newestItemKey]);
 
   async function onPostDeleted() {
     setPages([]);
@@ -100,16 +132,21 @@ export default function FeedPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8">
-      <PageHeader title="Feed" />
+      <PageHeader
+        title="Feed"
+        onSearchClick={() => setFriendSearchRequest((request) => request + 1)}
+      />
       <NavBar />
 
-      <FollowBox />
+      <StoriesBar />
+
+      <FollowBox focusRequest={friendSearchRequest} />
 
       <form onSubmit={onPost} className={`${card} mb-6 flex flex-col gap-3`}>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Was gibt's Neues?"
+          placeholder="What's new?"
           className={`${input} resize-none`}
           rows={3}
         />
@@ -120,22 +157,22 @@ export default function FeedPage() {
             className="max-h-48 rounded-lg object-cover"
           />
         )}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               className={btnSecondary}
             >
-              {imageKey ? "Bild ändern" : "Bild hinzufügen"}
+              {imageKey ? "Change image" : "Add image"}
             </button>
             <select
               value={visibility}
               onChange={(e) => setVisibility(e.target.value as PostVisibility)}
-              className={`${input} py-1.5`}
+              className={`${input} min-w-0 max-w-full py-1.5`}
             >
-              <option value="public">Öffentlich</option>
-              <option value="close_friends">Nur enge Freunde</option>
+              <option value="public">Public</option>
+              <option value="close_friends">Close friends only</option>
             </select>
           </div>
           <input
@@ -145,38 +182,38 @@ export default function FeedPage() {
             className="hidden"
             onChange={(e) => void onSelectImage(e)}
           />
-          <button type="submit" disabled={posting} className={btnPrimary}>
-            Posten
+          <button type="submit" disabled={posting} className={`${btnPrimary} min-h-10 shrink-0`}>
+            Post
           </button>
         </div>
       </form>
 
-      <StoriesBar />
-
-      {firstPageQuery.isLoading && <p className="text-sm text-gray-500">Lädt…</p>}
+      {firstPageQuery.isLoading && <p className="text-sm text-gray-500">Loading...</p>}
 
       <div className="flex flex-col gap-3">
-        {allPages.map((page, pageIdx) =>
-          page.posts.map((post, postIdx) => {
+        {allPages.map((page) =>
+          page.items.map((item, itemIdx) => {
             const showBoundary =
-              page.boundaryIndex === postIdx && !boundaryShown;
+              page.boundaryIndex === itemIdx && !boundaryShown;
             if (showBoundary) boundaryShown = true;
-            const seen = page.boundaryIndex !== null && postIdx >= page.boundaryIndex;
             return (
-              <div key={post.id}>
+              <div key={`${item.type}:${item.id}`}>
                 {showBoundary && (
                   <div className="my-4 flex items-center gap-2 text-center text-sm text-gray-400">
                     <span className="h-px flex-1 bg-gray-200" />
-                    <span>✓ Du bist auf dem neuesten Stand</span>
+                    <span>✓ You are all caught up</span>
                     <span className="h-px flex-1 bg-gray-200" />
                   </div>
                 )}
-                <PostCard
-                  post={post}
-                  seen={seen}
-                  currentUserId={user?.id}
-                  onDeleted={() => void onPostDeleted()}
-                />
+                {item.type === "post" ? (
+                  <PostCard
+                    post={item.post}
+                    currentUserId={user?.id}
+                    onDeleted={() => void onPostDeleted()}
+                  />
+                ) : (
+                  <FollowActivityCard item={item} />
+                )}
               </div>
             );
           })
@@ -185,13 +222,13 @@ export default function FeedPage() {
 
       {lastPage?.nextCursor && (
         <button onClick={() => void loadMore()} className={`${btnSecondary} mt-4 w-full`}>
-          Weitere Beiträge laden
+          Load more posts
         </button>
       )}
 
       {!lastPage?.nextCursor && allPages.length > 0 && (
         <p className="mt-6 text-center text-sm text-gray-400">
-          Das war's – keine weiteren Beiträge.
+          You're all out of posts.
         </p>
       )}
     </div>

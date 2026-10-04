@@ -85,7 +85,7 @@ export default function ProfilePage() {
       setEditing(false);
       await queryClient.invalidateQueries({ queryKey: ["profile", username] });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Speichern fehlgeschlagen");
+      setError(err instanceof ApiError ? err.message : "Could not save changes");
     } finally {
       setSaving(false);
     }
@@ -126,7 +126,7 @@ export default function ProfilePage() {
   }
 
   async function toggleBlock() {
-    if (!confirm(isBlocked ? "Entblocken?" : "Diesen Nutzer wirklich blockieren?")) return;
+    if (!confirm(isBlocked ? "Unblock this user?" : "Block this user?")) return;
     const method = isBlocked ? "DELETE" : "POST";
     await apiFetch(`/users/${username}/block`, { method });
     setIsBlocked(!isBlocked);
@@ -134,7 +134,7 @@ export default function ProfilePage() {
   }
 
   async function submitReport() {
-    const reason = prompt("Warum meldest du dieses Profil?");
+    const reason = prompt("Why are you reporting this profile?");
     if (!reason) return;
     await apiFetch("/reports", {
       method: "POST",
@@ -144,7 +144,7 @@ export default function ProfilePage() {
         reason,
       }),
     });
-    alert("Meldung gesendet. Danke.");
+    alert("Report submitted. Thank you.");
   }
 
   function onPostDeleted(postId: string) {
@@ -155,16 +155,42 @@ export default function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8">
-      <PageHeader title="Profil" />
+      <PageHeader title="Profile" />
       <NavBar />
-      {profileQuery.isLoading && <p className="text-sm text-gray-500">Lädt…</p>}
+      {profileQuery.isLoading && <p className="text-sm text-gray-500">Loading...</p>}
       {profile && (
         <>
           <div className={`${card} mb-6 flex items-start gap-4`}>
-            <Avatar avatarKey={profile.avatarKey} username={profile.username} size={72} />
+            <div className="shrink-0">
+              {profile.isMe && editing ? (
+                <button
+                  type="button"
+                  aria-label="Change profile picture"
+                  title="Change profile picture"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="group relative block rounded-full focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
+                >
+                  <Avatar avatarKey={profile.avatarKey} username={profile.username} size={72} />
+                  <span className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-black text-sm text-white shadow">
+                    📷
+                  </span>
+                </button>
+              ) : (
+                <Avatar avatarKey={profile.avatarKey} username={profile.username} size={72} />
+              )}
+              {profile.isMe && (
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => void onAvatarSelected(e)}
+                />
+              )}
+            </div>
             <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <h1 className="text-lg font-semibold">
+              <div className="flex min-w-0 flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+                <h1 className="min-w-0 break-words text-lg font-semibold">
                   @{profile.username}
                   {profile.displayName && (
                     <span className="ml-2 text-sm font-normal text-gray-500">
@@ -173,19 +199,24 @@ export default function ProfilePage() {
                   )}
                 </h1>
                 {profile.isMe ? (
-                  <button onClick={startEditing} className={btnSecondary}>
-                    Profil bearbeiten
+                  <button onClick={startEditing} className={`${btnSecondary} self-start sm:self-auto`}>
+                    Edit profile
                   </button>
                 ) : (
-                  <div className="flex gap-2">
-                    <button onClick={() => void toggleFollow()} className={btnSecondary}>
-                      {profile.isFollowedByMe ? "Entfolgen" : "Folgen"}
+                  <div className="flex w-full gap-2 sm:w-auto">
+                    <button
+                      onClick={() => void toggleFollow()}
+                      className={`${btnSecondary} min-h-9 min-w-0 flex-1 px-2 py-1.5 text-center text-xs sm:min-h-10 sm:flex-none sm:px-3 sm:text-sm`}
+                    >
+                      {profile.isFollowedByMe ? "Unfollow" : "Follow"}
                     </button>
                     <button
                       onClick={() => void toggleCloseFriend()}
-                      className={`${btnSecondary} ${isCloseFriend ? "bg-green-50 border-green-300 text-green-800" : ""}`}
+                      aria-label={isCloseFriend ? "Remove from close friends" : "Add to close friends"}
+                      className={`${btnSecondary} min-h-9 min-w-0 flex-1 px-2 py-1.5 text-center text-xs sm:min-h-10 sm:flex-none sm:px-3 sm:text-sm ${isCloseFriend ? "bg-green-50 border-green-300 text-green-800" : ""}`}
                     >
-                      {isCloseFriend ? "Enger Freund" : "+ Enger Freund"}
+                      <span className="sm:hidden">{isCloseFriend ? "Close friend" : "+ Close"}</span>
+                      <span className="hidden sm:inline">{isCloseFriend ? "Close friend" : "+ Close friend"}</span>
                     </button>
                   </div>
                 )}
@@ -199,29 +230,12 @@ export default function ProfilePage() {
               {!profile.isMe && (
                 <div className="mt-2 flex gap-3 text-xs text-gray-400">
                   <button onClick={() => void toggleBlock()} className="hover:underline">
-                    {isBlocked ? "Entblocken" : "Blockieren"}
+                    {isBlocked ? "Unblock" : "Block"}
                   </button>
                   <button onClick={() => void submitReport()} className="hover:underline">
-                    Melden
+                    Report
                   </button>
                 </div>
-              )}
-              {profile.isMe && (
-                <>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="mt-2 text-xs text-gray-500 hover:underline"
-                  >
-                    Profilbild ändern
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => void onAvatarSelected(e)}
-                  />
-                </>
               )}
             </div>
           </div>
@@ -231,7 +245,7 @@ export default function ProfilePage() {
               <input
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Anzeigename"
+                placeholder="Display name"
                 className={input}
               />
               <textarea
@@ -244,10 +258,10 @@ export default function ProfilePage() {
               {error && <p className="text-xs text-red-600">{error}</p>}
               <div className="flex justify-end gap-2">
                 <button onClick={() => setEditing(false)} className={btnSecondary}>
-                  Abbrechen
+                  Cancel
                 </button>
                 <button onClick={() => void saveProfile()} disabled={saving} className={btnPrimary}>
-                  Speichern
+                  Save
                 </button>
               </div>
             </div>
@@ -263,7 +277,7 @@ export default function ProfilePage() {
               />
             ))}
             {posts.length === 0 && postsLoaded && (
-              <p className="text-sm text-gray-400">Noch keine Posts.</p>
+              <p className="text-sm text-gray-400">No posts yet.</p>
             )}
           </div>
 
@@ -272,7 +286,7 @@ export default function ProfilePage() {
               onClick={() => void loadMorePosts()}
               className="mt-4 w-full rounded border py-2 text-sm"
             >
-              Weitere Beiträge laden
+              Load more posts
             </button>
           )}
         </>

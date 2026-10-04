@@ -8,12 +8,14 @@ import DMsPage from "./pages/DMsPage.js";
 import AiSettingsPage from "./pages/AiSettingsPage.js";
 import ProfilePage from "./pages/ProfilePage.js";
 import PostThreadPage from "./pages/PostThreadPage.js";
+import InvitationsPage from "./pages/InvitationsPage.js";
+import NotificationsPage from "./pages/NotificationsPage.js";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
-  if (loading) return <p className="p-8">Lädt…</p>;
+  if (loading) return <p className="p-8">Loading...</p>;
   if (!user) return <Navigate to="/login" replace />;
-  return children;
+  return <div className="pb-20 sm:pb-0">{children}</div>;
 }
 
 function AppRoutes() {
@@ -50,6 +52,22 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <AiSettingsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/invitations"
+        element={
+          <RequireAuth>
+            <InvitationsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/notifications"
+        element={
+          <RequireAuth>
+            <NotificationsPage />
           </RequireAuth>
         }
       />

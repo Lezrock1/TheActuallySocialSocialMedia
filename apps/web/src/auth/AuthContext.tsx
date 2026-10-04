@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { PublicUser } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
+import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
 
 interface AuthContextValue {
   user: PublicUser | null;
@@ -10,7 +11,8 @@ interface AuthContextValue {
   register: (
     email: string,
     username: string,
-    password: string
+    password: string,
+    inviteCode: string
   ) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -28,6 +30,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (user) {
+      void registerDeviceEncryptionKey(user.id).catch(() => undefined);
+    }
+  }, [user]);
+
   async function login(email: string, password: string) {
     const res = await apiFetch<{ user: PublicUser }>("/auth/login", {
       method: "POST",
@@ -36,10 +44,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }
 
-  async function register(email: string, username: string, password: string) {
+  async function register(
+    email: string,
+    username: string,
+    password: string,
+    inviteCode: string
+  ) {
     const res = await apiFetch<{ user: PublicUser }>("/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email, username, password }),
+      body: JSON.stringify({ email, username, password, inviteCode }),
     });
     setUser(res.user);
   }

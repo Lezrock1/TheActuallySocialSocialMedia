@@ -48,14 +48,14 @@ export default function PostThreadPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8">
-      <PageHeader title="Beitrag" />
+      <PageHeader title="Post" />
       <NavBar />
-      {isLoading && <p className="text-sm text-gray-500">Lädt…</p>}
+      {isLoading && <p className="text-sm text-gray-500">Loading...</p>}
       {data && (
         <div className="flex flex-col gap-3">
           {data.parent && (
             <div className="text-xs text-gray-400">
-              Antwort auf @{data.parent.author.username}
+              Reply to @{data.parent.author.username}
             </div>
           )}
           {data.parent && <PostCard post={data.parent} currentUserId={user?.id} onDeleted={onDeleted} />}
@@ -67,15 +67,15 @@ export default function PostThreadPage() {
             <textarea
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
-              placeholder="Antworten…"
+              placeholder="Write a reply..."
               className={`${input} resize-none`}
               rows={2}
             />
-            <button className={`${btnPrimary} self-end`}>Antworten</button>
+            <button className={`${btnPrimary} self-end`}>Reply</button>
           </form>
 
           <h2 className="mt-2 text-sm font-medium text-gray-500">
-            {data.replies.length} Antworten
+            {data.replies.length} replies
           </h2>
           {data.replies.map((reply) => (
             <PostCard

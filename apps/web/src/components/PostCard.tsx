@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { FeedPost } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
@@ -19,10 +20,15 @@ export default function PostCard({
   currentUserId?: string;
   onDeleted?: (postId: string) => void;
 }) {
+  const [commentCount, setCommentCount] = useState(post.commentCount);
   const isOwn = currentUserId && post.author.id === currentUserId;
 
+  useEffect(() => {
+    setCommentCount(post.commentCount);
+  }, [post.commentCount]);
+
   async function onDelete() {
-    if (!confirm("Diesen Post wirklich unwiderruflich löschen?")) return;
+    if (!confirm("Permanently delete this post?")) return;
     await apiFetch(`/posts/${post.id}`, { method: "DELETE" });
     onDeleted?.(post.id);
   }
@@ -37,13 +43,13 @@ export default function PostCard({
           </Link>
           {post.visibility === "close_friends" && (
             <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">
-              Enge Freunde
+              Close friends
             </span>
           )}
         </div>
         {isOwn && (
           <button onClick={() => void onDelete()} className={btnDanger}>
-            Löschen
+            Delete
           </button>
         )}
       </div>
@@ -55,15 +61,16 @@ export default function PostCard({
           className="mt-2 max-h-96 w-full rounded-lg object-cover"
         />
       )}
-      <div className="mt-3 flex items-center gap-3 text-xs text-gray-400">
-        <span>{new Date(post.createdAt).toLocaleString("de-DE")}</span>
-        <Link to={`/post/${post.id}`} className="font-medium text-gray-600 hover:underline">
-          {post.replyCount > 0 ? `${post.replyCount} Antworten` : "Antworten"}
-        </Link>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
+        <span>{new Date(post.createdAt).toLocaleString("en-US")}</span>
+        <AiChatPanel postId={post.id} />
       </div>
+      <CommentsSection
+        postId={post.id}
+        commentCount={commentCount}
+        onCommentAdded={() => setCommentCount((count) => count + 1)}
+      />
       <FactCheckTransparency postId={post.id} />
-      <AiChatPanel postId={post.id} />
-      <CommentsSection postId={post.id} />
     </article>
   );
 }
