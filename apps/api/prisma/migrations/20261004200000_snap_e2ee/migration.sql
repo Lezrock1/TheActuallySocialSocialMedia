@@ -1,0 +1,1 @@
+ALTER TABLE "Snap" ADD COLUMN "isEncrypted" BOOLEAN NOT NULL DEFAULT false;

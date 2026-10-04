@@ -8,6 +8,7 @@ import {
 import type { AiConversationMessage, AiMode, AiProviderConfigPublic } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
+import { env } from "../env.js";
 import { encryptSecret, decryptSecret } from "../ai/crypto.js";
 import { createAdapter } from "../ai/adapters.js";
 import type { ChatMessage } from "../ai/adapters.js";
@@ -31,6 +32,18 @@ function toPublicMessage(message: {
   };
 }
 
+function isSharedFreeModelConfig(config: {
+  type: string;
+  baseUrl: string;
+  model: string;
+}): boolean {
+  return (
+    config.type === "openai_compatible" &&
+    config.baseUrl.replace(/\/$/, "") === "https://openrouter.ai/api/v1" &&
+    config.model === "openrouter/free"
+  );
+}
+
 function toPublicConfig(config: {
   id: string;
   label: string;
@@ -38,6 +51,7 @@ function toPublicConfig(config: {
   baseUrl: string;
   model: string;
   isDefault: boolean;
+  encryptedApiKey: string | null;
 }): AiProviderConfigPublic {
   return {
     id: config.id,
@@ -46,7 +60,25 @@ function toPublicConfig(config: {
     baseUrl: config.baseUrl,
     model: config.model,
     isDefault: config.isDefault,
+    apiKeySource: config.encryptedApiKey
+      ? "personal"
+      : isSharedFreeModelConfig(config) && env.openRouterApiKey
+        ? "platform"
+        : "missing",
   };
+}
+
+function apiKeyForConfig(config: {
+  type: string;
+  baseUrl: string;
+  model: string;
+  encryptedApiKey: string | null;
+}): string | undefined {
+  if (config.encryptedApiKey) return decryptSecret(config.encryptedApiKey);
+  if (isSharedFreeModelConfig(config)) {
+    return env.openRouterApiKey;
+  }
+  return undefined;
 }
 
 // Recomputes the post's public, opt-in FactCheck transparency summary from
@@ -90,6 +122,31 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         where: { userId: request.userId! },
         orderBy: { createdAt: "asc" },
       });
+      let openRouterConfig = configs.find(
+        (config) => config.label === "OpenRouter Free"
+      );
+      if (!openRouterConfig) {
+        openRouterConfig = await prisma.aiProviderConfig.create({
+          data: {
+            userId: request.userId!,
+            label: "OpenRouter Free",
+            type: "openai_compatible",
+            baseUrl: "https://openrouter.ai/api/v1",
+            model: "openrouter/free",
+            isDefault: !configs.some((config) => config.isDefault),
+          },
+        });
+        configs.push(openRouterConfig);
+      } else if (!configs.some((config) => config.isDefault)) {
+        const configIndex = configs.findIndex(
+          (config) => config.id === openRouterConfig!.id
+        );
+        openRouterConfig = await prisma.aiProviderConfig.update({
+          where: { id: openRouterConfig.id },
+          data: { isDefault: true },
+        });
+        configs[configIndex] = openRouterConfig;
+      }
       return reply.send({ providers: configs.map(toPublicConfig) });
     }
   );
@@ -218,9 +275,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         const adapter = createAdapter(config.type, {
           baseUrl: config.baseUrl,
           model: config.model,
-          apiKey: config.encryptedApiKey
-            ? decryptSecret(config.encryptedApiKey)
-            : undefined,
+          apiKey: apiKeyForConfig(config),
         });
         const reply1 = await adapter.chat([
           { role: "system", content: systemPrompt },
@@ -328,9 +383,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         const adapter = createAdapter(config.type, {
           baseUrl: config.baseUrl,
           model: config.model,
-          apiKey: config.encryptedApiKey
-            ? decryptSecret(config.encryptedApiKey)
-            : undefined,
+          apiKey: apiKeyForConfig(config),
         });
         const replyText = await adapter.chat(history);
 

@@ -9,7 +9,7 @@ import {
 import { prisma } from "../db.js";
 import { canReadMedia } from "../mediaAccess.js";
 
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 + 16;
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 export async function mediaRoutes(app: FastifyInstance): Promise<void> {

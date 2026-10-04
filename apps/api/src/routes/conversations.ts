@@ -1,12 +1,15 @@
 import type { FastifyInstance } from "fastify";
+import { createHash, createPublicKey } from "node:crypto";
 import {
   createGroupConversationSchema,
+  encryptedMessagePayloadSchema,
   sendMessageSchema,
   startConversationSchema,
 } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
+import { createUserNotification } from "../notifications.js";
 import { emitToUsers } from "../realtime.js";
 import { isBlocked } from "../visibility.js";
 
@@ -115,7 +118,8 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         otherMember: !isGroup && otherMember ? toPublicUser(otherMember.user) : null,
         lastMessage: last
           ? {
-              text: last.text,
+              text: last.isEncrypted ? null : last.text,
+              isEncrypted: last.isEncrypted,
               createdAt: last.createdAt.toISOString(),
               senderId: last.senderId,
             }
@@ -148,10 +152,38 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         messages: messages.map((m) => ({
           id: m.id,
           senderId: m.senderId,
-          text: m.text,
+          text: m.isEncrypted ? null : m.text,
+          isEncrypted: m.isEncrypted,
+          encryptedPayload: m.isEncrypted
+            ? encryptedMessagePayloadSchema.parse(JSON.parse(m.text))
+            : null,
           createdAt: m.createdAt.toISOString(),
         })),
       });
+    }
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/conversations/:id/encryption-keys",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const membership = await prisma.conversationMember.findUnique({
+        where: {
+          conversationId_userId: {
+            conversationId: request.params.id,
+            userId: request.userId!,
+          },
+        },
+      });
+      if (!membership) {
+        return reply.code(404).send({ error: "Conversation not found" });
+      }
+
+      const keys = await prisma.encryptionKey.findMany({
+        where: { user: { conversations: { some: { conversationId: request.params.id } } } },
+        select: { userId: true, fingerprint: true, publicKey: true },
+      });
+      return reply.send({ keys });
     }
   );
 
@@ -174,17 +206,26 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       if (!membership) {
         return reply.code(404).send({ error: "Conversation not found" });
       }
+      const encryptedPayload = "encryptedPayload" in parsed.data
+        ? parsed.data.encryptedPayload
+        : null;
+      const plainText = "text" in parsed.data ? parsed.data.text : null;
+      const isEncrypted = encryptedPayload !== null;
+      const storedText = encryptedPayload ? JSON.stringify(encryptedPayload) : plainText!;
       const message = await prisma.message.create({
         data: {
           conversationId: request.params.id,
           senderId: request.userId!,
-          text: parsed.data.text,
+          text: storedText,
+          isEncrypted,
         },
       });
       const messageDto = {
         id: message.id,
         senderId: message.senderId,
-        text: message.text,
+        text: isEncrypted ? null : message.text,
+        isEncrypted,
+        encryptedPayload,
         createdAt: message.createdAt.toISOString(),
       };
 
@@ -192,6 +233,19 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         where: { conversationId: request.params.id },
         select: { userId: true },
       });
+      await Promise.all(
+        members
+          .filter((member) => member.userId !== request.userId)
+          .map((member) =>
+            createUserNotification({
+              recipientId: member.userId,
+              actorId: request.userId!,
+              type: "message",
+              dedupeKey: `message:${message.id}:${member.userId}`,
+              conversationId: request.params.id,
+            }).catch((error) => request.log.error(error, "Message notification creation failed"))
+          )
+      );
       emitToUsers(
         request.server.io,
         members.map((m) => m.userId),

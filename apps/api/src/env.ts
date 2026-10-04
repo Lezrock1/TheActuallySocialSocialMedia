@@ -19,13 +19,19 @@ function validateProductionSecret(name: string, value: string): void {
 
 const jwtSecret = required("JWT_SECRET");
 const aiKeyEncryptionSecret = required("AI_KEY_ENCRYPTION_SECRET");
+const bootstrapInviteCode = process.env.BOOTSTRAP_INVITE_CODE;
 validateProductionSecret("JWT_SECRET", jwtSecret);
 validateProductionSecret("AI_KEY_ENCRYPTION_SECRET", aiKeyEncryptionSecret);
+if (bootstrapInviteCode) {
+  validateProductionSecret("BOOTSTRAP_INVITE_CODE", bootstrapInviteCode);
+}
 
 export const env = {
   port: Number(process.env.PORT ?? 4000),
   databaseUrl: required("DATABASE_URL"),
   jwtSecret,
+  bootstrapInviteCode,
+  openRouterApiKey: process.env.OPENROUTER_API_KEY,
   // used to encrypt user-supplied AI provider API keys at rest
   aiKeyEncryptionSecret,
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",

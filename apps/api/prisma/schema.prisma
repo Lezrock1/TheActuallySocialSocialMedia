@@ -38,6 +38,13 @@ model User {
   mediaAssets       MediaAsset[]
   conversations     ConversationMember[]
   messages          Message[]
+  encryptionKeys    EncryptionKey[]
+  snapStreaksAs     SnapStreak[]        @relation("SnapStreakUserA")
+  snapStreaksBs     SnapStreak[]        @relation("SnapStreakUserB")
+  invitations       Invitation[]
+  notificationsReceived Notification[] @relation("NotificationRecipient")
+  notificationsSent Notification[] @relation("NotificationActor")
+  commentLikes     CommentLike[]
 }
 
 model Follow {
@@ -51,6 +58,19 @@ model Follow {
 
   @@unique([followerId, followeeId])
   @@index([followeeId])
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  inviterId String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  redeemedAt DateTime?
+
+  inviter User? @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([inviterId, redeemedAt, expiresAt])
 }
 
 model Post {
@@ -73,6 +93,7 @@ model Post {
   parent          Post?            @relation("PostReplies", fields: [parentPostId], references: [id], onDelete: Cascade)
   replies         Post[]           @relation("PostReplies")
   comments        Comment[]
+  notifications   Notification[]
   aiConversations AiConversation[]
 
   @@index([authorId, createdAt])
@@ -80,16 +101,59 @@ model Post {
 }
 
 model Comment {
-  id        String   @id @default(cuid())
-  postId    String
-  authorId  String
-  text      String
-  createdAt DateTime @default(now())
+  id              String   @id @default(cuid())
+  postId          String
+  authorId        String
+  parentCommentId String?
+  text            String
+  createdAt       DateTime @default(now())
 
-  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
-  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post          Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author        User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentComment Comment?      @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies       Comment[]     @relation("CommentReplies")
+  likes         CommentLike[]
+  notifications Notification[]
 
   @@index([postId, createdAt])
+  @@index([parentCommentId, createdAt])
+}
+
+model CommentLike {
+  id        String   @id @default(cuid())
+  commentId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([userId, createdAt])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  recipientId String
+  actorId     String
+  type        String
+  dedupeKey   String   @unique
+  postId      String?
+  commentId   String?
+  conversationId String?
+  snapId      String?
+  createdAt   DateTime @default(now())
+  readAt      DateTime?
+
+  recipient User     @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User     @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  post      Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  snap      Snap?    @relation(fields: [snapId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, createdAt])
+  @@index([recipientId, readAt])
 }
 
 model Story {
@@ -161,12 +225,14 @@ model Snap {
   senderId  String
   imageKey  String
   text      String?
+  isEncrypted Boolean @default(false)
   createdAt DateTime @default(now())
   // hard expiry regardless of whether it was viewed
   expiresAt DateTime
 
   sender     User            @relation("SnapSender", fields: [senderId], references: [id], onDelete: Cascade)
   recipients SnapRecipient[]
+  notifications Notification[]
 }
 
 model SnapRecipient {
@@ -182,6 +248,24 @@ model SnapRecipient {
   @@index([userId])
 }
 
+model SnapStreak {
+  id              String   @id @default(cuid())
+  userAId         String
+  userBId         String
+  currentStreak   Int      @default(0)
+  bestStreak      Int      @default(0)
+  lastExchangeAt  DateTime?
+  pendingUserAAt  DateTime?
+  pendingUserBAt  DateTime?
+
+  userA User @relation("SnapStreakUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("SnapStreakUserB", fields: [userBId], references: [id], onDelete: Cascade)
+
+  @@unique([userAId, userBId])
+  @@index([userAId, currentStreak])
+  @@index([userBId, currentStreak])
+}
+
 model Conversation {
   id        String   @id @default(cuid())
   // set for group chats with more than 2 members; null for 1:1 DMs
@@ -190,6 +274,7 @@ model Conversation {
 
   members  ConversationMember[]
   messages Message[]
+  notifications Notification[]
 }
 
 model ConversationMember {
@@ -209,12 +294,26 @@ model Message {
   conversationId String
   senderId       String
   text           String
+  isEncrypted    Boolean  @default(false)
   createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
+}
+
+model EncryptionKey {
+  id          String   @id @default(cuid())
+  userId      String
+  fingerprint String
+  publicKey   String
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
 }
 
 model AiProviderConfig {

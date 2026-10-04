@@ -8,6 +8,7 @@ export const registerSchema = z.object({
     .max(30)
     .regex(/^[a-zA-Z0-9_]+$/, "only letters, numbers, underscore"),
   password: z.string().min(8),
+  inviteCode: z.string().min(32).max(128),
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
@@ -45,17 +46,33 @@ export interface FeedPost {
   visibility: PostVisibility;
   parentPostId: string | null;
   replyCount: number;
+  commentCount: number;
   factCheckCount: number;
 }
 
 export interface FeedPage {
-  posts: FeedPost[];
+  items: FeedItem[];
   nextCursor: string | null;
   // true once the user has scrolled past all posts newer than their last visit
   caughtUp: boolean;
   // index within `posts` where previously-seen content starts, null if not in this page
   boundaryIndex: number | null;
 }
+
+export type FeedItem =
+  | {
+      type: "post";
+      id: string;
+      createdAt: string;
+      post: FeedPost;
+    }
+  | {
+      type: "follow";
+      id: string;
+      createdAt: string;
+      follower: PublicUser;
+      followee: PublicUser;
+    };
 
 export const AI_PROVIDER_TYPES = ["openai_compatible", "anthropic"] as const;
 export type AiProviderType = (typeof AI_PROVIDER_TYPES)[number];
@@ -79,11 +96,13 @@ export interface AiProviderConfigPublic {
   baseUrl: string;
   model: string;
   isDefault: boolean;
+  apiKeySource: "personal" | "platform" | "missing";
   // never includes the api key
 }
 
 export const updateAiProviderConfigSchema = z.object({
   label: z.string().min(1).max(50).optional(),
+  type: z.enum(AI_PROVIDER_TYPES).optional(),
   baseUrl: z.string().url().optional(),
   model: z.string().min(1).optional(),
   // omit to keep the existing key, pass "" to clear it, or a new value to replace it
@@ -140,6 +159,7 @@ export interface FactCheckSummary {
 
 export const createCommentSchema = z.object({
   text: z.string().min(1).max(1000),
+  parentCommentId: z.string().optional(),
 });
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 
@@ -147,7 +167,42 @@ export interface Comment {
   id: string;
   author: PublicUser;
   text: string;
+  parentCommentId: string | null;
+  replyCount: number;
+  likeCount: number;
+  likedByMe: boolean;
   createdAt: string;
+}
+
+export const NOTIFICATION_TYPES = [
+  "follow",
+  "comment",
+  "comment_reply",
+  "comment_like",
+  "mention",
+  "message",
+  "snap",
+  "close_friend",
+] as const;
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+export interface UserNotification {
+  id: string;
+  type: NotificationType;
+  actor: PublicUser;
+  postId: string | null;
+  commentId: string | null;
+  conversationId: string | null;
+  snapId: string | null;
+  commentText: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface NotificationsPage {
+  notifications: UserNotification[];
+  nextCursor: string | null;
+  unreadCount: number;
 }
 
 export const createStorySchema = z.object({
@@ -169,26 +224,70 @@ export interface StoryGroup {
   stories: Story[];
 }
 
+export const encryptedSnapPayloadSchema = z.object({
+  version: z.literal(1),
+  imageIv: z.string().length(16),
+  textIv: z.string().length(16),
+  encryptedText: z.string().min(24).max(3000),
+  wrappedKeys: z
+    .record(z.string().regex(/^[a-f0-9]{64}$/), z.string().min(1).max(2048))
+    .refine((keys) => Object.keys(keys).length > 0 && Object.keys(keys).length <= 512),
+});
+export type EncryptedSnapPayload = z.infer<typeof encryptedSnapPayloadSchema>;
+
 export const createSnapSchema = z.object({
   imageKey: z.string().min(1),
   text: z.string().max(500).optional(),
+  encryptedPayload: encryptedSnapPayloadSchema.optional(),
   recipientUsernames: z.array(z.string()).min(1).max(50),
-});
+}).refine((data) => !(data.text !== undefined && data.encryptedPayload !== undefined));
 export type CreateSnapInput = z.infer<typeof createSnapSchema>;
+
+export const snapEncryptionKeysSchema = z.object({
+  recipientUsernames: z.array(z.string().min(1)).min(1).max(50),
+});
+export type SnapEncryptionKeysInput = z.infer<typeof snapEncryptionKeysSchema>;
 
 export interface InboxSnap {
   id: string;
   sender: PublicUser;
   imageKey: string;
   text: string | null;
+  isEncrypted: boolean;
+  encryptedPayload: EncryptedSnapPayload | null;
   createdAt: string;
   viewedAt: string | null;
 }
 
-export const sendMessageSchema = z.object({
-  text: z.string().min(1).max(4000),
+export interface SnapStreakSummary {
+  friend: PublicUser;
+  currentStreak: number;
+  bestStreak: number;
+  lastExchangeAt: string | null;
+  waitingForYou: boolean;
+  waitingForThem: boolean;
+}
+
+export const encryptedMessagePayloadSchema = z.object({
+  version: z.literal(1),
+  iv: z.string().min(16).max(32),
+  ciphertext: z.string().min(1).max(12000),
+  wrappedKeys: z
+    .record(z.string().regex(/^[a-f0-9]{64}$/), z.string().min(1).max(2048))
+    .refine((keys) => Object.keys(keys).length > 0 && Object.keys(keys).length <= 500),
 });
+export type EncryptedMessagePayload = z.infer<typeof encryptedMessagePayloadSchema>;
+
+export const sendMessageSchema = z.union([
+  z.object({ text: z.string().min(1).max(4000) }).strict(),
+  z.object({ encryptedPayload: encryptedMessagePayloadSchema }).strict(),
+]);
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+
+export const registerEncryptionKeySchema = z.object({
+  publicKey: z.string().min(300).max(1000),
+});
+export type RegisterEncryptionKeyInput = z.infer<typeof registerEncryptionKeySchema>;
 
 export const startConversationSchema = z.object({
   username: z.string().min(1),
@@ -209,13 +308,20 @@ export interface ConversationSummary {
   isGroup: boolean;
   members: PublicUser[];
   otherMember: PublicUser | null;
-  lastMessage: { text: string; createdAt: string; senderId: string } | null;
+  lastMessage: {
+    text: string | null;
+    isEncrypted: boolean;
+    createdAt: string;
+    senderId: string;
+  } | null;
 }
 
 export interface ConversationMessage {
   id: string;
   senderId: string;
-  text: string;
+  text: string | null;
+  isEncrypted: boolean;
+  encryptedPayload: EncryptedMessagePayload | null;
   createdAt: string;
 }
 

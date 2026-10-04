@@ -1,14 +1,57 @@
 import type { FastifyInstance } from "fastify";
 import { createPostSchema } from "@app/shared";
-import type { FeedPage } from "@app/shared";
+import type { FeedItem, FeedPage } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { deleteMediaIfUnreferenced } from "../storage.js";
 import { ownsMedia } from "../mediaAccess.js";
 import { getBlockedUserIds, getCloseFriendGrantedAuthorIds } from "../visibility.js";
+import { toPublicUser } from "../serializers.js";
 import { postWithCountsInclude, toFeedPost } from "../postSerializer.js";
+import { createMentionNotifications } from "../notifications.js";
 
 const DEFAULT_LIMIT = 20;
+
+type FeedCursor = Pick<FeedItem, "type" | "id" | "createdAt">;
+
+function parseFeedCursor(value?: string): FeedCursor | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
+      type?: unknown;
+      id?: unknown;
+      createdAt?: unknown;
+    };
+    if (
+      (parsed.type !== "post" && parsed.type !== "follow") ||
+      typeof parsed.id !== "string" ||
+      typeof parsed.createdAt !== "string" ||
+      !Number.isFinite(new Date(parsed.createdAt).getTime())
+    ) {
+      return null;
+    }
+    return {
+      type: parsed.type,
+      id: parsed.id,
+      createdAt: new Date(parsed.createdAt).toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function encodeFeedCursor(item: FeedItem): string {
+  return Buffer.from(
+    JSON.stringify({ type: item.type, id: item.id, createdAt: item.createdAt })
+  ).toString("base64url");
+}
+
+function compareFeedItems(a: FeedItem, b: FeedItem): number {
+  const dateOrder = b.createdAt.localeCompare(a.createdAt);
+  if (dateOrder) return dateOrder;
+  if (a.type !== b.type) return a.type === "post" ? -1 : 1;
+  return b.id.localeCompare(a.id);
+}
 
 export async function postRoutes(app: FastifyInstance): Promise<void> {
   app.post("/posts", { preHandler: requireAuth }, async (request, reply) => {
@@ -44,6 +87,16 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       },
       include: postWithCountsInclude,
     });
+
+    try {
+      await createMentionNotifications({
+        text: post.text ?? "",
+        actorId: request.userId!,
+        postId: post.id,
+      });
+    } catch (error) {
+      request.log.error(error, "Post mention notification creation failed");
+    }
 
     return reply.code(201).send({ post: toFeedPost(post) });
   });
@@ -133,7 +186,10 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         Number(request.query.limit) || DEFAULT_LIMIT,
         50
       );
-      const cursor = request.query.cursor;
+      const cursor = parseFeedCursor(request.query.cursor);
+      if (request.query.cursor && !cursor) {
+        return reply.code(400).send({ error: "Invalid feed cursor" });
+      }
       const viewerId = request.userId!;
 
       const [user, following, blockedIds, closeFriendGrantedAuthorIds] =
@@ -151,34 +207,87 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         ...following.map((f) => f.followeeId),
       ].filter((id) => !blockedIds.includes(id));
 
-      const posts = await prisma.post.findMany({
-        where: {
-          authorId: { in: authorIds },
-          OR: [
-            { visibility: "public" },
-            { authorId: viewerId },
-            {
-              visibility: "close_friends",
-              authorId: { in: closeFriendGrantedAuthorIds },
-            },
-          ],
-        },
-        include: postWithCountsInclude,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: limit + 1,
-        ...(cursor
-          ? { cursor: { id: cursor }, skip: 1 }
-          : {}),
-      });
+      const cursorDate = cursor ? new Date(cursor.createdAt) : null;
+      const [posts, follows] = await Promise.all([
+        prisma.post.findMany({
+          where: {
+            authorId: { in: authorIds },
+            OR: [
+              { visibility: "public" },
+              { authorId: viewerId },
+              {
+                visibility: "close_friends",
+                authorId: { in: closeFriendGrantedAuthorIds },
+              },
+            ],
+            ...(cursor && cursorDate
+              ? {
+                  AND: [
+                    {
+                      OR: [
+                        { createdAt: { lt: cursorDate } },
+                        ...(cursor.type === "post"
+                          ? [{ createdAt: cursorDate, id: { lt: cursor.id } }]
+                          : []),
+                      ],
+                    },
+                  ],
+                }
+              : {}),
+          },
+          include: postWithCountsInclude,
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: limit + 1,
+        }),
+        prisma.follow.findMany({
+          where: {
+            followerId: { in: authorIds },
+            followeeId: { notIn: blockedIds },
+            ...(cursor && cursorDate
+              ? {
+                  AND: [
+                    {
+                      OR: [
+                        { createdAt: { lt: cursorDate } },
+                        ...(cursor.type === "post"
+                          ? [{ createdAt: cursorDate }]
+                          : [{ createdAt: cursorDate, id: { lt: cursor.id } }]),
+                      ],
+                    },
+                  ],
+                }
+              : {}),
+          },
+          include: { follower: true, followee: true },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: limit + 1,
+        }),
+      ]);
 
-      const hasMore = posts.length > limit;
-      const page = hasMore ? posts.slice(0, limit) : posts;
-      const nextCursor = hasMore ? page[page.length - 1].id : null;
+      const items: FeedItem[] = [
+        ...posts.map((post): FeedItem => ({
+          type: "post",
+          id: post.id,
+          createdAt: post.createdAt.toISOString(),
+          post: toFeedPost(post),
+        })),
+        ...follows.map((follow): FeedItem => ({
+          type: "follow",
+          id: follow.id,
+          createdAt: follow.createdAt.toISOString(),
+          follower: toPublicUser(follow.follower),
+          followee: toPublicUser(follow.followee),
+        })),
+      ].sort(compareFeedItems);
+
+      const hasMore = items.length > limit;
+      const page = hasMore ? items.slice(0, limit) : items;
+      const nextCursor = hasMore ? encodeFeedCursor(page[page.length - 1]) : null;
 
       const lastSeenAt = user.lastSeenPostCreatedAt;
       let boundaryIndex: number | null = null;
       if (lastSeenAt) {
-        const idx = page.findIndex((p) => p.createdAt <= lastSeenAt);
+        const idx = page.findIndex((item) => new Date(item.createdAt) <= lastSeenAt);
         boundaryIndex = idx === -1 ? null : idx;
       } else if (page.length > 0) {
         // first ever visit: everything is "new", no boundary yet
@@ -187,7 +296,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       const caughtUp = !hasMore && (boundaryIndex !== null || page.length === 0);
 
       const responseBody: FeedPage = {
-        posts: page.map(toFeedPost),
+        items: page,
         nextCursor,
         caughtUp,
         boundaryIndex,
@@ -198,21 +307,25 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
 
   // Marks the newest post currently loaded in the feed as "seen" so the
   // caught-up boundary advances on the next visit.
-  app.post<{ Body: { postId: string } }>(
+  app.post<{ Body: { itemId: string; itemType: "post" | "follow" } }>(
     "/feed/mark-seen",
     { preHandler: requireAuth },
     async (request, reply) => {
-      const post = await prisma.post.findUnique({
-        where: { id: request.body.postId },
-      });
-      if (!post) {
-        return reply.code(404).send({ error: "Post not found" });
+      const { itemId, itemType } = request.body;
+      if (itemType !== "post" && itemType !== "follow") {
+        return reply.code(400).send({ error: "Invalid feed item type" });
       }
+
+      const item = itemType === "post"
+        ? await prisma.post.findUnique({ where: { id: itemId } })
+        : await prisma.follow.findUnique({ where: { id: itemId } });
+      if (!item) return reply.code(404).send({ error: "Feed item not found" });
+
       await prisma.user.update({
         where: { id: request.userId! },
         data: {
-          lastSeenPostId: post.id,
-          lastSeenPostCreatedAt: post.createdAt,
+          lastSeenPostId: itemType === "post" ? item.id : null,
+          lastSeenPostCreatedAt: item.createdAt,
         },
       });
       return reply.code(204).send();

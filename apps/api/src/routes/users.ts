@@ -5,12 +5,51 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { postWithCountsInclude, toFeedPost } from "../postSerializer.js";
-import { isBlocked, getCloseFriendGrantedAuthorIds } from "../visibility.js";
+import {
+  getBlockedUserIds,
+  getCloseFriendGrantedAuthorIds,
+  isBlocked,
+} from "../visibility.js";
 import { ownsMedia } from "../mediaAccess.js";
 
 const DEFAULT_LIMIT = 20;
+const USER_DIRECTORY_LIMIT = 20;
 
 export async function userRoutes(app: FastifyInstance): Promise<void> {
+  app.get<{ Querystring: { q?: string; cursor?: string } }>(
+    "/users",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const search = request.query.q?.trim().slice(0, 50) ?? "";
+      const blockedUserIds = await getBlockedUserIds(request.userId!);
+      const users = await prisma.user.findMany({
+        where: {
+          id: { not: request.userId!, notIn: blockedUserIds },
+          ...(search
+            ? {
+                OR: [
+                  { username: { contains: search, mode: "insensitive" as const } },
+                  { displayName: { contains: search, mode: "insensitive" as const } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: USER_DIRECTORY_LIMIT + 1,
+        ...(request.query.cursor
+          ? { cursor: { id: request.query.cursor }, skip: 1 }
+          : {}),
+      });
+
+      const hasMore = users.length > USER_DIRECTORY_LIMIT;
+      const page = hasMore ? users.slice(0, USER_DIRECTORY_LIMIT) : users;
+      return reply.send({
+        users: page.map(toPublicUser),
+        nextCursor: hasMore ? page[page.length - 1].id : null,
+      });
+    }
+  );
+
   app.patch("/users/me", { preHandler: requireAuth }, async (request, reply) => {
     const parsed = updateProfileSchema.safeParse(request.body);
     if (!parsed.success) {

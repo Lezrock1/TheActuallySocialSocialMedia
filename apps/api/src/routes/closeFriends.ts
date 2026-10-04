@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
+import { createUserNotification } from "../notifications.js";
 
 export async function closeFriendRoutes(app: FastifyInstance): Promise<void> {
   app.get(
@@ -30,7 +31,15 @@ export async function closeFriendRoutes(app: FastifyInstance): Promise<void> {
       if (target.id === request.userId) {
         return reply.code(400).send({ error: "Cannot add yourself" });
       }
-      await prisma.closeFriend.upsert({
+      const existing = await prisma.closeFriend.findUnique({
+        where: {
+          ownerId_friendId: {
+            ownerId: request.userId!,
+            friendId: target.id,
+          },
+        },
+      });
+      const closeFriend = await prisma.closeFriend.upsert({
         where: {
           ownerId_friendId: {
             ownerId: request.userId!,
@@ -40,6 +49,14 @@ export async function closeFriendRoutes(app: FastifyInstance): Promise<void> {
         create: { ownerId: request.userId!, friendId: target.id },
         update: {},
       });
+      if (!existing) {
+        await createUserNotification({
+          recipientId: target.id,
+          actorId: request.userId!,
+          type: "close_friend",
+          dedupeKey: `close-friend:${closeFriend.id}`,
+        }).catch((error) => request.log.error(error, "Close-friend notification creation failed"));
+      }
       return reply.code(204).send();
     }
   );

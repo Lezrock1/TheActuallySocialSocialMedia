@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { isBlocked } from "../visibility.js";
+import { createUserNotification } from "../notifications.js";
 
 export async function followRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { username: string } }>(
@@ -22,7 +23,15 @@ export async function followRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(403).send({ error: "Not available" });
       }
 
-      await prisma.follow.upsert({
+      const existingFollow = await prisma.follow.findUnique({
+        where: {
+          followerId_followeeId: {
+            followerId: request.userId!,
+            followeeId: target.id,
+          },
+        },
+      });
+      const follow = await prisma.follow.upsert({
         where: {
           followerId_followeeId: {
             followerId: request.userId!,
@@ -32,6 +41,18 @@ export async function followRoutes(app: FastifyInstance): Promise<void> {
         create: { followerId: request.userId!, followeeId: target.id },
         update: {},
       });
+      if (!existingFollow) {
+        try {
+          await createUserNotification({
+            recipientId: target.id,
+            actorId: request.userId!,
+            type: "follow",
+            dedupeKey: `follow:${follow.id}`,
+          });
+        } catch (error) {
+          request.log.error(error, "Follow notification creation failed");
+        }
+      }
       return reply.code(204).send();
     }
   );
