@@ -12,7 +12,6 @@ import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import StoriesBar from "../components/StoriesBar.js";
 import PostCard from "../components/PostCard.js";
-import FollowBox from "../components/FollowBox.js";
 import Avatar from "../components/Avatar.js";
 
 async function fetchFeed(cursor: string | null): Promise<FeedPageType> {
@@ -57,7 +56,6 @@ export default function FeedPage() {
   const [imageKey, setImageKey] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<PostVisibility>("public");
   const [posting, setPosting] = useState(false);
-  const [friendSearchRequest, setFriendSearchRequest] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const firstPageQuery = useQuery({
@@ -132,15 +130,10 @@ export default function FeedPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8">
-      <PageHeader
-        title="Feed"
-        onSearchClick={() => setFriendSearchRequest((request) => request + 1)}
-      />
+      <PageHeader title="Feed" showSearch />
       <NavBar />
 
       <StoriesBar />
-
-      <FollowBox focusRequest={friendSearchRequest} />
 
       <form onSubmit={onPost} className={`${card} mb-6 flex flex-col gap-3`}>
         <textarea

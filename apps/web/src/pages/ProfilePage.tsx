@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FeedPost, UserProfile } from "@app/shared";
+import type { FeedPost, PublicUser, UserProfile } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
 import { mediaUrl, uploadMedia } from "../lib/upload.js";
 import { useAuth } from "../auth/AuthContext.js";
@@ -39,10 +40,19 @@ export default function ProfilePage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isBlocked, setIsBlocked] = useState(false);
   const [postsLoaded, setPostsLoaded] = useState(false);
+  const [connectionList, setConnectionList] = useState<"followers" | "following" | null>(null);
 
   const profileQuery = useQuery({
     queryKey: ["profile", username],
     queryFn: () => fetchProfile(username),
+  });
+  const connectionQuery = useQuery({
+    queryKey: ["profile-connections", username, connectionList],
+    queryFn: () => {
+      if (!connectionList) throw new Error("No connection list selected");
+      return apiFetch<{ users: PublicUser[] }>(`/users/${username}/${connectionList}`);
+    },
+    enabled: !!connectionList,
   });
 
   useEffect(() => {
@@ -222,10 +232,22 @@ export default function ProfilePage() {
                 )}
               </div>
               {profile.bio && <p className="mt-1 text-sm">{profile.bio}</p>}
-              <div className="mt-2 flex gap-4 text-sm text-gray-500">
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
                 <span>{profile.postCount} Posts</span>
-                <span>{profile.followerCount} Follower</span>
-                <span>{profile.followingCount} Folgt</span>
+                {profile.isMe ? (
+                  <button type="button" onClick={() => setConnectionList("followers")} className="hover:text-gray-900 hover:underline">
+                    {profile.followerCount} Followers
+                  </button>
+                ) : (
+                  <span>{profile.followerCount} Followers</span>
+                )}
+                {profile.isMe ? (
+                  <button type="button" onClick={() => setConnectionList("following")} className="hover:text-gray-900 hover:underline">
+                    {profile.followingCount} Following
+                  </button>
+                ) : (
+                  <span>{profile.followingCount} Following</span>
+                )}
               </div>
               {!profile.isMe && (
                 <div className="mt-2 flex gap-3 text-xs text-gray-400">
@@ -290,6 +312,60 @@ export default function ProfilePage() {
             </button>
           )}
         </>
+      )}
+      {connectionList && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setConnectionList(null)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="connection-list-title"
+            className="w-full max-w-sm overflow-hidden rounded-xl bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+              <h2 id="connection-list-title" className="text-sm font-semibold">
+                {connectionList === "followers" ? "Followers" : "Following"}
+              </h2>
+              <button
+                type="button"
+                aria-label="Close list"
+                onClick={() => setConnectionList(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-xl text-gray-500 hover:bg-gray-100"
+              >
+                ×
+              </button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto px-4">
+              {connectionQuery.isLoading ? (
+                <p className="py-5 text-sm text-gray-500">Loading people...</p>
+              ) : connectionQuery.isError ? (
+                <p role="alert" className="py-5 text-sm text-red-600">Could not load this list.</p>
+              ) : connectionQuery.data?.users.length ? (
+                <div className="divide-y divide-gray-100">
+                  {connectionQuery.data.users.map((person) => (
+                    <Link
+                      key={person.id}
+                      to={`/u/${person.username}`}
+                      onClick={() => setConnectionList(null)}
+                      className="flex items-center gap-3 py-3 hover:bg-gray-50"
+                    >
+                      <Avatar avatarKey={person.avatarKey} username={person.username} size={38} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold">{person.displayName || `@${person.username}`}</span>
+                        {person.displayName && <span className="block truncate text-xs text-gray-500">@{person.username}</span>}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <p className="py-5 text-sm text-gray-500">No {connectionList} yet.</p>
+              )}
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );

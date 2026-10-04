@@ -10,6 +10,7 @@ import ProfilePage from "./pages/ProfilePage.js";
 import PostThreadPage from "./pages/PostThreadPage.js";
 import InvitationsPage from "./pages/InvitationsPage.js";
 import NotificationsPage from "./pages/NotificationsPage.js";
+import PeopleSearchPage from "./pages/PeopleSearchPage.js";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -68,6 +69,14 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <NotificationsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/people"
+        element={
+          <RequireAuth>
+            <PeopleSearchPage />
           </RequireAuth>
         }
       />

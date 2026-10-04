@@ -16,6 +16,47 @@ const DEFAULT_LIMIT = 20;
 const USER_DIRECTORY_LIMIT = 20;
 
 export async function userRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/users/suggestions", { preHandler: requireAuth }, async (request, reply) => {
+    const [following, blockedUserIds] = await Promise.all([
+      prisma.follow.findMany({
+        where: { followerId: request.userId! },
+        select: { followeeId: true },
+      }),
+      getBlockedUserIds(request.userId!),
+    ]);
+    const followedIds = following.map((follow) => follow.followeeId);
+    if (followedIds.length === 0) return reply.send({ users: [] });
+
+    const excludedIds = [request.userId!, ...followedIds, ...blockedUserIds];
+    const mutualCounts = await prisma.follow.groupBy({
+      by: ["followeeId"],
+      where: {
+        followerId: { in: followedIds },
+        followeeId: { notIn: excludedIds },
+      },
+      _count: { followeeId: true },
+    });
+    const ranked = mutualCounts
+      .sort((a, b) =>
+        b._count.followeeId - a._count.followeeId ||
+        a.followeeId.localeCompare(b.followeeId)
+      )
+      .slice(0, 20);
+    const users = await prisma.user.findMany({
+      where: { id: { in: ranked.map((candidate) => candidate.followeeId) } },
+    });
+    const userById = new Map(users.map((candidate) => [candidate.id, candidate]));
+
+    return reply.send({
+      users: ranked.flatMap((candidate) => {
+        const suggestedUser = userById.get(candidate.followeeId);
+        return suggestedUser
+          ? [{ ...toPublicUser(suggestedUser), mutualCount: candidate._count.followeeId }]
+          : [];
+      }),
+    });
+  });
+
   app.get<{ Querystring: { q?: string; cursor?: string } }>(
     "/users",
     { preHandler: requireAuth },

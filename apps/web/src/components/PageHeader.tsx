@@ -4,10 +4,10 @@ import { useAuth } from "../auth/AuthContext.js";
 
 export default function PageHeader({
   title,
-  onSearchClick,
+  showSearch = false,
 }: {
   title: string;
-  onSearchClick?: () => void;
+  showSearch?: boolean;
 }) {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -28,19 +28,18 @@ export default function PageHeader({
         <Link to={`/u/${user?.username}`} className="underline">
           @{user?.username}
         </Link>
-        {onSearchClick && (
-          <button
-            type="button"
+        {showSearch && (
+          <Link
+            to="/people"
             aria-label="Search friends"
             title="Search friends"
-            onClick={onSearchClick}
             className={headerIconButton}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="10.8" cy="10.8" r="6.3" />
               <path d="m15.5 15.5 4 4" />
             </svg>
-          </button>
+          </Link>
         )}
         <div className="relative">
           <button
