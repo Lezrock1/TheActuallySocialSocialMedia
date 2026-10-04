@@ -49,6 +49,7 @@ export default function SnapsPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioStep, setStudioStep] = useState<"capture" | "review">("capture");
+  const [cameraFacingMode, setCameraFacingMode] = useState<"environment" | "user">("environment");
   const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -125,7 +126,7 @@ export default function SnapsPage() {
       }
       try {
         const cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
+          video: { facingMode: { ideal: cameraFacingMode } },
           audio: false,
         });
         if (cancelled) {
@@ -148,7 +149,7 @@ export default function SnapsPage() {
       stream?.getTracks().forEach((track) => track.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
     };
-  }, [studioOpen, studioStep]);
+  }, [cameraFacingMode, studioOpen, studioStep]);
 
   useEffect(() => {
     if (!viewing) return;
@@ -455,7 +456,6 @@ export default function SnapsPage() {
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            capture="environment"
             className="hidden"
             onChange={onSelectImage}
           />
@@ -473,8 +473,14 @@ export default function SnapsPage() {
                   <p role="alert" className="absolute left-4 right-4 top-1/2 -translate-y-1/2 text-center text-sm text-white">{cameraError}</p>
                 )}
               </div>
-              <footer className="flex min-h-28 items-center justify-center gap-8 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-                <button type="button" onClick={() => fileInputRef.current?.click()} className="text-xs font-medium text-white/80 hover:text-white">Choose photo</button>
+              <footer className="flex min-h-28 items-center justify-center gap-4 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:gap-8 sm:px-6">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-20 text-center text-xs font-medium text-white/80 hover:text-white"
+                >
+                  Choose from photo library
+                </button>
                 <button
                   type="button"
                   onClick={capturePhoto}
@@ -483,7 +489,17 @@ export default function SnapsPage() {
                 >
                   <CameraIcon />
                 </button>
-                <span className="w-[4.5rem] text-center text-xs text-white/60">Rear camera</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCameraError(null);
+                    setCameraFacingMode((mode) => mode === "environment" ? "user" : "environment");
+                  }}
+                  aria-label={`Switch to ${cameraFacingMode === "environment" ? "front" : "rear"} camera`}
+                  className="w-20 text-center text-xs font-medium text-white/80 hover:text-white"
+                >
+                  {cameraFacingMode === "environment" ? "Front camera" : "Rear camera"}
+                </button>
               </footer>
             </>
           ) : (
