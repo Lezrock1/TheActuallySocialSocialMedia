@@ -3,6 +3,7 @@ import { toPublicUser } from "./serializers.js";
 
 export const postWithCountsInclude = {
   author: true,
+  poll: { select: { id: true } },
   _count: { select: { replies: true, comments: true } },
 } as const;
 
@@ -14,6 +15,7 @@ export function toFeedPost(post: {
   createdAt: Date;
   visibility: string;
   parentPostId: string | null;
+  poll: { id: string } | null;
   factCheckCount: number;
   _count: { replies: number; comments: number };
 }): FeedPost {
@@ -25,6 +27,7 @@ export function toFeedPost(post: {
     createdAt: post.createdAt.toISOString(),
     visibility: post.visibility as PostVisibility,
     parentPostId: post.parentPostId,
+    pollId: post.poll?.id ?? null,
     replyCount: post._count.replies,
     commentCount: post._count.comments,
     factCheckCount: post.factCheckCount,

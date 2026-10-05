@@ -101,6 +101,31 @@ export default function CommentsSection({
   const previewComments = showAllComments ? comments : comments.slice(0, 3);
   const previewIds = new Set(previewComments.map((comment) => comment.id));
 
+  function renderCommentTree(comment: Comment, depth = 0) {
+    const children = (repliesByParent.get(comment.id) ?? []).filter((reply) => previewIds.has(reply.id));
+    return (
+      <div key={comment.id} className="flex flex-col gap-2">
+        <CommentItem
+          comment={comment}
+          onReply={() => {
+            setShowAllComments(true);
+            setReplyTarget(comment);
+          }}
+          onToggleLike={() => void toggleLike(comment)}
+          liking={likingId === comment.id}
+        />
+        {children.length > 0 && (
+          <div
+            className="flex flex-col gap-2 border-l border-gray-100 pl-3"
+            style={{ marginLeft: depth < 4 ? 16 : 0 }}
+          >
+            {children.map((child) => renderCommentTree(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!text.trim() || posting) return;
@@ -154,30 +179,7 @@ export default function CommentsSection({
       <div className="flex flex-col gap-3">
           <div id={`comments-${postId}`} className="flex max-h-72 flex-col gap-3 overflow-y-auto">
             {isLoading && <p className="text-sm text-gray-400">Loading comments...</p>}
-            {rootComments.filter((comment) => previewIds.has(comment.id)).map((comment) => (
-              <div key={comment.id} className="flex flex-col gap-2">
-                <CommentItem
-                  comment={comment}
-                  onReply={() => {
-                    setShowAllComments(true);
-                    setReplyTarget(comment);
-                  }}
-                  onToggleLike={() => void toggleLike(comment)}
-                  liking={likingId === comment.id}
-                />
-                {(repliesByParent.get(comment.id) ?? [])
-                  .filter((reply) => previewIds.has(reply.id))
-                  .map((reply) => (
-                  <div key={reply.id} className="ml-8 border-l-2 border-gray-100 pl-3">
-                    <CommentItem
-                      comment={reply}
-                      onToggleLike={() => void toggleLike(reply)}
-                      liking={likingId === reply.id}
-                    />
-                  </div>
-                ))}
-              </div>
-            ))}
+            {rootComments.filter((comment) => previewIds.has(comment.id)).map((comment) => renderCommentTree(comment))}
             {!isLoading && comments.length === 0 && (
               <p className="text-sm text-gray-400">No comments yet. Start the conversation.</p>
             )}

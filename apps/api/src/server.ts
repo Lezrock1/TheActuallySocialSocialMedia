@@ -22,6 +22,7 @@ import { moderationRoutes } from "./routes/moderation.js";
 import { closeFriendRoutes } from "./routes/closeFriends.js";
 import { notificationRoutes } from "./routes/notifications.js";
 import { encryptionRoutes } from "./routes/encryption.js";
+import { pollRoutes } from "./routes/polls.js";
 
 async function main(): Promise<void> {
   const app = Fastify({ logger: true });
@@ -54,6 +55,7 @@ async function main(): Promise<void> {
   await app.register(closeFriendRoutes);
   await app.register(notificationRoutes);
   await app.register(encryptionRoutes);
+  await app.register(pollRoutes);
 
   await app.listen({ port: env.port, host: "0.0.0.0" });
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,26 +22,20 @@ async function fetchFeed(cursor: string | null): Promise<FeedPageType> {
 
 function FollowActivityCard({ item }: { item: Extract<FeedItem, { type: "follow" }> }) {
   return (
-    <article className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-3">
-        <Link to={`/u/${item.follower.username}`} aria-label={`View @${item.follower.username}'s profile`}>
-          <Avatar
-            avatarKey={item.follower.avatarKey}
-            username={item.follower.username}
-            size={36}
-          />
-        </Link>
-        <p className="min-w-0 flex-1 text-sm text-gray-700">
-          <Link to={`/u/${item.follower.username}`} className="font-semibold text-gray-900 hover:underline">
+    <article className="px-1 py-1.5">
+      <div className="flex items-center gap-2.5 border-l-2 border-gray-200 pl-3">
+        <Avatar avatarKey={item.follower.avatarKey} username={item.follower.username} size={28} />
+        <p className="min-w-0 flex-1 text-xs leading-5 text-gray-500">
+          <Link to={`/u/${item.follower.username}`} className="font-semibold text-gray-700 hover:underline">
             @{item.follower.username}
           </Link>{" "}
-          started following{" "}
-          <Link to={`/u/${item.followee.username}`} className="font-semibold text-gray-900 hover:underline">
+          followed{" "}
+          <Link to={`/u/${item.followee.username}`} className="font-semibold text-gray-700 hover:underline">
             @{item.followee.username}
           </Link>
         </p>
-        <time className="shrink-0 text-right text-[11px] text-gray-400">
-          {new Date(item.createdAt).toLocaleString("en-US")}
+        <time className="shrink-0 text-[10px] text-gray-400">
+          {new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
         </time>
       </div>
     </article>
@@ -56,7 +50,15 @@ export default function FeedPage() {
   const [imageKey, setImageKey] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<PostVisibility>("public");
   const [posting, setPosting] = useState(false);
+  const [pollEnabled, setPollEnabled] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [composerError, setComposerError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef = useRef(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
 
   const firstPageQuery = useQuery({
     queryKey: ["feed", "first"],
@@ -66,15 +68,49 @@ export default function FeedPage() {
   const allPages = firstPageQuery.data ? [firstPageQuery.data, ...pages] : pages;
   const lastPage = allPages[allPages.length - 1];
 
-  async function loadMore() {
-    if (!lastPage?.nextCursor) return;
-    const next = await fetchFeed(lastPage.nextCursor);
-    setPages((p) => [...p, next]);
-  }
+  const loadMore = useCallback(async (cursor: string) => {
+    if (loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setLoadMoreError(false);
+    try {
+      const next = await fetchFeed(cursor);
+      setPages((current) => [...current, next]);
+    } catch {
+      setLoadMoreError(true);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const cursor = lastPage?.nextCursor;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!cursor || !sentinel) return;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !loadingMore && !loadMoreError) {
+        void loadMore(cursor);
+      }
+    }, { rootMargin: "600px 0px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [lastPage?.nextCursor, loadMore, loadMoreError, loadingMore]);
 
   async function onPost(e: FormEvent) {
     e.preventDefault();
-    if (!text.trim() && !imageKey) return;
+    if (!text.trim() && !imageKey && !pollEnabled) return;
+    const normalizedOptions = pollOptions.map((option) => option.trim()).filter(Boolean);
+    if (pollEnabled && (!pollQuestion.trim() || normalizedOptions.length < 2)) {
+      setComposerError("Add a poll question and at least two answers.");
+      return;
+    }
+    if (pollEnabled && new Set(normalizedOptions.map((option) => option.toLocaleLowerCase())).size !== normalizedOptions.length) {
+      setComposerError("Poll answers must be different.");
+      return;
+    }
+    setComposerError(null);
     setPosting(true);
     try {
       await apiFetch("/posts", {
@@ -83,11 +119,15 @@ export default function FeedPage() {
           text: text || undefined,
           imageKey: imageKey ?? undefined,
           visibility,
+          poll: pollEnabled ? { question: pollQuestion.trim(), options: normalizedOptions } : undefined,
         }),
       });
       setText("");
       setImageKey(null);
       setVisibility("public");
+      setPollEnabled(false);
+      setPollQuestion("");
+      setPollOptions(["", ""]);
       setPages([]);
       await queryClient.invalidateQueries({ queryKey: ["feed", "first"] });
     } finally {
@@ -150,8 +190,61 @@ export default function FeedPage() {
             className="max-h-48 rounded-lg object-cover"
           />
         )}
+        {pollEnabled && (
+          <div className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3">
+            <input
+              value={pollQuestion}
+              onChange={(event) => setPollQuestion(event.target.value)}
+              placeholder="Ask a question..."
+              maxLength={180}
+              className={input}
+            />
+            {pollOptions.map((option, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  value={option}
+                  onChange={(event) => setPollOptions((current) => current.map((value, optionIndex) => optionIndex === index ? event.target.value : value))}
+                  placeholder={`Answer ${index + 1}`}
+                  maxLength={80}
+                  className={`${input} min-w-0 flex-1`}
+                />
+                {pollOptions.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setPollOptions((current) => current.filter((_, optionIndex) => optionIndex !== index))}
+                    aria-label={`Remove answer ${index + 1}`}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg text-gray-500 hover:bg-gray-100"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+            {pollOptions.length < 4 && (
+              <button
+                type="button"
+                onClick={() => setPollOptions((current) => [...current, ""])}
+                className="self-start text-xs font-semibold text-blue-700 hover:underline"
+              >
+                + Add answer
+              </button>
+            )}
+          </div>
+        )}
+        {composerError && <p role="alert" className="text-xs text-red-600">{composerError}</p>}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setPollEnabled((enabled) => !enabled);
+                setComposerError(null);
+              }}
+              aria-pressed={pollEnabled}
+              className={`${btnSecondary} py-1.5 ${pollEnabled ? "border-blue-500 bg-blue-50 text-blue-700" : ""}`}
+            >
+              {pollEnabled ? "Remove poll" : "Add poll"}
+            </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -214,9 +307,18 @@ export default function FeedPage() {
       </div>
 
       {lastPage?.nextCursor && (
-        <button onClick={() => void loadMore()} className={`${btnSecondary} mt-4 w-full`}>
-          Load more posts
-        </button>
+        <div ref={loadMoreSentinelRef} className="flex min-h-12 items-center justify-center py-3">
+          {loadingMore && <p className="text-xs text-gray-400">Loading more posts...</p>}
+          {loadMoreError && (
+            <button
+              type="button"
+              onClick={() => void loadMore(lastPage.nextCursor!)}
+              className={`${btnSecondary} text-xs`}
+            >
+              Retry loading posts
+            </button>
+          )}
+        </div>
       )}
 
       {!lastPage?.nextCursor && allPages.length > 0 && (

@@ -8,6 +8,7 @@ import Avatar from "./Avatar.js";
 import AiChatPanel from "./AiChatPanel.js";
 import FactCheckTransparency from "./FactCheckTransparency.js";
 import CommentsSection from "./CommentsSection.js";
+import PollCard from "./PollCard.js";
 
 export default function PostCard({
   post,
@@ -54,6 +55,7 @@ export default function PostCard({
         )}
       </div>
       {post.text && <p className="whitespace-pre-wrap text-[15px] leading-snug">{post.text}</p>}
+      {post.pollId && <PollCard pollId={post.pollId} />}
       {post.imageKey && (
         <img
           src={mediaUrl(post.imageKey)}
@@ -61,9 +63,18 @@ export default function PostCard({
           className="mt-2 max-h-96 w-full rounded-lg object-cover"
         />
       )}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
-        <span>{new Date(post.createdAt).toLocaleString("en-US")}</span>
-        <AiChatPanel postId={post.id} />
+      <div className="mt-3 flex min-w-0 items-center justify-between gap-2">
+        <time dateTime={post.createdAt} className="shrink-0 text-[11px] text-gray-400">
+          {new Date(post.createdAt).toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+        </time>
+        <div className="min-w-0 flex-1">
+          <AiChatPanel postId={post.id} />
+        </div>
       </div>
       <CommentsSection
         postId={post.id}

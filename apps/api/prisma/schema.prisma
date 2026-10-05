@@ -39,6 +39,8 @@ model User {
   conversations     ConversationMember[]
   messages          Message[]
   encryptionKeys    EncryptionKey[]
+  pollVotes         PollVote[]
+  storyReactions    StoryReaction[]
   snapStreaksAs     SnapStreak[]        @relation("SnapStreakUserA")
   snapStreaksBs     SnapStreak[]        @relation("SnapStreakUserB")
   invitations       Invitation[]
@@ -95,6 +97,7 @@ model Post {
   comments        Comment[]
   notifications   Notification[]
   aiConversations AiConversation[]
+  poll            Poll?
 
   @@index([authorId, createdAt])
   @@index([parentPostId])
@@ -166,8 +169,23 @@ model Story {
   visibility String   @default("public")
 
   author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions StoryReaction[]
 
   @@index([authorId, expiresAt])
+}
+
+model StoryReaction {
+  id        String   @id @default(cuid())
+  storyId   String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, userId])
+  @@index([userId, createdAt])
 }
 
 model CloseFriend {
@@ -301,6 +319,45 @@ model Message {
   sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
+}
+
+model Poll {
+  id        String   @id @default(cuid())
+  postId    String   @unique
+  question  String
+  createdAt DateTime @default(now())
+
+  post    Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  options PollOption[]
+  votes   PollVote[]
+}
+
+model PollOption {
+  id        String   @id @default(cuid())
+  pollId    String
+  text      String
+  position  Int
+  createdAt DateTime @default(now())
+
+  poll  Poll        @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes PollVote[]
+
+  @@unique([pollId, position])
+}
+
+model PollVote {
+  id        String   @id @default(cuid())
+  pollId    String
+  optionId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  option PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId])
+  @@index([optionId])
 }
 
 model EncryptionKey {

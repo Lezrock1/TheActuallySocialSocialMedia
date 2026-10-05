@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import type { FormEvent } from "react";
+import { STORY_REACTIONS } from "@app/shared";
 import type { PostVisibility, StoryGroup } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import { mediaUrl, uploadMedia } from "../lib/upload.js";
@@ -12,10 +15,14 @@ async function fetchStoryGroups(): Promise<StoryGroup[]> {
 
 export default function StoriesBar() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [viewing, setViewing] = useState<StoryGroup | null>(null);
   const [storyIndex, setStoryIndex] = useState(0);
+  const [replyText, setReplyText] = useState("");
+  const [replySending, setReplySending] = useState(false);
+  const [reactionError, setReactionError] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<PostVisibility>("public");
 
   const { data: groups = [] } = useQuery({
@@ -58,6 +65,57 @@ export default function StoriesBar() {
   function openStoryGroup(group: StoryGroup) {
     setViewing(group);
     setStoryIndex(0);
+    setReplyText("");
+    setReactionError(null);
+  }
+
+  async function reactToStory(emoji: (typeof STORY_REACTIONS)[number]) {
+    if (!viewing) return;
+    const storyId = viewing.stories[storyIndex].id;
+    setReactionError(null);
+    try {
+      const reaction = await apiFetch<{
+        reactionCounts: { emoji: string; count: number }[];
+        myReaction: string | null;
+      }>(`/stories/${storyId}/reactions`, {
+        method: "POST",
+        body: JSON.stringify({ emoji }),
+      });
+      setViewing((current) => current
+        ? {
+            ...current,
+            stories: current.stories.map((story, index) =>
+              index === storyIndex ? { ...story, ...reaction } : story
+            ),
+          }
+        : current);
+      await queryClient.invalidateQueries({ queryKey: ["stories"] });
+    } catch {
+      setReactionError("Could not send this reaction.");
+    }
+  }
+
+  async function replyToStory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const message = replyText.trim();
+    if (!viewing || !message || replySending) return;
+    setReplySending(true);
+    setReactionError(null);
+    try {
+      const result = await apiFetch<{ conversationId: string }>("/conversations", {
+        method: "POST",
+        body: JSON.stringify({ username: viewing.author.username }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      setViewing(null);
+      navigate(`/dms?conversation=${result.conversationId}`, {
+        state: { draftMessage: message },
+      });
+    } catch {
+      setReactionError("Could not open a private reply.");
+    } finally {
+      setReplySending(false);
+    }
   }
 
   async function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -175,6 +233,52 @@ export default function StoriesBar() {
                 aria-label="Next story"
                 className="absolute inset-y-0 right-0 w-1/2"
               />
+              <div
+                className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-3 pb-4 pt-12"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {viewing.stories[storyIndex].reactionCounts.length > 0 && (
+                  <div className="mb-2 flex gap-2 text-xs text-white/90">
+                    {viewing.stories[storyIndex].reactionCounts.map((reaction) => (
+                      <span key={reaction.emoji}>{reaction.emoji} {reaction.count}</span>
+                    ))}
+                  </div>
+                )}
+                <div className="mb-2 flex items-center justify-between">
+                  {STORY_REACTIONS.map((emoji) => {
+                    const selected = viewing.stories[storyIndex].myReaction === emoji;
+                    return (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => void reactToStory(emoji)}
+                        aria-label={`React ${emoji}`}
+                        aria-pressed={selected}
+                        className={`flex h-10 w-10 items-center justify-center rounded-full text-xl transition ${selected ? "bg-white/30 ring-2 ring-white" : "hover:bg-white/15"}`}
+                      >
+                        {emoji}
+                      </button>
+                    );
+                  })}
+                </div>
+                <form onSubmit={(event) => void replyToStory(event)} className="flex items-center gap-2">
+                  <input
+                    value={replyText}
+                    onChange={(event) => setReplyText(event.target.value)}
+                    placeholder={`Reply to @${viewing.author.username}...`}
+                    maxLength={4000}
+                    className="min-h-10 min-w-0 flex-1 rounded-full border border-white/40 bg-black/30 px-4 text-sm text-white placeholder:text-white/70 focus:border-white focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!replyText.trim() || replySending}
+                    className="min-h-10 rounded-full bg-white px-4 text-xs font-semibold text-black disabled:opacity-50"
+                  >
+                    {replySending ? "..." : "Reply"}
+                  </button>
+                </form>
+                {reactionError && <p role="alert" className="mt-2 text-xs text-white">{reactionError}</p>}
+              </div>
             </div>
           </div>
         </div>

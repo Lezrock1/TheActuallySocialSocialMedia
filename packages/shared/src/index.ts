@@ -21,11 +21,21 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export const POST_VISIBILITY = ["public", "close_friends"] as const;
 export type PostVisibility = (typeof POST_VISIBILITY)[number];
 
+export const createPollSchema = z.object({
+  question: z.string().trim().min(1).max(180),
+  options: z.array(z.string().trim().min(1).max(80)).min(2).max(4),
+}).refine((poll) => new Set(poll.options.map((option) => option.toLocaleLowerCase())).size === poll.options.length, {
+  message: "Poll options must be unique",
+  path: ["options"],
+});
+export type CreatePollInput = z.infer<typeof createPollSchema>;
+
 export const createPostSchema = z.object({
   text: z.string().max(2000).optional(),
   imageKey: z.string().optional(),
   parentPostId: z.string().optional(),
   visibility: z.enum(POST_VISIBILITY).optional(),
+  poll: createPollSchema.optional(),
 });
 export type CreatePostInput = z.infer<typeof createPostSchema>;
 
@@ -45,6 +55,7 @@ export interface FeedPost {
   createdAt: string;
   visibility: PostVisibility;
   parentPostId: string | null;
+  pollId: string | null;
   replyCount: number;
   commentCount: number;
   factCheckCount: number;
@@ -217,11 +228,32 @@ export interface Story {
   createdAt: string;
   expiresAt: string;
   visibility: PostVisibility;
+  reactionCounts: { emoji: string; count: number }[];
+  myReaction: string | null;
 }
 
 export interface StoryGroup {
   author: PublicUser;
   stories: Story[];
+}
+
+export const STORY_REACTIONS = ["❤️", "😂", "🔥", "👏", "😮"] as const;
+export const createStoryReactionSchema = z.object({
+  emoji: z.enum(STORY_REACTIONS),
+});
+export type CreateStoryReactionInput = z.infer<typeof createStoryReactionSchema>;
+
+export const votePollSchema = z.object({
+  optionId: z.string().min(1),
+});
+export type VotePollInput = z.infer<typeof votePollSchema>;
+
+export interface PollSummary {
+  id: string;
+  question: string;
+  options: { id: string; text: string; voteCount: number }[];
+  totalVotes: number;
+  myVoteOptionId: string | null;
 }
 
 export const encryptedSnapPayloadSchema = z.object({

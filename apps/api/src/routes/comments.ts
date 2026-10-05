@@ -76,9 +76,6 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
         if (!parentComment || parentComment.postId !== post.id) {
           return reply.code(404).send({ error: "Parent comment not found" });
         }
-        if (parentComment.parentCommentId) {
-          return reply.code(400).send({ error: "Replies can be nested one level deep" });
-        }
       }
 
       const comment = await prisma.comment.create({

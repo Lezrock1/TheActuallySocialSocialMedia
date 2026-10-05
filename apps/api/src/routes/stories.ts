@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import { createStorySchema } from "@app/shared";
+import { createStoryReactionSchema, createStorySchema } from "@app/shared";
 import type { PostVisibility, StoryGroup } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { deleteMediaIfUnreferenced } from "../storage.js";
 import { ownsMedia } from "../mediaAccess.js";
-import { getBlockedUserIds, getCloseFriendGrantedAuthorIds } from "../visibility.js";
+import { getBlockedUserIds, getCloseFriendGrantedAuthorIds, isBlocked } from "../visibility.js";
 
 const STORY_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
@@ -67,7 +67,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
           },
         ],
       },
-      include: { author: true },
+      include: { author: true, reactions: true },
       orderBy: { createdAt: "asc" },
     });
 
@@ -80,6 +80,14 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
         createdAt: story.createdAt.toISOString(),
         expiresAt: story.expiresAt.toISOString(),
         visibility: story.visibility as PostVisibility,
+        reactionCounts: Array.from(
+          story.reactions.reduce((counts, reaction) => {
+            counts.set(reaction.emoji, (counts.get(reaction.emoji) ?? 0) + 1);
+            return counts;
+          }, new Map<string, number>()),
+          ([emoji, count]) => ({ emoji, count })
+        ),
+        myReaction: story.reactions.find((reaction) => reaction.userId === viewerId)?.emoji ?? null,
       };
       if (existing) {
         existing.stories.push(storyDto);
@@ -93,6 +101,76 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.send({ groups: Array.from(groups.values()) });
   });
+
+  app.post<{ Params: { id: string } }>(
+    "/stories/:id/reactions",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const parsed = createStoryReactionSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.flatten() });
+      }
+      const story = await prisma.story.findUnique({
+        where: { id: request.params.id },
+        select: { id: true, authorId: true, visibility: true, expiresAt: true },
+      });
+      if (!story || story.expiresAt <= new Date() || await isBlocked(request.userId!, story.authorId)) {
+        return reply.code(404).send({ error: "Story not found" });
+      }
+      if (story.authorId !== request.userId) {
+        const followsAuthor = await prisma.follow.findUnique({
+          where: {
+            followerId_followeeId: {
+              followerId: request.userId!,
+              followeeId: story.authorId,
+            },
+          },
+        });
+        if (!followsAuthor) return reply.code(404).send({ error: "Story not found" });
+        if (story.visibility === "close_friends") {
+          const closeFriend = await prisma.closeFriend.findUnique({
+            where: {
+              ownerId_friendId: {
+                ownerId: story.authorId,
+                friendId: request.userId!,
+              },
+            },
+          });
+          if (!closeFriend) return reply.code(404).send({ error: "Story not found" });
+        }
+      }
+
+      const existing = await prisma.storyReaction.findUnique({
+        where: {
+          storyId_userId: { storyId: story.id, userId: request.userId! },
+        },
+      });
+      if (existing?.emoji === parsed.data.emoji) {
+        await prisma.storyReaction.delete({ where: { id: existing.id } });
+      } else {
+        await prisma.storyReaction.upsert({
+          where: {
+            storyId_userId: { storyId: story.id, userId: request.userId! },
+          },
+          create: { storyId: story.id, userId: request.userId!, emoji: parsed.data.emoji },
+          update: { emoji: parsed.data.emoji },
+        });
+      }
+
+      const reactions = await prisma.storyReaction.findMany({
+        where: { storyId: story.id },
+        select: { userId: true, emoji: true },
+      });
+      const reactionCounts = new Map<string, number>();
+      for (const reaction of reactions) {
+        reactionCounts.set(reaction.emoji, (reactionCounts.get(reaction.emoji) ?? 0) + 1);
+      }
+      return reply.send({
+        reactionCounts: Array.from(reactionCounts, ([emoji, count]) => ({ emoji, count })),
+        myReaction: reactions.find((reaction) => reaction.userId === request.userId)?.emoji ?? null,
+      });
+    }
+  );
 
   app.delete<{ Params: { id: string } }>(
     "/stories/:id",

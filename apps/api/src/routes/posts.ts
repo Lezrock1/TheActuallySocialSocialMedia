@@ -59,8 +59,11 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
-    if (!parsed.data.text && !parsed.data.imageKey) {
-      return reply.code(400).send({ error: "Post needs text or an image" });
+    if (!parsed.data.text && !parsed.data.imageKey && !parsed.data.poll) {
+      return reply.code(400).send({ error: "Post needs text, an image, or a poll" });
+    }
+    if (parsed.data.poll && parsed.data.parentPostId) {
+      return reply.code(400).send({ error: "Polls can only be added to top-level posts" });
     }
     if (
       parsed.data.imageKey &&
@@ -84,6 +87,21 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         imageKey: parsed.data.imageKey,
         parentPostId: parsed.data.parentPostId,
         visibility: parsed.data.visibility ?? "public",
+        ...(parsed.data.poll
+          ? {
+              poll: {
+                create: {
+                  question: parsed.data.poll.question,
+                  options: {
+                    create: parsed.data.poll.options.map((option, position) => ({
+                      text: option,
+                      position,
+                    })),
+                  },
+                },
+              },
+            }
+          : {}),
       },
       include: postWithCountsInclude,
     });
