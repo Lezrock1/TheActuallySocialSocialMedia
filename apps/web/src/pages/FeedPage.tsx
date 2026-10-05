@@ -50,15 +50,23 @@ export default function FeedPage() {
   const [imageKey, setImageKey] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<PostVisibility>("public");
   const [posting, setPosting] = useState(false);
+  const [postSuccess, setPostSuccess] = useState(false);
   const [pollEnabled, setPollEnabled] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["", ""]);
   const [composerError, setComposerError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const postSuccessTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
+
+  useEffect(() => () => {
+    if (postSuccessTimeoutRef.current !== null) {
+      window.clearTimeout(postSuccessTimeoutRef.current);
+    }
+  }, []);
 
   const firstPageQuery = useQuery({
     queryKey: ["feed", "first"],
@@ -111,6 +119,11 @@ export default function FeedPage() {
       return;
     }
     setComposerError(null);
+    if (postSuccessTimeoutRef.current !== null) {
+      window.clearTimeout(postSuccessTimeoutRef.current);
+      postSuccessTimeoutRef.current = null;
+    }
+    setPostSuccess(false);
     setPosting(true);
     try {
       await apiFetch("/posts", {
@@ -122,6 +135,11 @@ export default function FeedPage() {
           poll: pollEnabled ? { question: pollQuestion.trim(), options: normalizedOptions } : undefined,
         }),
       });
+      setPostSuccess(true);
+      postSuccessTimeoutRef.current = window.setTimeout(() => {
+        setPostSuccess(false);
+        postSuccessTimeoutRef.current = null;
+      }, 3000);
       setText("");
       setImageKey(null);
       setVisibility("public");
@@ -271,9 +289,17 @@ export default function FeedPage() {
           <button
             type="submit"
             disabled={posting}
-            className={`${btnPrimary} min-h-10 shrink-0 rounded-full bg-[#1D9BF0] px-5 font-semibold hover:bg-[#1688D4] focus-visible:ring-2 focus-visible:ring-[#1D9BF0] focus-visible:ring-offset-2`}
+            aria-label={postSuccess ? "Post published" : "Post"}
+            className={`${btnPrimary} relative h-10 w-24 shrink-0 overflow-hidden rounded-full px-0 font-semibold transition-colors duration-300 ease-in-out focus-visible:ring-2 focus-visible:ring-offset-2 ${postSuccess ? "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600" : "bg-[#1D9BF0] hover:bg-[#1688D4] focus-visible:ring-[#1D9BF0]"}`}
           >
-            Post
+            <span aria-hidden="true" className={`absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-300 ease-out ${postSuccess ? "scale-90 opacity-0" : "scale-100 opacity-100"}`}>
+              Post
+            </span>
+            <span aria-hidden="true" className={`absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-300 ease-out ${postSuccess ? "scale-100 opacity-100" : "scale-75 opacity-0"}`}>
+              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m5 12 4.5 4.5L19 7" />
+              </svg>
+            </span>
           </button>
         </div>
       </form>
