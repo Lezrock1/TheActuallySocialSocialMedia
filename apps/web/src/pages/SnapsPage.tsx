@@ -396,10 +396,6 @@ export default function SnapsPage() {
         <p className="w-fit bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text text-sm font-semibold text-transparent">
           Send a Snap, keep a streak going.
         </p>
-        <div className="flex flex-col items-start gap-1">
-          <p className="text-[11px] font-medium text-gray-600">Snaps are end-to-end encrypted when all recipient devices have keys.</p>
-          <p className="text-[11px] text-gray-500">Sender, recipient, and view times remain visible to the server.</p>
-        </div>
       </div>
 
       <main className="flex min-w-0 flex-col gap-4">
@@ -483,6 +479,10 @@ export default function SnapsPage() {
           </section>
         </aside>
       </main>
+      <div className="mt-4 flex flex-col items-start gap-1">
+        <p className="text-[11px] font-medium text-gray-600">Snaps are end-to-end encrypted when all recipient devices have keys.</p>
+        <p className="text-[11px] text-gray-500">Sender, recipient, and view times remain visible to the server.</p>
+      </div>
 
       {studioOpen && (
         <div className="fixed inset-0 z-[60] flex flex-col bg-black text-white" role="dialog" aria-modal="true" aria-label={studioStep === "capture" ? "Camera" : "Review photo"}>
