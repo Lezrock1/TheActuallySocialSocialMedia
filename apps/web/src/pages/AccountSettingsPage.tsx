@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../lib/api.js";
 import { useAuth } from "../auth/AuthContext.js";
+import { deleteDeviceEncryptionKeys } from "../lib/encryption.js";
+import { forgetDeviceEncryptionKeyRegistration } from "../lib/encryptionRegistration.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import { btnPrimary, card, input } from "../lib/ui.js";
@@ -18,8 +21,9 @@ async function fetchAccountDetails(): Promise<AccountDetails> {
 }
 
 export default function AccountSettingsPage() {
-  const { updateUser } = useAuth();
+  const { user, updateUser } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const accountQuery = useQuery({
     queryKey: ["account-settings"],
     queryFn: fetchAccountDetails,
@@ -37,6 +41,10 @@ export default function AccountSettingsPage() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSaved, setPasswordSaved] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!accountQuery.data) return;
@@ -152,6 +160,43 @@ export default function AccountSettingsPage() {
     }
   }
 
+  async function deleteAccount(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user || deleteConfirmation !== "DELETE") return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await apiFetch("/auth/account", {
+        method: "DELETE",
+        body: JSON.stringify({ currentPassword: deletePassword, confirmation: deleteConfirmation }),
+      });
+
+      let localCleanupWarning = false;
+      try {
+        await deleteDeviceEncryptionKeys(user.id);
+        forgetDeviceEncryptionKeyRegistration(user.id);
+        if ("serviceWorker" in navigator) {
+          const registration = await navigator.serviceWorker.getRegistration("/");
+          const subscription = await registration?.pushManager.getSubscription();
+          if (subscription) await subscription.unsubscribe();
+        }
+      } catch {
+        localCleanupWarning = true;
+      }
+
+      queryClient.clear();
+      updateUser(null);
+      navigate("/login", {
+        replace: true,
+        state: { accountDeleted: true, localCleanupWarning },
+      });
+    } catch (caught) {
+      setDeleteError(caught instanceof Error ? caught.message : "Could not delete this account.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-lg px-4 py-4 sm:py-8">
       <PageHeader title="Settings" />
@@ -218,6 +263,49 @@ export default function AccountSettingsPage() {
               {passwordSaving ? "Updating…" : "Update password"}
             </button>
           </form>
+
+          <section className="mt-6 rounded-xl border border-red-200 bg-white p-4 shadow-sm">
+            <div>
+              <h2 className="text-base font-semibold text-red-700">Delete account</h2>
+              <p className="mt-1 text-sm leading-5 text-gray-600">
+                Permanently removes your profile, posts, comments, messages, Snaps, follows, settings, and uploaded files from the live service. One-to-one conversations with you are removed for both participants; group messages you sent are removed.
+              </p>
+              <p className="mt-2 text-xs leading-5 text-gray-500">
+                Offline backups may retain database copies until those backups are removed. Copies or notifications already delivered to other people cannot be recalled, and this cannot erase data saved on their devices.
+              </p>
+            </div>
+            <form onSubmit={(event) => void deleteAccount(event)} className="mt-4 flex flex-col gap-3">
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-800">
+                Current password
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={deletePassword}
+                  onChange={(event) => setDeletePassword(event.target.value)}
+                  className={input}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-800">
+                Type DELETE to confirm
+                <input
+                  required
+                  autoComplete="off"
+                  value={deleteConfirmation}
+                  onChange={(event) => setDeleteConfirmation(event.target.value)}
+                  className={input}
+                />
+              </label>
+              {deleteError && <p role="alert" className="text-sm text-red-600">{deleteError}</p>}
+              <button
+                type="submit"
+                disabled={deleting || !deletePassword || deleteConfirmation !== "DELETE"}
+                className="min-h-11 w-full rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleting ? "Deleting account…" : "Delete account permanently"}
+              </button>
+            </form>
+          </section>
         </>
       )}
     </div>

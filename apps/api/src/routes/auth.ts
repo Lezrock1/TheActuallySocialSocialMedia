@@ -3,6 +3,7 @@ import argon2 from "argon2";
 import {
   changePasswordSchema,
   checkUsernameSchema,
+  deleteAccountSchema,
   loginSchema,
   registerSchema,
   updateAccountSchema,
@@ -13,6 +14,7 @@ import { AUTH_COOKIE_NAME, requireAuth } from "../auth/middleware.js";
 import { env } from "../env.js";
 import { toPublicUser } from "../serializers.js";
 import { hashInvitationCode } from "../invitations.js";
+import { purgeQueuedMediaDeletions } from "../storage.js";
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -200,6 +202,101 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       where: { id: user.id },
       data: { passwordHash: await argon2.hash(parsed.data.newPassword) },
     });
+    return reply.code(204).send();
+  });
+
+  app.delete("/auth/account", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = deleteAccountSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const user = await prisma.user.findUnique({ where: { id: request.userId! } });
+    if (!user) return reply.code(404).send({ error: "User not found" });
+    if (!(await argon2.verify(user.passwordHash, parsed.data.currentPassword))) {
+      return reply.code(401).send({ error: "Current password is incorrect" });
+    }
+
+    const [assets, posts, stories, sentSnaps, receivedSnaps, conversations, sharedFactChecks] = await Promise.all([
+      prisma.mediaAsset.findMany({ where: { ownerId: user.id }, select: { key: true } }),
+      prisma.post.findMany({ where: { authorId: user.id }, select: { imageKey: true } }),
+      prisma.story.findMany({ where: { authorId: user.id }, select: { imageKey: true } }),
+      prisma.snap.findMany({ where: { senderId: user.id }, select: { imageKey: true } }),
+      prisma.snapRecipient.findMany({
+        where: { userId: user.id },
+        select: {
+          snap: {
+            select: {
+              id: true,
+              imageKey: true,
+              recipients: { select: { userId: true } },
+            },
+          },
+        },
+      }),
+      prisma.conversation.findMany({
+        where: { members: { some: { userId: user.id } } },
+        select: { id: true, members: { select: { userId: true } } },
+      }),
+      prisma.aiConversation.findMany({
+        where: { userId: user.id, shared: true },
+        select: { postId: true },
+      }),
+    ]);
+
+    const exclusivelyReceivedSnaps = receivedSnaps
+      .filter(({ snap }) => snap.recipients.length === 1)
+      .map(({ snap }) => snap);
+    const mediaKeys = [...new Set([
+      user.avatarKey,
+      ...assets.map((asset) => asset.key),
+      ...posts.map((post) => post.imageKey),
+      ...stories.map((story) => story.imageKey),
+      ...sentSnaps.map((snap) => snap.imageKey),
+      ...exclusivelyReceivedSnaps.map((snap) => snap.imageKey),
+    ].filter((key): key is string => Boolean(key)))];
+    const directConversationIds = conversations
+      .filter((conversation) => conversation.members.length <= 2)
+      .map((conversation) => conversation.id);
+    const sharedFactCheckPostIds = [...new Set(sharedFactChecks.map((conversation) => conversation.postId))];
+
+    await prisma.$transaction(async (transaction) => {
+      if (mediaKeys.length) {
+        await transaction.mediaDeletion.createMany({
+          data: mediaKeys.map((key) => ({ key })),
+          skipDuplicates: true,
+        });
+      }
+      if (exclusivelyReceivedSnaps.length) {
+        await transaction.snap.deleteMany({
+          where: { id: { in: exclusivelyReceivedSnaps.map((snap) => snap.id) } },
+        });
+      }
+      if (directConversationIds.length) {
+        await transaction.conversation.deleteMany({ where: { id: { in: directConversationIds } } });
+      }
+      await transaction.report.deleteMany({
+        where: { targetType: "user", targetId: { in: [user.id, user.username] } },
+      });
+      await transaction.user.delete({ where: { id: user.id } });
+
+      for (const postId of sharedFactCheckPostIds) {
+        const remainingSharedCount = await transaction.aiConversation.count({
+          where: { postId, shared: true },
+        });
+        await transaction.post.updateMany({
+          where: { id: postId },
+          data: {
+            factCheckCount: remainingSharedCount,
+            ...(remainingSharedCount === 0 ? { factCheckSummary: null } : {}),
+          },
+        });
+      }
+    });
+
+    try {
+      await purgeQueuedMediaDeletions();
+    } catch {
+      request.log.error("Account media purge will be retried by the cleanup job");
+    }
+    reply.clearCookie(AUTH_COOKIE_NAME, { path: "/" });
     return reply.code(204).send();
   });
 }

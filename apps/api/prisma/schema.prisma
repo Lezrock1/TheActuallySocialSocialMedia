@@ -269,6 +269,12 @@ model MediaAsset {
   @@index([ownerId])
 }
 
+model MediaDeletion {
+  key       String   @id
+  queuedAt  DateTime @default(now())
+  attempts  Int      @default(0)
+}
+
 model Snap {
   id        String   @id @default(cuid())
   senderId  String

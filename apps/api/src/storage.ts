@@ -66,21 +66,55 @@ export async function getMedia(
 
 export async function deleteMedia(key: string): Promise<void> {
   try {
-    await s3.send(new DeleteObjectCommand({ Bucket: env.s3Bucket, Key: key }));
+    await deleteMediaObject(key);
   } catch {
     // best-effort: don't fail the calling request if the object is already gone
   }
 }
 
-export async function deleteMediaIfUnreferenced(key: string): Promise<void> {
+export async function deleteMediaObject(key: string): Promise<void> {
+  await s3.send(new DeleteObjectCommand({ Bucket: env.s3Bucket, Key: key }));
+}
+
+async function hasMediaReferences(key: string): Promise<boolean> {
   const [posts, stories, snaps, users] = await Promise.all([
     prisma.post.count({ where: { imageKey: key } }),
     prisma.story.count({ where: { imageKey: key } }),
     prisma.snap.count({ where: { imageKey: key } }),
     prisma.user.count({ where: { avatarKey: key } }),
   ]);
-  if (posts + stories + snaps + users > 0) return;
+  return posts + stories + snaps + users > 0;
+}
 
-  await deleteMedia(key);
-  await prisma.mediaAsset.deleteMany({ where: { key } });
+export async function purgeQueuedMediaDeletions(limit = 50): Promise<void> {
+  const pending = await prisma.mediaDeletion.findMany({
+    orderBy: { queuedAt: "asc" },
+    take: limit,
+  });
+  for (const item of pending) {
+    if (await hasMediaReferences(item.key)) {
+      await prisma.mediaDeletion.delete({ where: { key: item.key } });
+      continue;
+    }
+    try {
+      await deleteMediaObject(item.key);
+      await prisma.mediaAsset.deleteMany({ where: { key: item.key } });
+      await prisma.mediaDeletion.delete({ where: { key: item.key } });
+    } catch {
+      await prisma.mediaDeletion.update({
+        where: { key: item.key },
+        data: { attempts: { increment: 1 } },
+      });
+    }
+  }
+}
+
+export async function deleteMediaIfUnreferenced(key: string): Promise<void> {
+  if (await hasMediaReferences(key)) return;
+  await prisma.mediaDeletion.upsert({
+    where: { key },
+    create: { key },
+    update: {},
+  });
+  await purgeQueuedMediaDeletions(1);
 }

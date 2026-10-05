@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   changePasswordSchema,
+  deleteAccountSchema,
   registerSchema,
   updateAccountSchema,
 } from "@app/shared";
@@ -33,6 +34,17 @@ describe("account setting validation", () => {
     expect(changePasswordSchema.safeParse({
       currentPassword: "current-pass",
       newPassword: "new-password-123",
+    }).success).toBe(true);
+  });
+
+  it("requires the explicit DELETE confirmation and the current password", () => {
+    expect(deleteAccountSchema.safeParse({
+      currentPassword: "current-pass",
+      confirmation: "delete",
+    }).success).toBe(false);
+    expect(deleteAccountSchema.safeParse({
+      currentPassword: "current-pass",
+      confirmation: "DELETE",
     }).success).toBe(true);
   });
 });

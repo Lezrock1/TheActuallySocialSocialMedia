@@ -111,6 +111,28 @@ export async function getDeviceEncryptionKeys(userId: string): Promise<DeviceEnc
   return getStoredKeys(userId);
 }
 
+export async function deleteDeviceEncryptionKeys(userId: string): Promise<void> {
+  const database = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(STORE_NAME, "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => {
+        for (const key of request.result as DeviceEncryptionKey[]) {
+          if (key.userId === userId) store.delete(key.id);
+        }
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } finally {
+    database.close();
+  }
+}
+
 async function wrapContentKey(
   rawContentKey: ArrayBuffer,
   recipients: PublicEncryptionKey[]

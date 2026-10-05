@@ -30,6 +30,12 @@ export const changePasswordSchema = z.object({
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
+export const deleteAccountSchema = z.object({
+  currentPassword: z.string().min(1),
+  confirmation: z.literal("DELETE"),
+});
+export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;
+
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),

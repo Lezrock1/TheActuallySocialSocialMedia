@@ -24,3 +24,7 @@ export function registerDeviceEncryptionKey(userId: string): Promise<DeviceEncry
   void registration.catch(() => keyRegistrationRequests.delete(userId));
   return registration;
 }
+
+export function forgetDeviceEncryptionKeyRegistration(userId: string): void {
+  keyRegistrationRequests.delete(userId);
+}

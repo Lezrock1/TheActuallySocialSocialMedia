@@ -1,5 +1,5 @@
 import { prisma } from "./db.js";
-import { deleteMediaIfUnreferenced } from "./storage.js";
+import { deleteMediaIfUnreferenced, purgeQueuedMediaDeletions } from "./storage.js";
 
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -34,6 +34,7 @@ export async function cleanupExpiredMedia(): Promise<void> {
   for (const key of expiredKeys) {
     await deleteMediaIfUnreferenced(key);
   }
+  await purgeQueuedMediaDeletions();
 }
 
 export function startCleanupJob(logger: {

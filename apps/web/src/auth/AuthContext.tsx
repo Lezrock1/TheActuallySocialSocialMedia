@@ -14,7 +14,7 @@ interface AuthContextValue {
     password: string,
     inviteCode: string
   ) => Promise<void>;
-  updateUser: (user: PublicUser) => void;
+  updateUser: (user: PublicUser | null) => void;
   logout: () => Promise<void>;
 }
 
