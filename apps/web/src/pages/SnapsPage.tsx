@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InboxSnap, PublicUser, SnapStreakSummary } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
@@ -58,6 +58,7 @@ export default function SnapsPage() {
   const [viewingText, setViewingText] = useState("");
   const [snapError, setSnapError] = useState<string | null>(null);
   const [sendingError, setSendingError] = useState<string | null>(null);
+  const [missingRecipientNames, setMissingRecipientNames] = useState<string[]>([]);
 
   useEffect(() => {
     if (searchParams.get("camera") !== "1") return;
@@ -71,6 +72,7 @@ export default function SnapsPage() {
     setShareTarget(null);
     setCameraError(null);
     setSendingError(null);
+    setMissingRecipientNames([]);
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
 
@@ -161,6 +163,7 @@ export default function SnapsPage() {
   }, [viewing]);
 
   function toggleRecipient(username: string) {
+    setMissingRecipientNames([]);
     setSelectedRecipients((prev) =>
       prev.includes(username) ? prev.filter((u) => u !== username) : [...prev, username]
     );
@@ -177,6 +180,8 @@ export default function SnapsPage() {
     setShareTarget(null);
     setCameraError(null);
     setSendingError(null);
+    setMissingRecipientNames([]);
+    setMissingRecipientNames([]);
   }
 
   function openCamera() {
@@ -190,6 +195,7 @@ export default function SnapsPage() {
     setShareTarget(null);
     setCameraError(null);
     setSendingError(null);
+    setMissingRecipientNames([]);
   }
 
   function capturePhoto() {
@@ -217,6 +223,7 @@ export default function SnapsPage() {
       setPreviewUrl(URL.createObjectURL(image));
       setShareTarget(null);
       setSendingError(null);
+      setMissingRecipientNames([]);
       setStudioStep("review");
     }, "image/jpeg", 0.92);
   }
@@ -227,6 +234,7 @@ export default function SnapsPage() {
     setShareTarget(null);
     setCameraError(null);
     setSendingError(null);
+    setMissingRecipientNames([]);
     setStudioStep("capture");
   }
 
@@ -241,9 +249,10 @@ export default function SnapsPage() {
     setShareTarget(null);
     setCameraError(null);
     setSendingError(null);
+    setMissingRecipientNames([]);
   }
 
-  async function sharePhoto() {
+  async function sharePhoto(allowPlaintext = false) {
     if (!selectedImage || !shareTarget) return;
     if (shareTarget === "snap" && selectedRecipients.length === 0) return;
     setSending(true);
@@ -266,23 +275,41 @@ export default function SnapsPage() {
             .map((friend) => friend.id),
         ];
         const keyedUsers = new Set(keyResponse.keys.map((key) => key.userId));
-        if (recipientIds.some((userId) => !keyedUsers.has(userId))) {
-          throw new Error("You and each recipient must open the app once to enable Snap encryption.");
+        const missingRecipientIds = recipientIds.filter((userId) => !keyedUsers.has(userId));
+        if (missingRecipientIds.length > 0 && !allowPlaintext) {
+          const missingNames = following
+            .filter((friend) => missingRecipientIds.includes(friend.id))
+            .map((friend) => `@${friend.username}`);
+          if (missingRecipientIds.includes(user.id)) missingNames.push("your device");
+          setMissingRecipientNames(missingNames.length > 0 ? missingNames : ["a recipient device"]);
+          return;
         }
-        const { encryptedImage, payload } = await encryptSnap(
-          selectedImage,
-          text,
-          keyResponse.keys
-        );
-        const imageKey = await uploadMedia(encryptedImage);
-        await apiFetch("/snaps", {
-          method: "POST",
-          body: JSON.stringify({
-            imageKey,
-            encryptedPayload: payload,
-            recipientUsernames: selectedRecipients,
-          }),
-        });
+        if (allowPlaintext) {
+          const imageKey = await uploadMedia(selectedImage);
+          await apiFetch("/snaps", {
+            method: "POST",
+            body: JSON.stringify({
+              imageKey,
+              text: text.trim() || undefined,
+              recipientUsernames: selectedRecipients,
+            }),
+          });
+        } else {
+          const { encryptedImage, payload } = await encryptSnap(
+            selectedImage,
+            text,
+            keyResponse.keys
+          );
+          const imageKey = await uploadMedia(encryptedImage);
+          await apiFetch("/snaps", {
+            method: "POST",
+            body: JSON.stringify({
+              imageKey,
+              encryptedPayload: payload,
+              recipientUsernames: selectedRecipients,
+            }),
+          });
+        }
       } else {
         const imageKey = await uploadMedia(selectedImage);
         if (shareTarget === "post") {
@@ -333,7 +360,10 @@ export default function SnapsPage() {
       setViewingImageUrl(URL.createObjectURL(image));
       setViewingText(caption);
       setViewing(snap);
-      await queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
+        queryClient.invalidateQueries({ queryKey: ["snaps", "unread-count"] }),
+      ]);
     } catch (error) {
       setSnapError(error instanceof Error ? error.message : "Could not load this Snap. Please try again.");
     }
@@ -355,27 +385,12 @@ export default function SnapsPage() {
           Send a Snap, keep a streak going.
         </p>
         <div className="flex flex-col items-start gap-1">
-          <EncryptionNotice encrypted />
+          <p className="text-[11px] font-medium text-gray-600">Snaps are end-to-end encrypted when all recipient devices have keys.</p>
           <p className="text-[11px] text-gray-500">Sender, recipient, and view times remain visible to the server.</p>
         </div>
       </div>
 
       <main className="flex min-w-0 flex-col gap-4">
-        <section aria-label="Create a Snap" className={`${card} flex min-w-0 items-center justify-between gap-4`}>
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Create</h2>
-            <p className="mt-1 text-xs text-gray-500">Take a photo to post, add to your story, or send as a Snap.</p>
-          </div>
-          <button
-            type="button"
-            onClick={openCamera}
-            className="hidden min-h-10 shrink-0 items-center gap-2 rounded-lg bg-fuchsia-600 px-3 text-sm font-semibold text-white hover:bg-fuchsia-700 sm:flex"
-          >
-            <CameraIcon />
-            Open camera
-          </button>
-        </section>
-
         <aside className="flex min-w-0 flex-col gap-4">
           <section aria-label="Snap streaks" className={`${card} p-0`}>
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -387,10 +402,9 @@ export default function SnapsPage() {
             </div>
             <div className="max-h-56 overflow-y-auto">
               {streaks.map((streak) => (
-                <button
+                <Link
                   key={streak.friend.id}
-                  type="button"
-                  onClick={() => toggleRecipient(streak.friend.username)}
+                  to={`/u/${streak.friend.username}`}
                   className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-gray-50"
                 >
                   <Avatar avatarKey={streak.friend.avatarKey} username={streak.friend.username} size={38} />
@@ -403,7 +417,7 @@ export default function SnapsPage() {
                   <span className={`shrink-0 text-sm font-bold ${streak.currentStreak ? "text-orange-600" : "text-gray-400"}`}>
                     🔥 {streak.currentStreak || 0}
                   </span>
-                </button>
+                </Link>
               ))}
               {streaks.length === 0 && (
                 <p className="px-4 py-5 text-sm text-gray-500">Your first mutual Snap starts a streak.</p>
@@ -518,7 +532,10 @@ export default function SnapsPage() {
                     <button
                       key={target}
                       type="button"
-                      onClick={() => setShareTarget(target)}
+                      onClick={() => {
+                        setShareTarget(target);
+                        setMissingRecipientNames([]);
+                      }}
                       aria-pressed={shareTarget === target}
                       className={`min-h-10 rounded-lg border px-3 text-sm font-semibold transition ${shareTarget === target ? "border-fuchsia-600 bg-fuchsia-50 text-fuchsia-800" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}
                     >
@@ -548,22 +565,24 @@ export default function SnapsPage() {
                       placeholder="Search by name or @username"
                       className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
                     />
-                    <div className="max-h-32 overflow-y-auto rounded-lg border border-gray-200">
+                    <div className="max-h-[55vh] overflow-y-auto rounded-lg border border-gray-200">
                       {matchingFriends.map((friend) => {
                         const selected = selectedRecipients.includes(friend.username);
+                        const streak = streakByFriend.get(friend.id);
                         return (
                           <button
                             key={friend.id}
                             type="button"
                             onClick={() => toggleRecipient(friend.username)}
                             aria-pressed={selected}
-                            className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50"
+                            className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-1.5 text-left last:border-b-0 hover:bg-gray-50"
                           >
                             <Avatar avatarKey={friend.avatarKey} username={friend.username} size={32} />
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-sm font-medium">{friend.displayName || `@${friend.username}`}</span>
                               {friend.displayName && <span className="block text-xs text-gray-500">@{friend.username}</span>}
                             </span>
+                            <span className="shrink-0 text-xs font-semibold text-orange-600">🔥 {streak?.currentStreak ?? 0}</span>
                             <span className={`flex h-5 w-5 items-center justify-center rounded-full border text-xs ${selected ? "border-fuchsia-600 bg-fuchsia-600 text-white" : "border-gray-300 text-transparent"}`}>✓</span>
                           </button>
                         );
@@ -576,6 +595,31 @@ export default function SnapsPage() {
                   </div>
                 )}
 
+                {missingRecipientNames.length > 0 && shareTarget === "snap" && (
+                  <div role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                    <p className="font-semibold">Encryption keys are missing</p>
+                    <p className="mt-1">
+                      {missingRecipientNames.join(", ")} need to open InTouch once to register a device key. If you continue, this Snap will not be end-to-end encrypted and the server can read its image and caption.
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setMissingRecipientNames([])}
+                        className="min-h-10 flex-1 rounded-lg border border-amber-300 px-3 text-xs font-semibold hover:bg-amber-100"
+                      >
+                        Wait for keys
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void sharePhoto(true)}
+                        disabled={sending}
+                        className="min-h-10 flex-1 rounded-lg bg-amber-700 px-3 text-xs font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
+                      >
+                        {sending ? "Sending..." : "Send unencrypted"}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {sendingError && <p role="alert" className="mt-3 text-sm text-red-600">{sendingError}</p>}
                 <div className="mt-4 flex gap-2">
                   <button type="button" onClick={retakePhoto} disabled={sending} className="min-h-11 flex-1 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">Retake</button>

@@ -15,10 +15,17 @@ const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export default function NavBar() {
-  const { data: notificationCount = 0 } = useQuery({
+  const { data: { unreadCount: notificationCount = 0, messageUnreadCount = 0 } = {} } = useQuery({
     queryKey: ["notifications", "unread-count"],
-    queryFn: () => apiFetch<{ unreadCount: number }>("/notifications/unread-count").then((result) => result.unreadCount),
+    queryFn: () => apiFetch<{ unreadCount: number; messageUnreadCount: number }>("/notifications/unread-count"),
     staleTime: 30_000,
+      refetchInterval: 30_000,
+  });
+  const { data: snapUnreadCount = 0 } = useQuery({
+    queryKey: ["snaps", "unread-count"],
+    queryFn: () => apiFetch<{ unreadCount: number }>("/snaps/unread-count").then((result) => result.unreadCount),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 
   function UnreadBadge() {
@@ -26,6 +33,24 @@ export default function NavBar() {
     return (
       <span className="ml-1 inline-flex min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-semibold leading-4 text-white">
         {notificationCount > 9 ? "9+" : notificationCount}
+      </span>
+    );
+  }
+
+  function SnapUnreadBadge() {
+    if (!snapUnreadCount) return null;
+    return (
+      <span className="ml-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FFFC00] px-1 text-[9px] font-semibold leading-4 text-black">
+        {snapUnreadCount > 9 ? "9+" : snapUnreadCount}
+      </span>
+    );
+  }
+
+  function MessageUnreadBadge() {
+    if (!messageUnreadCount) return null;
+    return (
+      <span className="ml-1 inline-flex min-w-4 items-center justify-center rounded-full bg-green-600 px-1 text-[9px] font-semibold leading-4 text-white">
+        {messageUnreadCount > 9 ? "9+" : messageUnreadCount}
       </span>
     );
   }
@@ -38,10 +63,10 @@ export default function NavBar() {
             Feed
           </NavLink>
           <NavLink to="/snaps" className={primaryLinkClass}>
-            Snaps
+            Snaps <SnapUnreadBadge />
           </NavLink>
           <NavLink to="/dms" className={primaryLinkClass}>
-            Messages
+            Messages <MessageUnreadBadge />
           </NavLink>
         </div>
         <div className="flex gap-3">
@@ -59,9 +84,13 @@ export default function NavBar() {
         style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
         <NavLink to="/" end className={mobileLinkClass}>Feed</NavLink>
-        <NavLink to="/snaps" className={mobileLinkClass}>Snaps</NavLink>
+        <NavLink to="/snaps" className={mobileLinkClass}>
+          <span className="flex items-center">Snaps <SnapUnreadBadge /></span>
+        </NavLink>
         <span aria-hidden="true" className="flex min-w-0 flex-col items-center justify-center border-t-2 border-transparent px-1 py-2" />
-        <NavLink to="/dms" className={mobileLinkClass}>Messages</NavLink>
+        <NavLink to="/dms" className={mobileLinkClass}>
+          <span className="flex items-center">Messages <MessageUnreadBadge /></span>
+        </NavLink>
         <NavLink to="/notifications" className={mobileLinkClass}>
           <span>Alerts</span><UnreadBadge />
         </NavLink>

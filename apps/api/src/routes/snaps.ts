@@ -16,6 +16,17 @@ import { recordSnapInStreak } from "../snapStreak.js";
 const SNAP_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
 export async function snapRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/snaps/unread-count", { preHandler: requireAuth }, async (request, reply) => {
+    const unreadCount = await prisma.snapRecipient.count({
+      where: {
+        userId: request.userId!,
+        viewedAt: null,
+        snap: { expiresAt: { gt: new Date() } },
+      },
+    });
+    return reply.send({ unreadCount });
+  });
+
   app.post("/snaps/encryption-keys", { preHandler: requireAuth }, async (request, reply) => {
     const parsed = snapEncryptionKeysSchema.safeParse(request.body);
     if (!parsed.success) {

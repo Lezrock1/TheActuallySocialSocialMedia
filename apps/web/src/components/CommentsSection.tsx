@@ -35,7 +35,14 @@ function CommentItem({
           {comment.text}
         </p>
         <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
-          <time>{new Date(comment.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</time>
+          <time dateTime={comment.createdAt}>
+            {new Date(comment.createdAt).toLocaleString("en-US", {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </time>
           {onReply && (
             <button type="button" onClick={onReply} className="font-semibold hover:text-black">
               Reply

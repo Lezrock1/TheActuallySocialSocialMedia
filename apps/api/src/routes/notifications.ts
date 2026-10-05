@@ -12,10 +12,15 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     "/notifications/unread-count",
     { preHandler: requireAuth },
     async (request, reply) => {
-      const unreadCount = await prisma.notification.count({
-        where: { recipientId: request.userId!, readAt: null },
-      });
-      return reply.send({ unreadCount });
+      const [unreadCount, messageUnreadCount] = await Promise.all([
+        prisma.notification.count({
+          where: { recipientId: request.userId!, readAt: null, type: { not: "message" } },
+        }),
+        prisma.notification.count({
+          where: { recipientId: request.userId!, readAt: null, type: "message" },
+        }),
+      ]);
+      return reply.send({ unreadCount, messageUnreadCount });
     }
   );
 

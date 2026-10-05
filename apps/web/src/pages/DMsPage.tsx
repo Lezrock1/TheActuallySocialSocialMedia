@@ -39,6 +39,10 @@ async function fetchMessages(id: string): Promise<ConversationMessage[]> {
   return res.messages;
 }
 
+async function markConversationRead(id: string): Promise<void> {
+  await apiFetch(`/conversations/${id}/read`, { method: "POST" });
+}
+
 async function fetchEncryptionKeys(id: string): Promise<PublicEncryptionKey[]> {
   const res = await apiFetch<{ keys: PublicEncryptionKey[] }>(
     `/conversations/${id}/encryption-keys`
@@ -86,7 +90,7 @@ export default function DMsPage() {
       return Number(!aName.startsWith(normalizedFriendSearch)) - Number(!bName.startsWith(normalizedFriendSearch));
     });
 
-  const { data: messages = [] } = useQuery({
+  const { data: messages = [], isSuccess: messagesLoaded } = useQuery({
     queryKey: ["messages", activeId],
     queryFn: () => fetchMessages(activeId!),
     enabled: !!activeId,
@@ -103,6 +107,16 @@ export default function DMsPage() {
     activeConversation.members.every((member) => membersWithKeys.has(member.id));
 
   useEffect(() => {
+    if (!activeId || !messagesLoaded) return;
+    void markConversationRead(activeId)
+      .then(() => Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications", "list"] }),
+      ]))
+      .catch(() => undefined);
+  }, [activeId, messagesLoaded, queryClient]);
+
+  useEffect(() => {
     const socket = getSocket();
     function onNewMessage(payload: {
       conversationId: string;
@@ -113,12 +127,20 @@ export default function DMsPage() {
         (prev) => (prev ? [...prev, payload.message] : prev)
       );
       void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      if (payload.conversationId === activeId && document.visibilityState === "visible") {
+        void markConversationRead(payload.conversationId)
+          .then(() => Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] }),
+            queryClient.invalidateQueries({ queryKey: ["notifications", "list"] }),
+          ]))
+          .catch(() => undefined);
+      }
     }
     socket.on("message:new", onNewMessage);
     return () => {
       socket.off("message:new", onNewMessage);
     };
-  }, [queryClient]);
+  }, [activeId, queryClient]);
 
   useEffect(() => {
     if (!friendPickerOpen) return;
