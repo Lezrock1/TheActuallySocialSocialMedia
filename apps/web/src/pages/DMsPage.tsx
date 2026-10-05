@@ -21,6 +21,7 @@ import PageHeader from "../components/PageHeader.js";
 import Avatar from "../components/Avatar.js";
 import CallOverlay from "../components/CallOverlay.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
+import LiveRoomsBar from "../components/LiveRoomsBar.js";
 import {
   activityList,
   activityRow,
@@ -118,7 +119,8 @@ export default function DMsPage() {
   const [startingConversation, setStartingConversation] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [storyReplyContext, setStoryReplyContext] = useState<StoryReplyContext | null>(null);
-  const [groupMode, setGroupMode] = useState(false);
+  const [messageView, setMessageView] = useState<"chats" | "create_group" | "live_rooms">("chats");
+  const groupMode = messageView === "create_group";
   const [groupName, setGroupName] = useState("");
   const [deviceKeyReady, setDeviceKeyReady] = useState(false);
   const [encryptionError, setEncryptionError] = useState<string | null>(null);
@@ -309,7 +311,7 @@ export default function DMsPage() {
     setSelectedGroupUsernames([]);
     setFriendSearch("");
     setFriendPickerOpen(false);
-    setGroupMode(false);
+    setMessageView("chats");
     await queryClient.invalidateQueries({ queryKey: ["conversations"] });
     setActiveId(res.conversationId);
   }
@@ -365,30 +367,39 @@ export default function DMsPage() {
 
       <div className="flex flex-col gap-6">
         {!activeId && <div className="w-full">
-          <div role="tablist" aria-label="Messages view" className="mb-3 inline-flex rounded-lg bg-gray-100 p-1">
+          <div role="tablist" aria-label="Messages view" className="mb-3 inline-flex max-w-full rounded-lg bg-gray-100 p-1">
             <button
               type="button"
               role="tab"
-              aria-selected={!groupMode}
+              aria-selected={messageView === "chats"}
               onClick={() => {
-                setGroupMode(false);
+                setMessageView("chats");
                 setSelectedGroupUsernames([]);
               }}
-              className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${!groupMode ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
+              className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${messageView === "chats" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
             >
               Chats
             </button>
             <button
               type="button"
               role="tab"
-              aria-selected={groupMode}
-              onClick={() => setGroupMode(true)}
-              className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${groupMode ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
+              aria-selected={messageView === "create_group"}
+              onClick={() => setMessageView("create_group")}
+              className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${messageView === "create_group" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
             >
               Create a Group
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={messageView === "live_rooms"}
+              onClick={() => setMessageView("live_rooms")}
+              className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${messageView === "live_rooms" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
+            >
+              Live Rooms
+            </button>
           </div>
-          <form
+          {messageView !== "live_rooms" && <form
             onSubmit={(event) => {
               event.preventDefault();
               if (groupMode) void startGroup();
@@ -473,8 +484,8 @@ export default function DMsPage() {
                 {startingConversation ? "Opening..." : `Message @${matchingFriends[0].username}`}
               </button>
             )}
-          </form>
-          {!groupMode && <div className={activityList}>
+          </form>}
+          {messageView === "chats" && <div className={activityList}>
             {conversations.map((c) => (
               <button
                 key={c.id}
@@ -532,6 +543,7 @@ export default function DMsPage() {
               <p className="px-4 py-6 text-center text-sm text-gray-500">No conversations yet.</p>
             )}
           </div>}
+          {messageView === "live_rooms" && <LiveRoomsBar />}
         </div>}
 
         {activeId && (
