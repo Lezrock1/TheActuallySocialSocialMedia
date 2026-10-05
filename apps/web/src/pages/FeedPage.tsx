@@ -139,7 +139,7 @@ export default function FeedPage() {
       postSuccessTimeoutRef.current = window.setTimeout(() => {
         setPostSuccess(false);
         postSuccessTimeoutRef.current = null;
-      }, 3000);
+      }, 2000);
       setText("");
       setImageKey(null);
       setVisibility("public");
