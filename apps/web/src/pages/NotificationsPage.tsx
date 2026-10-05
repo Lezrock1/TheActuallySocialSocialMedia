@@ -2,7 +2,7 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import type { NotificationsPage as NotificationsPageData, UserNotification } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
-import { btnSecondary, card } from "../lib/ui.js";
+import { activityList, activityRow, btnSecondary, formatActivityTime } from "../lib/ui.js";
 import Avatar from "../components/Avatar.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
@@ -72,7 +72,7 @@ export default function NotificationsPage() {
       {query.isLoading && <p className="py-6 text-center text-sm text-gray-500">Loading notifications...</p>}
       {query.isError && <p role="alert" className="py-6 text-center text-sm text-red-600">Could not load notifications.</p>}
 
-      <div className="flex flex-col gap-2">
+      <div className={activityList}>
         {notifications.map((notification) => {
           const target = notification.postId
             ? `/post/${notification.postId}`
@@ -85,8 +85,8 @@ export default function NotificationsPage() {
             <Link
               key={notification.id}
               to={target}
-              className={`${card} flex min-w-0 items-start gap-3 py-3 hover:bg-gray-50 ${
-                notification.readAt ? "" : "border-blue-200 bg-blue-50/50"
+              className={`${activityRow} items-start ${
+                notification.readAt ? "" : "bg-blue-50/60 hover:bg-blue-50"
               }`}
             >
               <Avatar
@@ -105,7 +105,7 @@ export default function NotificationsPage() {
                   </span>
                 )}
                 <time className="mt-1 block text-[11px] text-gray-400">
-                  {new Date(notification.createdAt).toLocaleString("en-US")}
+                  {formatActivityTime(notification.createdAt)}
                 </time>
               </span>
               {!notification.readAt && (

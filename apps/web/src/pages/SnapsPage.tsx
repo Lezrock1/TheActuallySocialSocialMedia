@@ -17,7 +17,7 @@ import PageHeader from "../components/PageHeader.js";
 import Avatar from "../components/Avatar.js";
 import CameraIcon from "../components/CameraIcon.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
-import { card } from "../lib/ui.js";
+import { activityList, activityRow, card, formatActivityTime } from "../lib/ui.js";
 
 async function fetchInbox(): Promise<InboxSnap[]> {
   const res = await apiFetch<{ snaps: InboxSnap[] }>("/snaps/inbox");
@@ -392,7 +392,7 @@ export default function SnapsPage() {
 
       <main className="flex min-w-0 flex-col gap-4">
         <aside className="flex min-w-0 flex-col gap-4">
-          <section aria-label="Snap streaks" className={`${card} p-0`}>
+          <section aria-label="Snap streaks" className={activityList}>
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
               <div>
                 <h2 className="text-sm font-bold text-gray-900">Your streaks</h2>
@@ -405,7 +405,7 @@ export default function SnapsPage() {
                 <Link
                   key={streak.friend.id}
                   to={`/u/${streak.friend.username}`}
-                  className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-gray-50"
+                  className={activityRow}
                 >
                   <Avatar avatarKey={streak.friend.avatarKey} username={streak.friend.username} size={38} />
                   <span className="min-w-0 flex-1">
@@ -430,7 +430,7 @@ export default function SnapsPage() {
             )}
           </section>
 
-          <section aria-label="Received Snaps" className={`${card} p-0`}>
+          <section aria-label="Received Snaps" className={activityList}>
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
               <h2 className="text-sm font-bold text-gray-900">Received</h2>
               <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-900">{snaps.length}</span>
@@ -441,19 +441,17 @@ export default function SnapsPage() {
                 <button
                   key={snap.id}
                   onClick={() => void openSnap(snap)}
-                  className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-yellow-50"
+                  className={activityRow}
                 >
-                  <span className="rounded-full bg-[#FFFC00] p-0.5">
-                    <Avatar avatarKey={snap.sender.avatarKey} username={snap.sender.username} size={42} />
-                  </span>
+                  <Avatar avatarKey={snap.sender.avatarKey} username={snap.sender.username} size={44} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-gray-900">{snap.sender.displayName || `@${snap.sender.username}`}</span>
-                    <span className="block text-xs text-gray-500">New Snap · {new Date(snap.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+                    <span className="block text-xs text-gray-500">New Snap · {formatActivityTime(snap.createdAt)}</span>
                     {snap.isEncrypted && (
                       <span className="mt-1 block"><EncryptionNotice encrypted /></span>
                     )}
                   </span>
-                  <span className="h-3 w-3 shrink-0 rounded-full bg-yellow-400" aria-label="Unopened" />
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#FFFC00] ring-1 ring-yellow-500/60" aria-label="Unopened" />
                 </button>
               ))}
               {snaps.length === 0 && (

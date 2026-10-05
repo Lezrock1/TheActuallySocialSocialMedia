@@ -99,6 +99,7 @@ export default function StoriesBar() {
     event.preventDefault();
     const message = replyText.trim();
     if (!viewing || !message || replySending) return;
+    const story = viewing.stories[storyIndex];
     setReplySending(true);
     setReactionError(null);
     try {
@@ -109,7 +110,15 @@ export default function StoriesBar() {
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       setViewing(null);
       navigate(`/dms?conversation=${result.conversationId}`, {
-        state: { draftMessage: message },
+        state: {
+          draftMessage: message,
+          storyReply: {
+            storyId: story.id,
+            imageKey: story.imageKey,
+            authorUsername: viewing.author.username,
+            createdAt: story.createdAt,
+          },
+        },
       });
     } catch {
       setReactionError("Could not open a private reply.");

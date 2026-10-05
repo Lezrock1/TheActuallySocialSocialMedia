@@ -126,6 +126,11 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
           : null,
       };
     });
+    summaries.sort((a, b) => {
+      if (!a.lastMessage) return b.lastMessage ? 1 : 0;
+      if (!b.lastMessage) return -1;
+      return Date.parse(b.lastMessage.createdAt) - Date.parse(a.lastMessage.createdAt);
+    });
     return reply.send({ conversations: summaries });
   });
 

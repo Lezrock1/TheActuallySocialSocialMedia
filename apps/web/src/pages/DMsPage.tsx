@@ -14,13 +14,65 @@ import type { PublicEncryptionKey } from "../lib/encryption.js";
 import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
 import { useWebRtcCall } from "../lib/useWebRtcCall.js";
 import { getSocket } from "../lib/socket.js";
+import { mediaUrl } from "../lib/upload.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import Avatar from "../components/Avatar.js";
 import CallOverlay from "../components/CallOverlay.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
-import { card, input, btnPrimary, btnSecondary } from "../lib/ui.js";
+import {
+  activityList,
+  activityRow,
+  card,
+  formatActivityTime,
+  input,
+  btnPrimary,
+  btnSecondary,
+} from "../lib/ui.js";
+
+interface StoryReplyContext {
+  storyId: string;
+  imageKey: string;
+  authorUsername: string;
+  createdAt: string;
+}
+
+interface DecryptedMessageContent {
+  text: string;
+  storyReply?: StoryReplyContext;
+}
+
+function parseDecryptedMessage(content: string): DecryptedMessageContent {
+  try {
+    const value = JSON.parse(content) as {
+      type?: unknown;
+      text?: unknown;
+      story?: Partial<StoryReplyContext>;
+    };
+    if (
+      value.type === "story_reply" &&
+      typeof value.text === "string" &&
+      typeof value.story?.storyId === "string" &&
+      typeof value.story.imageKey === "string" &&
+      typeof value.story.authorUsername === "string" &&
+      typeof value.story.createdAt === "string"
+    ) {
+      return {
+        text: value.text,
+        storyReply: {
+          storyId: value.story.storyId,
+          imageKey: value.story.imageKey,
+          authorUsername: value.story.authorUsername,
+          createdAt: value.story.createdAt,
+        },
+      };
+    }
+  } catch {
+    // Ordinary messages are plain text rather than structured JSON.
+  }
+  return { text: content };
+}
 
 async function fetchConversations(): Promise<ConversationSummary[]> {
   const res = await apiFetch<{ conversations: ConversationSummary[] }>(
@@ -66,6 +118,7 @@ export default function DMsPage() {
   const [selectedGroupUsernames, setSelectedGroupUsernames] = useState<string[]>([]);
   const [startingConversation, setStartingConversation] = useState(false);
   const [messageText, setMessageText] = useState("");
+  const [storyReplyContext, setStoryReplyContext] = useState<StoryReplyContext | null>(null);
   const [groupMode, setGroupMode] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [deviceKeyReady, setDeviceKeyReady] = useState(false);
@@ -74,9 +127,25 @@ export default function DMsPage() {
   const [decryptedMessages, setDecryptedMessages] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const state = location.state as { draftMessage?: unknown } | null;
+    const state = location.state as {
+      draftMessage?: unknown;
+      storyReply?: Partial<StoryReplyContext>;
+    } | null;
     if (typeof state?.draftMessage !== "string" || !state.draftMessage) return;
     setMessageText(state.draftMessage);
+    if (
+      typeof state.storyReply?.storyId === "string" &&
+      typeof state.storyReply.imageKey === "string" &&
+      typeof state.storyReply.authorUsername === "string" &&
+      typeof state.storyReply.createdAt === "string"
+    ) {
+      setStoryReplyContext({
+        storyId: state.storyReply.storyId,
+        imageKey: state.storyReply.imageKey,
+        authorUsername: state.storyReply.authorUsername,
+        createdAt: state.storyReply.createdAt,
+      });
+    }
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, [location.key, location.pathname, location.search, location.state, navigate]);
 
@@ -262,15 +331,20 @@ export default function DMsPage() {
       if (!allMembersHaveKeys) {
         throw new Error("Every participant must open Messages once before you can send an encrypted message.");
       }
-      const encryptedPayload: EncryptedMessagePayload = await encryptMessage(
-        messageText.trim(),
-        encryptionKeys
-      );
+      const messageContent = storyReplyContext
+        ? JSON.stringify({
+            type: "story_reply",
+            story: storyReplyContext,
+            text: messageText.trim(),
+          })
+        : messageText.trim();
+      const encryptedPayload: EncryptedMessagePayload = await encryptMessage(messageContent, encryptionKeys);
       await apiFetch(`/conversations/${activeId}/messages`, {
         method: "POST",
         body: JSON.stringify({ encryptedPayload }),
       });
       setMessageText("");
+      setStoryReplyContext(null);
     } catch (error) {
       setMessageError(error instanceof Error ? error.message : "Could not encrypt this message");
     }
@@ -393,55 +467,53 @@ export default function DMsPage() {
               </button>
             )}
           </form>
-          <div className="flex flex-col gap-2">
+          <div className={activityList}>
             {conversations.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setActiveId(c.id)}
-                className={`${card} flex items-center gap-2 text-left ${
-                  activeId === c.id ? "ring-2 ring-black" : ""
-                }`}
+                className={activityRow}
               >
                 {c.isGroup ? (
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-800 text-xs font-semibold text-white">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700">
                     {c.members.length}
                   </span>
                 ) : (
                   <Avatar
                     avatarKey={c.otherMember?.avatarKey ?? null}
                     username={c.otherMember?.username ?? "?"}
-                    size={36}
+                    size={44}
                   />
                 )}
-                <div className="min-w-0">
-                  {c.isGroup ? (
-                    <span className="text-sm font-medium">
-                      {c.name ?? c.members.map((m) => `@${m.username}`).join(", ")}
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900">
+                      {c.isGroup
+                        ? c.name ?? c.members.map((member) => `@${member.username}`).join(", ")
+                        : `@${c.otherMember?.username ?? "Unknown"}`}
                     </span>
-                  ) : (
-                    <Link
-                      to={`/u/${c.otherMember?.username}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-sm font-medium hover:underline"
-                    >
-                      @{c.otherMember?.username}
-                    </Link>
-                  )}
+                    {c.lastMessage && (
+                      <time className="shrink-0 text-[11px] text-gray-400">
+                        {formatActivityTime(c.lastMessage.createdAt)}
+                      </time>
+                    )}
+                  </span>
                   {c.lastMessage && (
-                    <div className="mt-1">
-                      <p className="truncate text-xs text-gray-500">
+                    <span className="mt-0.5 block">
+                      <span className="block truncate text-xs leading-5 text-gray-500">
                         {c.lastMessage.isEncrypted ? "Encrypted message" : c.lastMessage.text}
-                      </p>
+                      </span>
                       <EncryptionNotice encrypted={c.lastMessage.isEncrypted}>
                         {c.lastMessage.isEncrypted ? "End-to-end encrypted" : "Not end-to-end encrypted"}
                       </EncryptionNotice>
-                    </div>
+                    </span>
                   )}
-                </div>
+                  {!c.lastMessage && <span className="mt-0.5 block text-xs text-gray-400">No messages yet</span>}
+                </span>
               </button>
             ))}
             {conversations.length === 0 && (
-              <p className="py-3 text-sm text-gray-400">No conversations yet.</p>
+              <p className="px-4 py-6 text-center text-sm text-gray-500">No conversations yet.</p>
             )}
           </div>
         </div>}
@@ -513,28 +585,73 @@ export default function DMsPage() {
               <p role="alert" className="mb-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
             <div className={`${card} mb-3 flex max-h-[55vh] min-h-40 flex-col gap-2 overflow-y-auto`}>
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`max-w-[85%] break-words rounded-2xl px-3 py-2 text-sm ${
-                    message.senderId === user?.id
-                      ? "self-end bg-black text-white"
-                      : "self-start bg-gray-100"
-                  }`}
-                >
-                  <p>{message.isEncrypted
-                    ? decryptedMessages[message.id] ?? "Decrypting message..."
-                    : message.text}</p>
-                  <EncryptionNotice encrypted={message.isEncrypted}>
-                    {message.isEncrypted ? "End-to-end encrypted" : "Not end-to-end encrypted"}
-                  </EncryptionNotice>
-                </div>
-              ))}
+              {messages.map((message) => {
+                const content = message.isEncrypted
+                  ? decryptedMessages[message.id] ?? "Decrypting message..."
+                  : message.text ?? "";
+                const parsed = parseDecryptedMessage(content);
+                return (
+                  <div
+                    key={message.id}
+                    className={`max-w-[85%] break-words rounded-2xl px-3 py-2 text-sm ${
+                      message.senderId === user?.id
+                        ? "self-end bg-black text-white"
+                        : "self-start bg-gray-100"
+                    }`}
+                  >
+                    {parsed.storyReply && (
+                      <div
+                        data-story-id={parsed.storyReply.storyId}
+                        className="mb-2 flex items-center gap-2 overflow-hidden rounded-lg bg-black/5 p-1.5"
+                      >
+                        <img
+                          src={mediaUrl(parsed.storyReply.imageKey)}
+                          alt={`Story by @${parsed.storyReply.authorUsername}`}
+                          className="h-14 w-10 shrink-0 rounded object-cover"
+                        />
+                        <span className="min-w-0 py-1">
+                          <span className="block text-[11px] font-semibold">Story reply</span>
+                          <span className="block truncate text-xs opacity-80">
+                            @{parsed.storyReply.authorUsername} · {formatActivityTime(parsed.storyReply.createdAt)}
+                          </span>
+                        </span>
+                      </div>
+                    )}
+                    <p className="whitespace-pre-wrap">{parsed.text}</p>
+                    <EncryptionNotice encrypted={message.isEncrypted}>
+                      {message.isEncrypted ? "End-to-end encrypted" : "Not end-to-end encrypted"}
+                    </EncryptionNotice>
+                  </div>
+                );
+              })}
               {messages.length === 0 && (
                 <p className="text-xs text-gray-400">No messages yet.</p>
               )}
             </div>
             {messageError && <p role="alert" className="mb-2 text-xs text-red-600">{messageError}</p>}
+            {storyReplyContext && (
+              <div className="mb-2 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-2">
+                <img
+                  src={mediaUrl(storyReplyContext.imageKey)}
+                  alt={`Story by @${storyReplyContext.authorUsername}`}
+                  className="h-14 w-10 shrink-0 rounded object-cover"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-semibold text-gray-800">Replying to story</span>
+                  <span className="block truncate text-xs text-gray-500">
+                    @{storyReplyContext.authorUsername} · {formatActivityTime(storyReplyContext.createdAt)}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStoryReplyContext(null)}
+                  aria-label="Remove Story reply context"
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-gray-500 hover:bg-gray-200"
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <form onSubmit={(e) => void sendMessage(e)} className="flex items-center gap-2">
               <input
                 value={messageText}
