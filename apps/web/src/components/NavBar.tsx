@@ -10,9 +10,29 @@ const secondaryLinkClass = ({ isActive }: { isActive: boolean }) =>
   `text-xs ${isActive ? "text-gray-600 underline" : "text-gray-400"}`;
 
 const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `flex min-w-0 flex-col items-center justify-center border-t-2 px-1 py-2 text-[11px] font-medium ${
-    isActive ? "border-black text-black" : "border-transparent text-gray-500"
+  `flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-[10px] font-medium leading-none transition-colors ${
+    isActive ? "text-[#1DA1F2]" : "text-gray-500 hover:text-gray-800"
   }`;
+
+function MobileTabIcon({ name }: { name: "feed" | "snaps" | "messages" | "alerts" }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      className="h-[23px] w-[23px]"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {name === "feed" && <><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-6h6v6" /></>}
+      {name === "snaps" && <><rect x="3" y="6" width="18" height="15" rx="3" /><path d="m8 6 1.5-3h5L16 6" /><circle cx="12" cy="13.5" r="3.5" /></>}
+      {name === "messages" && <path d="M20.5 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5a7.5 7.5 0 1 1 17.5-3Z" />}
+      {name === "alerts" && <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></>}
+    </svg>
+  );
+}
 
 export default function NavBar() {
   const { data: { unreadCount: notificationCount = 0, messageUnreadCount = 0 } = {} } = useQuery({
@@ -83,24 +103,30 @@ export default function NavBar() {
       </nav>
       <nav
         aria-label="Primary navigation"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-gray-200 bg-white/95 px-1 pt-1 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur sm:hidden"
-        style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 items-stretch gap-1 border-t border-white/70 bg-white/85 px-3 pt-1 shadow-[0_-8px_28px_rgba(15,23,42,0.09)] backdrop-blur-xl sm:hidden"
+        style={{ paddingBottom: "max(0.4rem, env(safe-area-inset-bottom))" }}
       >
-        <NavLink to="/" end className={mobileLinkClass}>Feed</NavLink>
+        <NavLink to="/" end className={mobileLinkClass}>
+          <MobileTabIcon name="feed" />
+          <span>Feed</span>
+        </NavLink>
         <NavLink to="/snaps" className={mobileLinkClass}>
+          <MobileTabIcon name="snaps" />
           <span className="flex items-center">Snaps <SnapUnreadBadge /></span>
         </NavLink>
-        <span aria-hidden="true" className="flex min-w-0 flex-col items-center justify-center border-t-2 border-transparent px-1 py-2" />
+        <span aria-hidden="true" className="min-w-0" />
         <NavLink to="/dms" className={mobileLinkClass}>
+          <MobileTabIcon name="messages" />
           <span className="flex items-center">Messages <MessageUnreadBadge /></span>
         </NavLink>
         <NavLink to="/notifications" className={mobileLinkClass}>
-          <span>Alerts</span><UnreadBadge />
+          <MobileTabIcon name="alerts" />
+          <span className="flex items-center">Alerts <UnreadBadge /></span>
         </NavLink>
         <NavLink
           to="/snaps?camera=1"
           aria-label="Open camera"
-          className="absolute left-1/2 top-0 z-50 flex h-16 w-16 -translate-x-1/2 -translate-y-[30%] items-center justify-center rounded-full bg-fuchsia-600 text-white shadow-lg ring-4 ring-white transition hover:bg-fuchsia-700 active:scale-95"
+          className="absolute left-1/2 top-0 z-50 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#1DA1F2] text-white shadow-[0_4px_14px_rgba(29,161,242,0.35)] transition hover:bg-[#1A91DA] active:scale-95"
         >
           <CameraIcon />
         </NavLink>

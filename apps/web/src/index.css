@@ -7,3 +7,9 @@ body {
   color: #111827;
   -webkit-font-smoothing: antialiased;
 }
+
+@media (max-width: 639px) {
+  body {
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  }
+}
