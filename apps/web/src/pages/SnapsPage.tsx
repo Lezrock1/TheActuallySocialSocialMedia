@@ -103,6 +103,18 @@ export default function SnapsPage() {
       return Number(!aName.startsWith(normalizedSearch)) - Number(!bName.startsWith(normalizedSearch));
     });
   const streakByFriend = new Map(streaks.map((streak) => [streak.friend.id, streak]));
+    const friendsWithStreaks = following
+      .map((friend) => ({ friend, streak: streakByFriend.get(friend.id) }))
+      .sort((aEntry, bEntry) => {
+        const waitingDifference = Number(bEntry.streak?.waitingForYou ?? false) -
+          Number(aEntry.streak?.waitingForYou ?? false);
+        if (waitingDifference) return waitingDifference;
+        const currentDifference = (bEntry.streak?.currentStreak ?? 0) -
+          (aEntry.streak?.currentStreak ?? 0);
+        if (currentDifference) return currentDifference;
+        return (aEntry.friend.displayName || aEntry.friend.username)
+          .localeCompare(bEntry.friend.displayName || bEntry.friend.username);
+      });
 
   useEffect(() => {
     return () => {
@@ -392,44 +404,6 @@ export default function SnapsPage() {
 
       <main className="flex min-w-0 flex-col gap-4">
         <aside className="flex min-w-0 flex-col gap-4">
-          <section aria-label="Snap streaks" className={activityList}>
-            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-              <div>
-                <h2 className="text-sm font-bold text-gray-900">Your streaks</h2>
-                <p className="mt-0.5 text-xs text-gray-500">Reply to each other within 24 hours</p>
-              </div>
-              <span aria-hidden="true" className="text-xl">🔥</span>
-            </div>
-            <div className="max-h-56 overflow-y-auto">
-              {streaks.map((streak) => (
-                <Link
-                  key={streak.friend.id}
-                  to={`/u/${streak.friend.username}`}
-                  className={activityRow}
-                >
-                  <Avatar avatarKey={streak.friend.avatarKey} username={streak.friend.username} size={38} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{streak.friend.displayName || `@${streak.friend.username}`}</span>
-                    <span className="block truncate text-xs text-gray-500">
-                        {streak.waitingForYou ? "They sent a Snap. Send one back!" : streak.waitingForThem ? "Your turn is done. Waiting for them." : streak.currentStreak ? "Keep it going today" : streak.bestStreak ? `Best streak: ${streak.bestStreak}` : "Send Snaps both ways to start"}
-                    </span>
-                  </span>
-                  <span className={`shrink-0 text-sm font-bold ${streak.currentStreak ? "text-orange-600" : "text-gray-400"}`}>
-                    🔥 {streak.currentStreak || 0}
-                  </span>
-                </Link>
-              ))}
-              {streaks.length === 0 && (
-                <p className="px-4 py-5 text-sm text-gray-500">Your first mutual Snap starts a streak.</p>
-              )}
-            </div>
-            {streaks.some((streak) => streak.bestStreak > 0) && (
-              <p className="border-t border-gray-100 px-4 py-2 text-[11px] text-gray-500">
-                Best streaks are saved even after a current streak ends.
-              </p>
-            )}
-          </section>
-
           <section aria-label="Received Snaps" className={activityList}>
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
               <h2 className="text-sm font-bold text-gray-900">Received</h2>
@@ -458,6 +432,54 @@ export default function SnapsPage() {
                 <p className="px-4 py-6 text-sm text-gray-500">You’re all caught up. New Snaps show up here.</p>
               )}
             </div>
+          </section>
+
+          <section aria-label="Snap streaks" className={activityList}>
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+              <div>
+                <h2 className="text-sm font-bold text-gray-900">Your streaks</h2>
+                <p className="mt-0.5 text-xs text-gray-500">All your contacts · reply to each other within 24 hours</p>
+              </div>
+              <span aria-hidden="true" className="text-xl">🔥</span>
+            </div>
+            <div>
+              {friendsWithStreaks.map(({ friend, streak }) => (
+                <Link
+                  key={friend.id}
+                  to={`/u/${friend.username}`}
+                  className={activityRow}
+                >
+                  <Avatar avatarKey={friend.avatarKey} username={friend.username} size={38} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">
+                      {friend.displayName || `@${friend.username}`}
+                    </span>
+                    <span className="block truncate text-xs text-gray-500">
+                      {streak?.waitingForYou
+                        ? "They sent a Snap. Send one back!"
+                        : streak?.waitingForThem
+                          ? "Your turn is done. Waiting for them."
+                          : streak?.currentStreak
+                            ? "Keep it going today"
+                            : streak?.bestStreak
+                              ? `No current streak · Best streak: ${streak.bestStreak}`
+                              : "No current streak"}
+                    </span>
+                  </span>
+                  <span className={`shrink-0 text-sm font-bold ${streak?.currentStreak ? "text-orange-600" : "text-gray-400"}`}>
+                    🔥 {streak?.currentStreak ?? 0}
+                  </span>
+                </Link>
+              ))}
+              {friendsWithStreaks.length === 0 && (
+                <p className="px-4 py-5 text-sm text-gray-500">Follow friends to see them here and start a Snap streak.</p>
+              )}
+            </div>
+            {streaks.some((streak) => streak.bestStreak > 0) && (
+              <p className="border-t border-gray-100 px-4 py-2 text-[11px] text-gray-500">
+                Best streaks are saved even after a current streak ends.
+              </p>
+            )}
           </section>
         </aside>
       </main>
