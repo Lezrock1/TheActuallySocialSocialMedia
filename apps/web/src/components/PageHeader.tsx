@@ -4,7 +4,7 @@ import { useAuth } from "../auth/AuthContext.js";
 
 export default function PageHeader({
   title,
-  showSearch = false,
+  showSearch = true,
 }: {
   title: string;
   showSearch?: boolean;

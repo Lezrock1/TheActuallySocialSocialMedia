@@ -25,36 +25,54 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       getBlockedUserIds(request.userId!),
     ]);
     const followedIds = following.map((follow) => follow.followeeId);
-    if (followedIds.length === 0) return reply.send({ users: [] });
-
     const excludedIds = [request.userId!, ...followedIds, ...blockedUserIds];
-    const mutualCounts = await prisma.follow.groupBy({
-      by: ["followeeId"],
-      where: {
-        followerId: { in: followedIds },
-        followeeId: { notIn: excludedIds },
-      },
-      _count: { followeeId: true },
-    });
+    const mutualCounts = followedIds.length > 0
+      ? await prisma.follow.groupBy({
+          by: ["followeeId"],
+          where: {
+            followerId: { in: followedIds },
+            followeeId: { notIn: excludedIds },
+          },
+          _count: { followeeId: true },
+        })
+      : [];
     const ranked = mutualCounts
       .sort((a, b) =>
         b._count.followeeId - a._count.followeeId ||
         a.followeeId.localeCompare(b.followeeId)
       )
       .slice(0, 20);
-    const users = await prisma.user.findMany({
-      where: { id: { in: ranked.map((candidate) => candidate.followeeId) } },
+    const mutualUsers = ranked.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: ranked.map((candidate) => candidate.followeeId) } },
+        })
+      : [];
+    const mutualUserById = new Map(mutualUsers.map((candidate) => [candidate.id, candidate]));
+    const suggestions = ranked.flatMap((candidate) => {
+      const suggestedUser = mutualUserById.get(candidate.followeeId);
+      return suggestedUser
+        ? [{ ...toPublicUser(suggestedUser), mutualCount: candidate._count.followeeId }]
+        : [];
     });
-    const userById = new Map(users.map((candidate) => [candidate.id, candidate]));
 
-    return reply.send({
-      users: ranked.flatMap((candidate) => {
-        const suggestedUser = userById.get(candidate.followeeId);
-        return suggestedUser
-          ? [{ ...toPublicUser(suggestedUser), mutualCount: candidate._count.followeeId }]
-          : [];
-      }),
-    });
+    if (suggestions.length < 3) {
+      const suggestedIds = suggestions.map((suggestion) => suggestion.id);
+      const popularUsers = await prisma.user.findMany({
+        where: { id: { notIn: [...excludedIds, ...suggestedIds] } },
+        orderBy: [
+          { followers: { _count: "desc" } },
+          { createdAt: "desc" },
+          { id: "asc" },
+        ],
+        take: 3 - suggestions.length,
+      });
+      suggestions.push(...popularUsers.map((suggestedUser) => ({
+        ...toPublicUser(suggestedUser),
+        mutualCount: 0,
+      })));
+    }
+
+    return reply.send({ users: suggestions });
   });
 
   app.get<{ Querystring: { q?: string; cursor?: string } }>(
