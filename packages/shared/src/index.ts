@@ -1,16 +1,34 @@
 import { z } from "zod";
 
-export const registerSchema = z.object({
-  email: z.string().email(),
-  username: z
+const usernameSchema = z
     .string()
     .min(3)
     .max(30)
-    .regex(/^[a-zA-Z0-9_]+$/, "only letters, numbers, underscore"),
+    .regex(/^[a-zA-Z0-9_]+$/, "only letters, numbers, underscore")
+    .transform((value) => value.toLowerCase());
+
+export const registerSchema = z.object({
+  email: z.string().email().transform((value) => value.toLowerCase()),
+  username: usernameSchema,
   password: z.string().min(8),
   inviteCode: z.string().min(32).max(128),
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
+
+export const updateAccountSchema = z.object({
+  email: z.string().email().transform((value) => value.toLowerCase()),
+  username: usernameSchema,
+  currentPassword: z.string().min(1),
+});
+export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
+
+export const checkUsernameSchema = usernameSchema;
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 export const loginSchema = z.object({
   email: z.string().email(),

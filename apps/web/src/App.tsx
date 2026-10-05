@@ -12,6 +12,7 @@ import InvitationsPage from "./pages/InvitationsPage.js";
 import NotificationsPage from "./pages/NotificationsPage.js";
 import PeopleSearchPage from "./pages/PeopleSearchPage.js";
 import NotificationSettingsPage from "./pages/NotificationSettingsPage.js";
+import AccountSettingsPage from "./pages/AccountSettingsPage.js";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -62,6 +63,14 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <NotificationSettingsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings/account"
+        element={
+          <RequireAuth>
+            <AccountSettingsPage />
           </RequireAuth>
         }
       />

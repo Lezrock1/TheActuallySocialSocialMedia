@@ -1,6 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import argon2 from "argon2";
-import { loginSchema, registerSchema } from "@app/shared";
+import {
+  changePasswordSchema,
+  checkUsernameSchema,
+  loginSchema,
+  registerSchema,
+  updateAccountSchema,
+} from "@app/shared";
 import { prisma } from "../db.js";
 import { signAuthToken } from "../auth/token.js";
 import { AUTH_COOKIE_NAME, requireAuth } from "../auth/middleware.js";
@@ -25,9 +31,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
     const { email, username, password, inviteCode } = parsed.data;
+    const usernameCanonical = username.toLowerCase();
 
     const existing = await prisma.user.findFirst({
-      where: { OR: [{ email }, { username }] },
+      where: { OR: [{ email }, { usernameCanonical }] },
     });
     if (existing) {
       return reply.code(409).send({ error: "Email or username already taken" });
@@ -48,7 +55,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         if (claim.count !== 1) {
           throw new InvalidInvitationError();
         }
-        return tx.user.create({ data: { email, username, passwordHash } });
+        return tx.user.create({ data: { email, username, usernameCanonical, passwordHash } });
       });
     } catch (error) {
       if (error instanceof InvalidInvitationError) {
@@ -77,7 +84,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     const { email, password } = parsed.data;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: email.toLowerCase(), mode: "insensitive" } },
+    });
     if (!user || !(await argon2.verify(user.passwordHash, password))) {
       return reply.code(401).send({ error: "Invalid email or password" });
     }
@@ -105,4 +114,87 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ user: toPublicUser(user) });
     }
   );
+
+  app.get("/auth/account", { preHandler: requireAuth }, async (request, reply) => {
+    const user = await prisma.user.findUnique({
+      where: { id: request.userId! },
+      select: { email: true, username: true },
+    });
+    if (!user) return reply.code(404).send({ error: "User not found" });
+    return reply.send(user);
+  });
+
+  app.get<{ Querystring: { username?: string } }>(
+    "/auth/username-availability",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const parsed = checkUsernameSchema.safeParse(request.query.username);
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+      const existing = await prisma.user.findFirst({
+        where: {
+          usernameCanonical: parsed.data,
+          id: { not: request.userId! },
+        },
+        select: { id: true },
+      });
+      return reply.send({ available: !existing });
+    }
+  );
+
+  app.patch("/auth/account", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = updateAccountSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const user = await prisma.user.findUnique({ where: { id: request.userId! } });
+    if (!user) return reply.code(404).send({ error: "User not found" });
+    if (!(await argon2.verify(user.passwordHash, parsed.data.currentPassword))) {
+      return reply.code(401).send({ error: "Current password is incorrect" });
+    }
+
+    const usernameCanonical = parsed.data.username.toLowerCase();
+    const usernameTaken = await prisma.user.findFirst({
+      where: { usernameCanonical, id: { not: user.id } },
+      select: { id: true },
+    });
+    if (usernameTaken) return reply.code(409).send({ error: "Username is already taken" });
+    const emailTaken = await prisma.user.findFirst({
+      where: { email: { equals: parsed.data.email, mode: "insensitive" }, id: { not: user.id } },
+      select: { id: true },
+    });
+    if (emailTaken) return reply.code(409).send({ error: "Email is already taken" });
+
+    try {
+      const updated = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          email: parsed.data.email,
+          username: parsed.data.username,
+          usernameCanonical,
+        },
+      });
+      return reply.send({ user: toPublicUser(updated), email: updated.email });
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+        return reply.code(409).send({ error: "Email or username is already taken" });
+      }
+      throw error;
+    }
+  });
+
+  app.patch("/auth/password", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = changePasswordSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const user = await prisma.user.findUnique({ where: { id: request.userId! } });
+    if (!user) return reply.code(404).send({ error: "User not found" });
+    if (!(await argon2.verify(user.passwordHash, parsed.data.currentPassword))) {
+      return reply.code(401).send({ error: "Current password is incorrect" });
+    }
+    if (parsed.data.currentPassword === parsed.data.newPassword) {
+      return reply.code(400).send({ error: "New password must be different" });
+    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await argon2.hash(parsed.data.newPassword) },
+    });
+    return reply.code(204).send();
+  });
 }

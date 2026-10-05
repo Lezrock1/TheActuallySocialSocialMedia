@@ -85,14 +85,14 @@ export default function PageHeader({
               >
                 Notifications
               </Link>
-              <button
-                type="button"
+              <Link
+                to="/settings/account"
                 role="menuitem"
-                onClick={() => showComingSoon("Settings")}
-                className="block w-full px-4 py-2.5 text-left hover:bg-gray-50"
+                onClick={() => setMenuOpen(false)}
+                className="block px-4 py-2.5 hover:bg-gray-50"
               >
                 Settings
-              </button>
+              </Link>
               <button
                 type="button"
                 role="menuitem"
