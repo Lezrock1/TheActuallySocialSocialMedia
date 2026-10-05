@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ConversationMessage, ConversationSummary, PublicUser } from "@app/shared";
 import type { EncryptedMessagePayload } from "@app/shared";
@@ -12,11 +12,13 @@ import {
 } from "../lib/encryption.js";
 import type { PublicEncryptionKey } from "../lib/encryption.js";
 import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
+import { useWebRtcCall } from "../lib/useWebRtcCall.js";
 import { getSocket } from "../lib/socket.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import Avatar from "../components/Avatar.js";
+import CallOverlay from "../components/CallOverlay.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
 import { card, input, btnPrimary, btnSecondary } from "../lib/ui.js";
 
@@ -53,7 +55,10 @@ async function fetchEncryptionKeys(id: string): Promise<PublicEncryptionKey[]> {
 export default function DMsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const call = useWebRtcCall(user?.id);
   const friendPickerRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeId, setActiveId] = useState<string | null>(() => searchParams.get("conversation"));
   const [friendSearch, setFriendSearch] = useState("");
@@ -67,6 +72,13 @@ export default function DMsPage() {
   const [encryptionError, setEncryptionError] = useState<string | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
   const [decryptedMessages, setDecryptedMessages] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const state = location.state as { draftMessage?: unknown } | null;
+    if (typeof state?.draftMessage !== "string" || !state.draftMessage) return;
+    setMessageText(state.draftMessage);
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location.key, location.pathname, location.search, location.state, navigate]);
 
   const { data: conversations = [] } = useQuery({
     queryKey: ["conversations"],
@@ -101,6 +113,9 @@ export default function DMsPage() {
     enabled: !!activeId && deviceKeyReady,
   });
   const activeConversation = conversations.find((conversation) => conversation.id === activeId);
+  const callConversationId = call.activeCall?.conversationId ?? call.incomingCall?.conversationId;
+  const callConversation = conversations.find((conversation) => conversation.id === callConversationId);
+  const canCall = !!activeConversation && activeConversation.members.length >= 2 && activeConversation.members.length <= 6;
   const membersWithKeys = new Set(encryptionKeys.map((key) => key.userId));
   const allMembersHaveKeys = !!activeConversation &&
     activeConversation.members.length > 0 &&
@@ -449,6 +464,33 @@ export default function DMsPage() {
                   ? activeConversation.name ?? activeConversation.members.map((member) => `@${member.username}`).join(", ")
                   : `@${activeConversation?.otherMember?.username ?? "Conversation"}`}
               </h2>
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => activeId && void call.startCall(activeId, "audio")}
+                  disabled={!canCall || !!call.activeCall || !!call.incomingCall}
+                  aria-label="Start audio call"
+                  title="Audio call"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6.6 3.5h3l1.5 4.2-2 1.5a14 14 0 0 0 5.7 5.7l1.5-2 4.2 1.5v3a1.6 1.6 0 0 1-1.8 1.6A16.7 16.7 0 0 1 4.9 5.3 1.6 1.6 0 0 1 6.6 3.5Z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => activeId && void call.startCall(activeId, "video")}
+                  disabled={!canCall || !!call.activeCall || !!call.incomingCall}
+                  aria-label="Start video call"
+                  title="Video call"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="6" width="12" height="12" rx="2" />
+                    <path d="m15 10 6-3v10l-6-3" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <EncryptionNotice encrypted={deviceKeyReady && allMembersHaveKeys && !encryptionKeysError}>
               {deviceKeyReady && allMembersHaveKeys && !encryptionKeysError
@@ -508,6 +550,23 @@ export default function DMsPage() {
           </section>
         )}
       </div>
+      <CallOverlay
+        incomingCall={call.incomingCall}
+        activeCall={call.activeCall}
+        currentUserId={user?.id ?? ""}
+        users={callConversation?.members ?? []}
+        localStream={call.localStream}
+        remoteStreams={call.remoteStreams}
+        microphoneMuted={call.microphoneMuted}
+        cameraEnabled={call.cameraEnabled}
+        error={call.callError}
+        onAccept={() => void call.acceptCall()}
+        onDecline={call.declineCall}
+        onEnd={call.endCall}
+        onToggleMicrophone={call.toggleMicrophone}
+        onToggleCamera={call.toggleCamera}
+        onClearError={call.clearCallError}
+      />
     </div>
   );
 }
