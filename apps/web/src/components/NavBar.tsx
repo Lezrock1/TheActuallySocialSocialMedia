@@ -76,7 +76,10 @@ export default function NavBar() {
       <nav aria-label="Primary navigation" className="mx-auto mb-3 hidden max-w-2xl items-center justify-between border-b border-gray-200 pb-2 sm:flex">
         <div className="flex items-center gap-6">
           <NavLink to="/" end className={primaryLinkClass}>
-            Feed
+            <span className="inline-flex items-center gap-1.5">
+              <MobileTabIcon name="feed" className="h-5 w-5" />
+              Feed
+            </span>
           </NavLink>
           <NavLink to="/snaps" className={primaryLinkClass}>
             <span className="inline-flex items-center gap-1.5">
@@ -97,7 +100,7 @@ export default function NavBar() {
             </span>
           </NavLink>
         </div>
-        <div className="flex items-center gap-7">
+        <div className="flex items-center gap-4">
           <NavLink
             to="/invitations"
             className={({ isActive }) => `inline-flex h-10 items-center border-b-2 px-1 bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text text-sm font-semibold text-transparent hover:opacity-75 ${isActive ? "border-fuchsia-400" : "border-transparent"}`}
