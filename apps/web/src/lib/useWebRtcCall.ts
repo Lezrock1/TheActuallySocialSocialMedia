@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { LiveRoom } from "@app/shared";
 import { getSocket } from "./socket.js";
 
 export type CallType = "audio" | "video";
@@ -16,6 +17,7 @@ export interface ActiveCall {
   callType: CallType;
   hostUserId: string;
   participantIds: string[];
+  isRoom: boolean;
 }
 
 interface CallAcknowledgement {
@@ -42,7 +44,7 @@ function emitWithAck<T>(event: string, payload: unknown): Promise<T> {
   });
 }
 
-export function useWebRtcCall(userId: string | undefined) {
+export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = false) {
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -161,6 +163,7 @@ export function useWebRtcCall(userId: string | undefined) {
     const currentUserId = userId;
     const socket = getSocket();
     function onIncoming(call: IncomingCall) {
+      if (ignoreIncomingCalls) return;
       if (activeCallRef.current) {
         socket.emit("call:decline", { callId: call.callId });
         return;
@@ -219,9 +222,9 @@ export function useWebRtcCall(userId: string | undefined) {
         clearCall();
       }
     };
-  }, [clearCall, createPeer, receiveSignal, updateIncomingCall, userId]);
+  }, [clearCall, createPeer, ignoreIncomingCalls, receiveSignal, updateIncomingCall, userId]);
 
-  async function startCall(conversationId: string, callType: CallType) {
+  async function startCall(conversationId: string, callType: CallType, isRoom = false) {
     if (!userId || activeCallRef.current) return;
     setCallError(null);
     try {
@@ -236,15 +239,50 @@ export function useWebRtcCall(userId: string | undefined) {
         callType,
         hostUserId: userId,
         participantIds: [userId],
+        isRoom,
       };
       localStreamRef.current = stream;
       setLocalStream(stream);
       updateActiveCall(call);
-      const result = await emitWithAck<CallAcknowledgement>("call:start", { callId, conversationId, callType });
+      const result = await emitWithAck<CallAcknowledgement>("call:start", { callId, conversationId, callType, isRoom });
       if (!result.ok) throw new Error(result.error ?? "Could not start the call");
     } catch (error) {
       clearCall();
       setCallError(error instanceof Error ? error.message : "Could not access the microphone or camera.");
+    }
+  }
+
+  async function joinLiveRoom(room: LiveRoom) {
+    if (!userId || activeCallRef.current) return;
+    setCallError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      updateIncomingCall(null);
+      updateActiveCall({
+        callId: room.callId,
+        conversationId: room.conversationId,
+        callType: "video",
+        hostUserId: room.hostUserId,
+        participantIds: [userId],
+        isRoom: true,
+      });
+      const result = await emitWithAck<CallAcknowledgement>("call:join", {
+        callId: room.callId,
+        conversationId: room.conversationId,
+      });
+      if (!result.ok) throw new Error(result.error ?? "Could not join the room");
+      const peerIds = result.peerIds ?? [];
+      setActiveCall((current) => current?.callId === room.callId
+        ? { ...current, participantIds: [...new Set([...current.participantIds, ...peerIds])] }
+        : current);
+      for (const peerUserId of peerIds) {
+        createPeer(peerUserId, room.callId, userId.localeCompare(peerUserId) < 0);
+      }
+    } catch (error) {
+      clearCall();
+      setCallError(error instanceof Error ? error.message : "Could not access the camera or join this room.");
     }
   }
 
@@ -263,6 +301,7 @@ export function useWebRtcCall(userId: string | undefined) {
         ...incoming,
         hostUserId: incoming.callerId,
         participantIds: [userId],
+        isRoom: false,
       });
       updateIncomingCall(null);
       const result = await emitWithAck<CallAcknowledgement>("call:join", {
@@ -312,6 +351,7 @@ export function useWebRtcCall(userId: string | undefined) {
     cameraEnabled,
     callError,
     startCall,
+    joinLiveRoom,
     acceptCall,
     declineCall,
     endCall,

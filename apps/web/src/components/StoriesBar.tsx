@@ -145,7 +145,7 @@ export default function StoriesBar() {
   }
 
   return (
-    <div className="mb-6">
+    <div className="min-w-0">
       <div className="mb-2 flex items-center gap-2 text-xs text-gray-400">
         <span>New story visible to</span>
         <select

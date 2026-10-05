@@ -11,6 +11,7 @@ import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import StoriesBar from "../components/StoriesBar.js";
+import LiveRoomsBar from "../components/LiveRoomsBar.js";
 import PostCard from "../components/PostCard.js";
 import Avatar from "../components/Avatar.js";
 
@@ -191,7 +192,10 @@ export default function FeedPage() {
       <PageHeader title="Feed" showSearch />
       <NavBar />
 
-      <StoriesBar />
+      <div className="mb-6 grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_17rem]">
+        <StoriesBar />
+        <LiveRoomsBar />
+      </div>
 
       <form onSubmit={onPost} className={`${card} mb-6 flex flex-col gap-3`}>
         <textarea

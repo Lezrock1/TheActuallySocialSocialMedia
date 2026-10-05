@@ -339,6 +339,15 @@ export interface SnapStreakSummary {
   waitingForThem: boolean;
 }
 
+export interface LiveRoom {
+  callId: string;
+  conversationId: string;
+  title: string;
+  hostUserId: string;
+  participantIds: string[];
+  members: PublicUser[];
+}
+
 export const encryptedMessagePayloadSchema = z.object({
   version: z.literal(1),
   iv: z.string().min(16).max(32),

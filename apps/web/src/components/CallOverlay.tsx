@@ -105,7 +105,9 @@ export default function CallOverlay({
         <section role="dialog" aria-modal="true" aria-label={`${callType} call`} className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
           <header className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900">{callType === "video" ? "Video call" : "Audio call"}</h2>
+              <h2 className="text-sm font-semibold text-gray-900">
+                {activeCall?.isRoom ? "Live room" : callType === "video" ? "Video call" : "Audio call"}
+              </h2>
               <p className="text-xs text-gray-500">{remoteUserIds.length ? `${remoteUserIds.length + 1} participants` : "Calling..."}</p>
             </div>
             <button type="button" onClick={onEnd} aria-label="End call" className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-gray-500 hover:bg-gray-100">×</button>
