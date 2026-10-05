@@ -34,7 +34,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const usernameCanonical = username.toLowerCase();
 
     const existing = await prisma.user.findFirst({
-      where: { OR: [{ email }, { usernameCanonical }] },
+      where: {
+        OR: [
+          { email: { equals: email.toLowerCase(), mode: "insensitive" } },
+          { usernameCanonical },
+        ],
+      },
     });
     if (existing) {
       return reply.code(409).send({ error: "Email or username already taken" });
