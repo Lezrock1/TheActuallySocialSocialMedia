@@ -1,6 +1,7 @@
 import type { NotificationType } from "@app/shared";
 import { prisma } from "./db.js";
 import { getBlockedUserIds } from "./visibility.js";
+import { sendWebPushNotification } from "./pushNotifications.js";
 
 export async function createUserNotification(input: {
   recipientId: string;
@@ -13,11 +14,26 @@ export async function createUserNotification(input: {
   snapId?: string;
 }): Promise<void> {
   if (input.recipientId === input.actorId) return;
-  await prisma.notification.upsert({
-    where: { dedupeKey: input.dedupeKey },
-    create: input,
-    update: {},
-  });
+  try {
+    const notification = await prisma.notification.create({ data: input });
+    void sendWebPushNotification({
+      notificationId: notification.id,
+      recipientId: input.recipientId,
+      actorId: input.actorId,
+      type: input.type,
+      postId: input.postId,
+      conversationId: input.conversationId,
+      snapId: input.snapId,
+    }).catch(() => {
+      console.error("Could not send web push notification");
+    });
+  } catch (error) {
+    if (
+      typeof error === "object" && error !== null &&
+      "code" in error && error.code === "P2002"
+    ) return;
+    throw error;
+  }
 }
 
 export async function createMentionNotifications(input: {

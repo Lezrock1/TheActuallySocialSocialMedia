@@ -140,6 +140,12 @@ The repository includes a single-server Docker Compose deployment for a small in
 
 The frontend is built with `PUBLIC_API_URL` (default `https://api.intouchsocial.com`) and the API allows `CORS_ORIGIN` (default `https://intouchsocial.com`). If you use different hostnames, update both values and the site names in `Caddyfile`, then rebuild. The example deployment is a single VPS; it does not provide redundancy, automated off-site backups, or an admin/moderation UI.
 
+## Web Push Notifications
+
+Browser push is optional and requires VAPID keys. Generate a key pair with `pnpm --filter @app/api exec web-push generate-vapid-keys`, then set `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, and `WEB_PUSH_SUBJECT` in the API environment (or `.env.production`). Keep the private key secret. Rebuild/restart the API after changing these values. Push alerts contain only the actor and activity type; message and Snap contents are never included.
+
+On Android, users can enable push from **Notifications** and allow the browser prompt. On iPhone/iPad (iOS/iPadOS 16.4+), users must open InTouch in Safari, choose **Share → Add to Home Screen**, open the installed web app, then enable push from **Notifications**. Push requires HTTPS and a browser with Web Push support.
+
 ## Usage
 
 After starting the app with a fresh database, set `BOOTSTRAP_INVITE_CODE` in `apps/api/.env`, restart the API, and open `http://localhost:5173/register#invite=<BOOTSTRAP_INVITE_CODE>` to create the first account. The code is in the URL fragment so browsers do not send it in HTTP requests. Remove the bootstrap value and restart the API after setup. That first member can create invite links from **Invite friends**; each link works once, expires after 14 days, and each member may have up to 100 active invites. Share links manually; the app does not email invitations. Invited members can issue their own links. Then post and follow others from the feed. Each user gets an **OpenRouter Free** provider by default under **AI Tools**; it uses OpenRouter's free-model router and requires either `OPENROUTER_API_KEY` on the server or a personal API key. Users can also configure other providers, such as a local Ollama instance at `http://localhost:11434/v1`.

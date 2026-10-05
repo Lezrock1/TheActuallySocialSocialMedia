@@ -47,6 +47,7 @@ model User {
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsSent Notification[] @relation("NotificationActor")
   commentLikes     CommentLike[]
+  pushSubscriptions WebPushSubscription[]
 }
 
 model Follow {
@@ -157,6 +158,19 @@ model Notification {
 
   @@index([recipientId, createdAt])
   @@index([recipientId, readAt])
+}
+
+model WebPushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Story {

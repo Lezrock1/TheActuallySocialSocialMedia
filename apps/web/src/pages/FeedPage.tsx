@@ -271,7 +271,7 @@ export default function FeedPage() {
           <button
             type="submit"
             disabled={posting}
-            className={`${btnPrimary} min-h-10 shrink-0 rounded-full bg-[#1DA1F2] px-5 font-semibold hover:bg-[#1A91DA] focus-visible:ring-2 focus-visible:ring-[#1DA1F2] focus-visible:ring-offset-2`}
+            className={`${btnPrimary} min-h-10 shrink-0 rounded-full bg-[#1D9BF0] px-5 font-semibold hover:bg-[#1688D4] focus-visible:ring-2 focus-visible:ring-[#1D9BF0] focus-visible:ring-offset-2`}
           >
             Post
           </button>

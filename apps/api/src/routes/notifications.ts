@@ -1,13 +1,70 @@
 import type { FastifyInstance } from "fastify";
 import type { NotificationsPage, UserNotification } from "@app/shared";
+import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
+import { env } from "../env.js";
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
+const pushSubscriptionSchema = z.object({
+  endpoint: z.string().url().max(2048).refine((value) => {
+    const url = new URL(value);
+    return url.protocol === "https:" && (
+      url.hostname === "fcm.googleapis.com" ||
+      url.hostname.endsWith(".push.services.mozilla.com") ||
+      url.hostname.endsWith(".push.apple.com") ||
+      url.hostname.endsWith(".notify.windows.com")
+    );
+  }, "Unsupported push endpoint"),
+  keys: z.object({
+    p256dh: z.string().min(1).max(256),
+    auth: z.string().min(1).max(256),
+  }),
+});
+const pushEndpointSchema = z.object({ endpoint: pushSubscriptionSchema.shape.endpoint });
 
 export async function notificationRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/notifications/push/config", { preHandler: requireAuth }, async (_request, reply) => {
+    return reply.send({
+      enabled: Boolean(env.webPushPublicKey && env.webPushPrivateKey),
+      publicKey: env.webPushPublicKey ?? null,
+    });
+  });
+
+  app.put("/notifications/push/subscription", { preHandler: requireAuth }, async (request, reply) => {
+    if (!env.webPushPublicKey || !env.webPushPrivateKey) {
+      return reply.code(503).send({ error: "Push notifications are not configured" });
+    }
+    const parsed = pushSubscriptionSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    await prisma.webPushSubscription.upsert({
+      where: { endpoint: parsed.data.endpoint },
+      create: {
+        userId: request.userId!,
+        endpoint: parsed.data.endpoint,
+        p256dh: parsed.data.keys.p256dh,
+        auth: parsed.data.keys.auth,
+      },
+      update: {
+        userId: request.userId!,
+        p256dh: parsed.data.keys.p256dh,
+        auth: parsed.data.keys.auth,
+      },
+    });
+    return reply.code(204).send();
+  });
+
+  app.delete("/notifications/push/subscription", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = pushEndpointSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    await prisma.webPushSubscription.deleteMany({
+      where: { endpoint: parsed.data.endpoint, userId: request.userId! },
+    });
+    return reply.code(204).send();
+  });
+
   app.get(
     "/notifications/unread-count",
     { preHandler: requireAuth },

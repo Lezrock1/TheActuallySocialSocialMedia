@@ -6,9 +6,6 @@ import CameraIcon from "./CameraIcon.js";
 const primaryLinkClass = ({ isActive }: { isActive: boolean }) =>
   `text-base font-semibold ${isActive ? "text-black underline" : "text-gray-700"}`;
 
-const secondaryLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `text-xs ${isActive ? "text-gray-600 underline" : "text-gray-400"}`;
-
 const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
   `flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-[10px] font-medium leading-none transition-colors ${
     isActive ? "text-[#1DA1F2]" : "text-gray-500 hover:text-gray-800"
@@ -48,10 +45,10 @@ export default function NavBar() {
     refetchInterval: 30_000,
   });
 
-  function UnreadBadge() {
+  function UnreadBadge({ className = "" }: { className?: string } = {}) {
     if (!notificationCount) return null;
     return (
-      <span className="ml-1 inline-flex min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-semibold leading-4 text-white">
+      <span className={`absolute -right-1.5 -top-1 z-10 inline-flex min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-semibold leading-4 text-white shadow-sm ${className}`}>
         {notificationCount > 9 ? "9+" : notificationCount}
       </span>
     );
@@ -96,8 +93,15 @@ export default function NavBar() {
           >
             Invite your friends!
           </NavLink>
-          <NavLink to="/notifications" className={secondaryLinkClass}>
-            Notifications <UnreadBadge />
+          <NavLink
+            to="/notifications"
+            className={({ isActive }) => `inline-flex items-center gap-2 text-xs ${isActive ? "text-gray-700" : "text-gray-500"}`}
+          >
+            <span className="relative inline-flex">
+              <MobileTabIcon name="alerts" />
+              <UnreadBadge />
+            </span>
+            <span>Notifications</span>
           </NavLink>
         </div>
       </nav>
@@ -120,13 +124,16 @@ export default function NavBar() {
           <span className="flex items-center">Messages <MessageUnreadBadge /></span>
         </NavLink>
         <NavLink to="/notifications" className={mobileLinkClass}>
-          <MobileTabIcon name="alerts" />
-          <span className="flex items-center">Alerts <UnreadBadge /></span>
+          <span className="relative inline-flex">
+            <MobileTabIcon name="alerts" />
+            <UnreadBadge />
+          </span>
+          <span>Alerts</span>
         </NavLink>
         <NavLink
           to="/snaps?camera=1"
           aria-label="Open camera"
-          className="absolute left-1/2 top-0 z-50 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#1DA1F2] text-white shadow-[0_4px_14px_rgba(29,161,242,0.35)] transition hover:bg-[#1A91DA] active:scale-95"
+          className="absolute left-1/2 top-0 z-50 flex h-16 w-16 -translate-x-1/2 -translate-y-[30%] items-center justify-center rounded-full bg-fuchsia-600 text-white shadow-lg ring-4 ring-white transition hover:bg-fuchsia-700 active:scale-95"
         >
           <CameraIcon />
         </NavLink>

@@ -6,6 +6,7 @@ import { activityList, activityRow, btnSecondary, formatActivityTime } from "../
 import Avatar from "../components/Avatar.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import PushNotificationSettings from "../components/PushNotificationSettings.js";
 
 async function fetchNotifications(cursor: string | null): Promise<NotificationsPageData> {
   const params = new URLSearchParams();
@@ -57,6 +58,7 @@ export default function NotificationsPage() {
     <div className="mx-auto max-w-lg px-4 py-4 sm:py-8">
       <PageHeader title="Notifications" />
       <NavBar />
+      <PushNotificationSettings />
 
       <div className="mb-3 flex min-h-10 items-center justify-between gap-3">
         <p className="text-sm text-gray-500">

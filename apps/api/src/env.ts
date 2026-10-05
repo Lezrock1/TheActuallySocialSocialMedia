@@ -20,6 +20,11 @@ function validateProductionSecret(name: string, value: string): void {
 const jwtSecret = required("JWT_SECRET");
 const aiKeyEncryptionSecret = required("AI_KEY_ENCRYPTION_SECRET");
 const bootstrapInviteCode = process.env.BOOTSTRAP_INVITE_CODE;
+const webPushPublicKey = process.env.WEB_PUSH_PUBLIC_KEY;
+const webPushPrivateKey = process.env.WEB_PUSH_PRIVATE_KEY;
+if (Boolean(webPushPublicKey) !== Boolean(webPushPrivateKey)) {
+  throw new Error("WEB_PUSH_PUBLIC_KEY and WEB_PUSH_PRIVATE_KEY must be set together");
+}
 validateProductionSecret("JWT_SECRET", jwtSecret);
 validateProductionSecret("AI_KEY_ENCRYPTION_SECRET", aiKeyEncryptionSecret);
 if (bootstrapInviteCode) {
@@ -32,6 +37,9 @@ export const env = {
   jwtSecret,
   bootstrapInviteCode,
   openRouterApiKey: process.env.OPENROUTER_API_KEY,
+  webPushPublicKey,
+  webPushPrivateKey,
+  webPushSubject: process.env.WEB_PUSH_SUBJECT ?? "mailto:admin@intouchsocial.com",
   // used to encrypt user-supplied AI provider API keys at rest
   aiKeyEncryptionSecret,
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
