@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Comment } from "@app/shared";
 import { ApiError, apiFetch } from "../lib/api.js";
 import Avatar from "./Avatar.js";
+import LinkedMentions from "./LinkedMentions.js";
 
 async function fetchComments(postId: string): Promise<Comment[]> {
   const res = await apiFetch<{ comments: Comment[] }>(`/posts/${postId}/comments`);
@@ -32,7 +33,7 @@ function CommentItem({
           <Link to={`/u/${comment.author.username}`} className="mr-1 font-semibold text-gray-900 hover:underline">
             @{comment.author.username}
           </Link>
-          {comment.text}
+          <LinkedMentions text={comment.text} />
         </p>
         <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
           <time dateTime={comment.createdAt}>

@@ -9,6 +9,7 @@ import AiChatPanel from "./AiChatPanel.js";
 import FactCheckTransparency from "./FactCheckTransparency.js";
 import CommentsSection from "./CommentsSection.js";
 import PollCard from "./PollCard.js";
+import LinkedMentions from "./LinkedMentions.js";
 
 export default function PostCard({
   post,
@@ -54,7 +55,7 @@ export default function PostCard({
           </button>
         )}
       </div>
-      {post.text && <p className="whitespace-pre-wrap text-[15px] leading-snug">{post.text}</p>}
+      {post.text && <p className="whitespace-pre-wrap text-[15px] leading-snug"><LinkedMentions text={post.text} /></p>}
       {post.pollId && <PollCard pollId={post.pollId} />}
       {post.imageKey && (
         <img
