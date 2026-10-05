@@ -55,8 +55,7 @@ function parseDecryptedMessage(content: string): DecryptedMessageContent {
       typeof value.text === "string" &&
       typeof value.story?.storyId === "string" &&
       typeof value.story.imageKey === "string" &&
-      typeof value.story.authorUsername === "string" &&
-      typeof value.story.createdAt === "string"
+      typeof value.story.authorUsername === "string"
     ) {
       return {
         text: value.text,
@@ -64,7 +63,7 @@ function parseDecryptedMessage(content: string): DecryptedMessageContent {
           storyId: value.story.storyId,
           imageKey: value.story.imageKey,
           authorUsername: value.story.authorUsername,
-          createdAt: value.story.createdAt,
+          createdAt: typeof value.story.createdAt === "string" ? value.story.createdAt : "",
         },
       };
     }
@@ -612,7 +611,8 @@ export default function DMsPage() {
                         <span className="min-w-0 py-1">
                           <span className="block text-[11px] font-semibold">Story reply</span>
                           <span className="block truncate text-xs opacity-80">
-                            @{parsed.storyReply.authorUsername} · {formatActivityTime(parsed.storyReply.createdAt)}
+                            @{parsed.storyReply.authorUsername}
+                            {parsed.storyReply.createdAt && ` · ${formatActivityTime(parsed.storyReply.createdAt)}`}
                           </span>
                         </span>
                       </div>
