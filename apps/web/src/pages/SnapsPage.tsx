@@ -479,10 +479,9 @@ export default function SnapsPage() {
           </section>
         </aside>
       </main>
-      <div className="mt-4 flex flex-col items-start gap-1">
-        <p className="text-[11px] font-medium text-gray-600">Snaps are end-to-end encrypted when all recipient devices have keys.</p>
-        <p className="text-[11px] text-gray-500">Sender, recipient, and view times remain visible to the server.</p>
-      </div>
+      <p className="mt-4 text-[11px] leading-5 text-gray-500">
+        When all recipient devices have keys, Snap content is encrypted on your device before upload, so the server cannot read it. The server can still see the sender, recipients, and view times.
+      </p>
 
       {studioOpen && (
         <div className="fixed inset-0 z-[60] flex flex-col bg-black text-white" role="dialog" aria-modal="true" aria-label={studioStep === "capture" ? "Camera" : "Review photo"}>
