@@ -157,7 +157,7 @@ export default function AiChatPanel({ postId }: { postId: string }) {
   }
 
   return (
-    <section className="mt-2 w-full sm:mt-0 sm:w-auto">
+    <section className="w-full min-w-0">
       <div className="flex flex-col items-end gap-1">
         <button
           type="button"
