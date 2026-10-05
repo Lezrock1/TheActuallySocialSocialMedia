@@ -14,6 +14,8 @@ export default function Avatar({
       <img
         src={mediaUrl(avatarKey)}
         alt={username}
+        loading="lazy"
+        decoding="async"
         style={{ width: size, height: size }}
         className="shrink-0 rounded-full object-cover"
       />

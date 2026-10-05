@@ -44,7 +44,8 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: requireAuth },
     async (request, reply) => {
       const key = request.params.key;
-      if (!(await canReadMedia(request.userId!, key))) {
+      const access = await canReadMedia(request.userId!, key);
+      if (!access.allowed) {
         return reply.code(404).send({ error: "Not found" });
       }
       const media = await getMedia(key);
@@ -52,7 +53,13 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "Not found" });
       }
       reply.header("Content-Type", media.contentType);
-      reply.header("Cache-Control", "private, no-store");
+      reply.header(
+        "Cache-Control",
+        access.maxAgeSeconds > 0
+          ? `private, max-age=${access.maxAgeSeconds}, must-revalidate`
+          : "private, no-store"
+      );
+      reply.header("Vary", "Cookie");
       reply.header("X-Content-Type-Options", "nosniff");
       return reply.send(media.body);
     }

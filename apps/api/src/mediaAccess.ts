@@ -1,6 +1,11 @@
 import { prisma } from "./db.js";
 import { getBlockedUserIds, getCloseFriendGrantedAuthorIds } from "./visibility.js";
 
+export interface MediaAccess {
+  allowed: boolean;
+  maxAgeSeconds: number;
+}
+
 export async function ownsMedia(userId: string, key: string): Promise<boolean> {
   const asset = await prisma.mediaAsset.findUnique({
     where: { key },
@@ -12,7 +17,7 @@ export async function ownsMedia(userId: string, key: string): Promise<boolean> {
 export async function canReadMedia(
   viewerId: string,
   key: string
-): Promise<boolean> {
+): Promise<MediaAccess> {
   const now = new Date();
   const [asset, posts, stories, snaps, avatarOwners] = await Promise.all([
     prisma.mediaAsset.findUnique({
@@ -47,7 +52,7 @@ export async function canReadMedia(
   const hasReferences =
     posts.length > 0 || stories.length > 0 || snaps.length > 0 || avatarOwners.length > 0;
   if (asset?.ownerId === viewerId && !hasReferences) {
-    return true;
+    return { allowed: true, maxAgeSeconds: 30 };
   }
 
   const [blockedIds, closeFriendAuthorIds] = await Promise.all([
@@ -61,26 +66,24 @@ export async function canReadMedia(
     return visibility === "close_friends" && closeFriendAuthorIds.includes(authorId);
   };
 
-  if (posts.some((post) => canSeeAuthor(post.authorId, post.visibility))) {
-    return true;
-  }
-  if (
-    stories.some(
-      (story) =>
-        story.expiresAt > now && canSeeAuthor(story.authorId, story.visibility)
-    )
-  ) {
-    return true;
-  }
-  if (
-    snaps.some(
-      (snap) =>
-        snap.expiresAt > now &&
-        !blockedIds.includes(snap.senderId) &&
-        snap.recipients.length > 0
-    )
-  ) {
-    return true;
-  }
-  return avatarOwners.some((avatar) => canSeeAuthor(avatar.id, "public"));
+  const canReadPost = posts.some((post) => canSeeAuthor(post.authorId, post.visibility));
+  const canReadStory = stories.some(
+    (story) => story.expiresAt > now && canSeeAuthor(story.authorId, story.visibility)
+  );
+  const canReadSnap = snaps.some(
+    (snap) => snap.expiresAt > now &&
+      !blockedIds.includes(snap.senderId) &&
+      snap.recipients.length > 0
+  );
+  const canReadAvatar = avatarOwners.some((avatar) => canSeeAuthor(avatar.id, "public"));
+  const allowed = canReadPost || canReadStory || canReadSnap || canReadAvatar;
+  if (!allowed || canReadSnap) return { allowed, maxAgeSeconds: 0 };
+
+  const activeStoryExpiries = stories
+    .map((story) => story.expiresAt.getTime())
+    .filter((expiresAt) => expiresAt > now.getTime());
+  const maxAgeSeconds = activeStoryExpiries.length
+    ? Math.max(0, Math.min(30, Math.floor((Math.min(...activeStoryExpiries) - now.getTime()) / 1000)))
+    : 30;
+  return { allowed: true, maxAgeSeconds };
 }
