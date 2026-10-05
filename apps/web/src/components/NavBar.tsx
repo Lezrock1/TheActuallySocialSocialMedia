@@ -70,7 +70,10 @@ export default function NavBar() {
           </NavLink>
         </div>
         <div className="flex gap-3">
-          <NavLink to="/invitations" className={secondaryLinkClass}>
+          <NavLink
+            to="/invitations"
+            className={({ isActive }) => `bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text text-xs font-medium text-transparent hover:opacity-75 ${isActive ? "underline decoration-fuchsia-500 underline-offset-4" : ""}`}
+          >
             Invite your friends!
           </NavLink>
           <NavLink to="/notifications" className={secondaryLinkClass}>
