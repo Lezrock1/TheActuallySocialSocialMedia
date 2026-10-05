@@ -365,21 +365,27 @@ export default function DMsPage() {
 
       <div className="flex flex-col gap-6">
         {!activeId && <div className="w-full">
-          <div className="mb-2 flex gap-3 text-xs">
+          <div role="tablist" aria-label="Messages view" className="mb-3 inline-flex rounded-lg bg-gray-100 p-1">
             <button
+              type="button"
+              role="tab"
+              aria-selected={!groupMode}
               onClick={() => {
                 setGroupMode(false);
                 setSelectedGroupUsernames([]);
               }}
-              className={!groupMode ? "font-semibold text-black underline" : "text-gray-400"}
+              className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${!groupMode ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
             >
-              1:1
+              Chats
             </button>
             <button
+              type="button"
+              role="tab"
+              aria-selected={groupMode}
               onClick={() => setGroupMode(true)}
-              className={groupMode ? "font-semibold text-black underline" : "text-gray-400"}
+              className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${groupMode ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
             >
-              Group
+              Create a Group
             </button>
           </div>
           <form
@@ -459,7 +465,7 @@ export default function DMsPage() {
             )}
             {groupMode && (
               <button disabled={!selectedGroupUsernames.length} className={btnSecondary}>
-                Create group
+                Create a Group
               </button>
             )}
             {!groupMode && friendSearch.trim() && matchingFriends.length > 0 && (
@@ -468,7 +474,7 @@ export default function DMsPage() {
               </button>
             )}
           </form>
-          <div className={activityList}>
+          {!groupMode && <div className={activityList}>
             {conversations.map((c) => (
               <button
                 key={c.id}
@@ -525,7 +531,7 @@ export default function DMsPage() {
             {conversations.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-gray-500">No conversations yet.</p>
             )}
-          </div>
+          </div>}
         </div>}
 
         {activeId && (
