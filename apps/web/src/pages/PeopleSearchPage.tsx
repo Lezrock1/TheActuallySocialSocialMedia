@@ -59,7 +59,7 @@ export default function PeopleSearchPage() {
   const isError = deferredQuery ? searchQuery.isError : suggestionsQuery.isError;
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-4 sm:py-8">
+    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="Find people" />
       <NavBar />
 

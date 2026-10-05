@@ -164,7 +164,7 @@ export default function ProfilePage() {
   const profile = profileQuery.data;
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-8">
+    <div className="mx-auto max-w-2xl px-4 py-8">
       <PageHeader title="Profile" />
       <NavBar />
       {profileQuery.isLoading && <p className="text-sm text-gray-500">Loading...</p>}

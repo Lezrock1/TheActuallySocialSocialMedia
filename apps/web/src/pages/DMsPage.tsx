@@ -352,7 +352,7 @@ export default function DMsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-4 sm:py-8">
+    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="Messages" />
       <NavBar />
       <p className="mb-1 text-xs text-gray-500">

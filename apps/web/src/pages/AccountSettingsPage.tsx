@@ -198,7 +198,7 @@ export default function AccountSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-4 sm:py-8">
+    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="Settings" />
       <NavBar />
       <p className="mb-4 text-sm leading-5 text-gray-500">Manage the details you use to sign in.</p>

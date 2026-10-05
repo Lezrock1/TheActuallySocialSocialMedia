@@ -377,7 +377,7 @@ export default function SnapsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg px-4 py-4 pb-28 sm:py-8 sm:pb-8">
+    <div className="mx-auto w-full max-w-2xl px-4 py-4 pb-28 sm:py-8 sm:pb-8">
       <PageHeader title="Snaps" />
       <NavBar />
       <div className="mb-4 flex flex-col items-start gap-2">

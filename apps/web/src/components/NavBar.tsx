@@ -4,7 +4,7 @@ import { apiFetch } from "../lib/api.js";
 import CameraIcon from "./CameraIcon.js";
 
 const primaryLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `text-base font-semibold ${isActive ? "text-black underline" : "text-gray-700"}`;
+  `inline-flex h-10 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors ${isActive ? "border-[#1D9BF0] text-gray-900" : "border-transparent text-gray-600 hover:text-gray-900"}`;
 
 const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
   `flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-[10px] font-medium leading-none transition-colors ${
@@ -73,8 +73,8 @@ export default function NavBar() {
 
   return (
     <>
-      <nav aria-label="Primary navigation" className="mx-auto mb-3 hidden max-w-lg items-baseline justify-between border-b pb-2 sm:flex">
-        <div className="flex gap-5">
+      <nav aria-label="Primary navigation" className="mx-auto mb-3 hidden max-w-2xl items-center justify-between border-b border-gray-200 pb-2 sm:flex">
+        <div className="flex items-center gap-6">
           <NavLink to="/" end className={primaryLinkClass}>
             Feed
           </NavLink>
@@ -97,16 +97,16 @@ export default function NavBar() {
             </span>
           </NavLink>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-7">
           <NavLink
             to="/invitations"
-            className={({ isActive }) => `bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text text-xs font-medium text-transparent hover:opacity-75 ${isActive ? "underline decoration-fuchsia-500 underline-offset-4" : ""}`}
+            className={({ isActive }) => `inline-flex h-10 items-center border-b-2 px-1 bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text text-sm font-semibold text-transparent hover:opacity-75 ${isActive ? "border-fuchsia-400" : "border-transparent"}`}
           >
             Invite your friends!
           </NavLink>
           <NavLink
             to="/notifications"
-            className={({ isActive }) => `inline-flex items-center gap-2 text-xs ${isActive ? "text-gray-700" : "text-gray-500"}`}
+            className={({ isActive }) => `inline-flex h-10 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors ${isActive ? "border-[#1D9BF0] text-gray-900" : "border-transparent text-gray-600 hover:text-gray-900"}`}
           >
             <span className="relative inline-flex">
               <MobileTabIcon name="alerts" className="h-5 w-5" />

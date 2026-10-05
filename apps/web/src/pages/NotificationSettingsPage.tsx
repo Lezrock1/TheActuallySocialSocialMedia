@@ -89,7 +89,7 @@ export default function NotificationSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-4 sm:py-8">
+    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="Notifications" />
       <NavBar />
       <p className="mb-4 text-sm leading-5 text-gray-500">
