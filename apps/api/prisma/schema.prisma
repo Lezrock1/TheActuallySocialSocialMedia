@@ -48,6 +48,7 @@ model User {
   notificationsSent Notification[] @relation("NotificationActor")
   commentLikes     CommentLike[]
   pushSubscriptions WebPushSubscription[]
+  notificationPreferences NotificationPreference?
 }
 
 model Follow {
@@ -171,6 +172,21 @@ model WebPushSubscription {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model NotificationPreference {
+  userId               String   @id
+  postsFromFollowing   Boolean  @default(true)
+  postsFromCloseFriends Boolean @default(true)
+  snaps                Boolean  @default(true)
+  messages             Boolean  @default(true)
+  follows              Boolean  @default(true)
+  comments             Boolean  @default(true)
+  commentReplies       Boolean  @default(true)
+  commentLikes         Boolean  @default(true)
+  mentions             Boolean  @default(true)
+  closeFriends         Boolean  @default(true)
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Story {

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { NotificationsPage, UserNotification } from "@app/shared";
+import type { NotificationPreferences, NotificationsPage, UserNotification } from "@app/shared";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
@@ -24,8 +24,66 @@ const pushSubscriptionSchema = z.object({
   }),
 });
 const pushEndpointSchema = z.object({ endpoint: pushSubscriptionSchema.shape.endpoint });
+const notificationPreferencesSchema = z.object({
+  postsFromFollowing: z.boolean().optional(),
+  postsFromCloseFriends: z.boolean().optional(),
+  snaps: z.boolean().optional(),
+  messages: z.boolean().optional(),
+  follows: z.boolean().optional(),
+  comments: z.boolean().optional(),
+  commentReplies: z.boolean().optional(),
+  commentLikes: z.boolean().optional(),
+  mentions: z.boolean().optional(),
+  closeFriends: z.boolean().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, "Choose at least one setting");
+
+function toNotificationPreferences(value: {
+  postsFromFollowing: boolean;
+  postsFromCloseFriends: boolean;
+  snaps: boolean;
+  messages: boolean;
+  follows: boolean;
+  comments: boolean;
+  commentReplies: boolean;
+  commentLikes: boolean;
+  mentions: boolean;
+  closeFriends: boolean;
+}): NotificationPreferences {
+  return {
+    postsFromFollowing: value.postsFromFollowing,
+    postsFromCloseFriends: value.postsFromCloseFriends,
+    snaps: value.snaps,
+    messages: value.messages,
+    follows: value.follows,
+    comments: value.comments,
+    commentReplies: value.commentReplies,
+    commentLikes: value.commentLikes,
+    mentions: value.mentions,
+    closeFriends: value.closeFriends,
+  };
+}
 
 export async function notificationRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/notifications/preferences", { preHandler: requireAuth }, async (request, reply) => {
+    const preferences = await prisma.notificationPreference.upsert({
+      where: { userId: request.userId! },
+      create: { userId: request.userId! },
+      update: {},
+    });
+    return reply.send({ preferences: toNotificationPreferences(preferences) });
+  });
+
+  app.patch("/notifications/preferences", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = notificationPreferencesSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const preferences = await prisma.notificationPreference.upsert({
+      where: { userId: request.userId! },
+      create: { userId: request.userId!, ...parsed.data },
+      update: parsed.data,
+    });
+    return reply.send({ preferences: toNotificationPreferences(preferences) });
+  });
+
   app.get("/notifications/push/config", { preHandler: requireAuth }, async (_request, reply) => {
     return reply.send({
       enabled: Boolean(env.webPushPublicKey && env.webPushPrivateKey),

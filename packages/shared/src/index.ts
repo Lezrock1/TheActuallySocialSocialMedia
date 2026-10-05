@@ -186,6 +186,8 @@ export interface Comment {
 }
 
 export const NOTIFICATION_TYPES = [
+  "post",
+  "close_friend_post",
   "follow",
   "comment",
   "comment_reply",
@@ -196,6 +198,19 @@ export const NOTIFICATION_TYPES = [
   "close_friend",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+export interface NotificationPreferences {
+  postsFromFollowing: boolean;
+  postsFromCloseFriends: boolean;
+  snaps: boolean;
+  messages: boolean;
+  follows: boolean;
+  comments: boolean;
+  commentReplies: boolean;
+  commentLikes: boolean;
+  mentions: boolean;
+  closeFriends: boolean;
+}
 
 export interface UserNotification {
   id: string;

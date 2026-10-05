@@ -16,6 +16,10 @@ async function fetchNotifications(cursor: string | null): Promise<NotificationsP
 
 function notificationText(notification: UserNotification): string {
   switch (notification.type) {
+    case "post":
+      return "shared a new post";
+    case "close_friend_post":
+      return "shared a new post with close friends";
     case "follow":
       return "started following you";
     case "comment":

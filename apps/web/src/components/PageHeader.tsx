@@ -77,6 +77,14 @@ export default function PageHeader({
               >
                 Invites
               </Link>
+              <Link
+                to="/settings/notifications"
+                role="menuitem"
+                onClick={() => setMenuOpen(false)}
+                className="block px-4 py-2.5 hover:bg-gray-50"
+              >
+                Notifications
+              </Link>
               <button
                 type="button"
                 role="menuitem"

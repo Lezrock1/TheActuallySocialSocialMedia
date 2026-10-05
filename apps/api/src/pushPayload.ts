@@ -10,6 +10,8 @@ export interface PushPayloadInput {
 }
 
 const activityText: Record<NotificationType, string> = {
+  post: "shared a new post",
+  close_friend_post: "shared a new post with close friends",
   follow: "started following you",
   comment: "commented on your post",
   comment_reply: "replied to your comment",

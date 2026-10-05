@@ -8,7 +8,7 @@ import { ownsMedia } from "../mediaAccess.js";
 import { getBlockedUserIds, getCloseFriendGrantedAuthorIds } from "../visibility.js";
 import { toPublicUser } from "../serializers.js";
 import { postWithCountsInclude, toFeedPost } from "../postSerializer.js";
-import { createMentionNotifications } from "../notifications.js";
+import { createMentionNotifications, createPostNotifications } from "../notifications.js";
 
 const DEFAULT_LIMIT = 20;
 
@@ -106,15 +106,21 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       include: postWithCountsInclude,
     });
 
-    try {
-      await createMentionNotifications({
+    const notificationTasks = [
+      createMentionNotifications({
         text: post.text ?? "",
         actorId: request.userId!,
         postId: post.id,
-      });
-    } catch (error) {
-      request.log.error(error, "Post mention notification creation failed");
-    }
+      }).catch((error) => request.log.error(error, "Post mention notification creation failed")),
+      ...(!post.parentPostId
+        ? [createPostNotifications({
+            authorId: request.userId!,
+            postId: post.id,
+            visibility: parsed.data.visibility ?? "public",
+          }).catch((error) => request.log.error(error, "Post notification creation failed"))]
+        : []),
+    ];
+    await Promise.all(notificationTasks);
 
     return reply.code(201).send({ post: toFeedPost(post) });
   });

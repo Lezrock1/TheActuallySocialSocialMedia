@@ -11,6 +11,7 @@ import PostThreadPage from "./pages/PostThreadPage.js";
 import InvitationsPage from "./pages/InvitationsPage.js";
 import NotificationsPage from "./pages/NotificationsPage.js";
 import PeopleSearchPage from "./pages/PeopleSearchPage.js";
+import NotificationSettingsPage from "./pages/NotificationSettingsPage.js";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -53,6 +54,14 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <AiSettingsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings/notifications"
+        element={
+          <RequireAuth>
+            <NotificationSettingsPage />
           </RequireAuth>
         }
       />
