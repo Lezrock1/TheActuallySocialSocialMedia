@@ -191,35 +191,6 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
-  app.post<{ Params: { id: string } }>(
-    "/conversations/:id/read",
-    { preHandler: requireAuth },
-    async (request, reply) => {
-      const membership = await prisma.conversationMember.findUnique({
-        where: {
-          conversationId_userId: {
-            conversationId: request.params.id,
-            userId: request.userId!,
-          },
-        },
-      });
-      if (!membership) {
-        return reply.code(404).send({ error: "Conversation not found" });
-      }
-
-      await prisma.notification.updateMany({
-        where: {
-          recipientId: request.userId!,
-          conversationId: request.params.id,
-          type: "message",
-          readAt: null,
-        },
-        data: { readAt: new Date() },
-      });
-      return reply.code(204).send();
-    }
-  );
-
   app.get<{ Params: { id: string } }>(
     "/conversations/:id/encryption-keys",
     { preHandler: requireAuth },
