@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { FactCheckSummary } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
+import AiMarkdown from "./AiMarkdown.js";
 
 async function fetchSummary(postId: string): Promise<FactCheckSummary> {
   return apiFetch<FactCheckSummary>(`/posts/${postId}/factcheck-summary`);
@@ -23,9 +24,9 @@ export default function FactCheckTransparency({ postId }: { postId: string }) {
         {expanded ? " ▲" : " ▼"}
       </button>
       {expanded && data.summary && (
-        <p className="mt-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-blue-900">
-          {data.summary}
-        </p>
+        <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-blue-900">
+          <AiMarkdown content={data.summary} />
+        </div>
       )}
     </div>
   );

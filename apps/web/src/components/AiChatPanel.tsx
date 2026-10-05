@@ -7,6 +7,7 @@ import type {
   AiProviderConfigPublic,
 } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
+import AiMarkdown from "./AiMarkdown.js";
 
 async function fetchProviders(): Promise<AiProviderConfigPublic[]> {
   const res = await apiFetch<{ providers: AiProviderConfigPublic[] }>(
@@ -255,8 +256,12 @@ export default function AiChatPanel({ postId }: { postId: string }) {
             <div className="flex flex-col gap-2">
               <div className="flex max-h-72 flex-col gap-2 overflow-y-auto">
                 {conversation.messages.map((message) => (
-                  <div key={message.id} className={`max-w-[90%] break-words rounded px-2 py-2 ${message.role === "user" ? "self-end bg-gray-100" : "self-start border bg-gray-50"}`}>
-                    {message.content}
+                  <div key={message.id} className={`max-w-[90%] break-words rounded px-3 py-2 ${message.role === "user" ? "self-end bg-gray-100" : "self-start border bg-gray-50"}`}>
+                    {message.role === "user" ? (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                      <AiMarkdown content={message.content} />
+                    )}
                   </div>
                 ))}
               </div>
