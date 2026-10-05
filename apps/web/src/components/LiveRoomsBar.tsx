@@ -138,8 +138,8 @@ export default function LiveRoomsBar() {
                     <Avatar avatarKey={host?.avatarKey ?? null} username={host?.username ?? "room"} size={54} />
                   </span>
                   <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center">
-                    <span aria-hidden="true" className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                    <span aria-label="Live now" className="relative h-3 w-3 rounded-full border-2 border-white bg-red-600" />
+                    <span aria-hidden="true" className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#FF5A5F] opacity-75" />
+                    <span aria-label="Live now" className="relative h-3 w-3 rounded-full border-2 border-white bg-[#FF5A5F]" />
                   </span>
                 </span>
                 <span className="block w-full truncate text-[11px] font-semibold leading-4 text-gray-800">Live room</span>
