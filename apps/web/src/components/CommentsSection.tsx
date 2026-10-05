@@ -180,11 +180,11 @@ export default function CommentsSection({
           <div id={`comments-${postId}`} className="flex max-h-72 flex-col gap-3 overflow-y-auto">
             {isLoading && <p className="text-sm text-gray-400">Loading comments...</p>}
             {rootComments.filter((comment) => previewIds.has(comment.id)).map((comment) => renderCommentTree(comment))}
-            {!isLoading && comments.length === 0 && (
-              <p className="text-sm text-gray-400">No comments yet. Start the conversation.</p>
-            )}
           </div>
-          <form onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-2 border-t border-gray-100 pt-3">
+          <form
+            onSubmit={(e) => void onSubmit(e)}
+            className={`flex flex-col gap-2 ${comments.length > 0 ? "border-t border-gray-100 pt-3" : "pt-0"}`}
+          >
             {replyTarget && (
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span>Replying to @{replyTarget.author.username}</span>
