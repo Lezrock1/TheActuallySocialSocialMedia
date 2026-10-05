@@ -118,7 +118,7 @@ export default function NavBar() {
       </nav>
       <nav
         aria-label="Primary navigation"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 items-stretch gap-1 border-t border-white/70 bg-white/85 px-3 pt-1 shadow-[0_-8px_28px_rgba(15,23,42,0.09)] backdrop-blur-xl sm:hidden"
+        className="fixed bottom-2 left-1/2 z-40 grid w-[90%] max-w-lg -translate-x-1/2 grid-cols-5 items-stretch gap-1 rounded-2xl border border-white/70 bg-white/85 px-3 pt-1 shadow-[0_-8px_28px_rgba(15,23,42,0.09)] backdrop-blur-xl sm:hidden"
         style={{ paddingBottom: "max(0.4rem, env(safe-area-inset-bottom))" }}
       >
         <NavLink to="/" end className={mobileLinkClass}>

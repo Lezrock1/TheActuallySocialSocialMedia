@@ -65,7 +65,7 @@ export default function PageHeader({
                 to="/settings/ai"
                 role="menuitem"
                 onClick={() => setMenuOpen(false)}
-                className="block bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text px-4 py-2.5 font-semibold text-transparent hover:opacity-75"
+                className="block px-4 py-2.5 hover:bg-gray-50"
               >
                 AI Tools
               </Link>
@@ -73,7 +73,7 @@ export default function PageHeader({
                 to="/invitations"
                 role="menuitem"
                 onClick={() => setMenuOpen(false)}
-                className="block px-4 py-2.5 hover:bg-gray-50"
+                className="block bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text px-4 py-2.5 font-semibold text-transparent hover:opacity-75"
               >
                 Invites
               </Link>
