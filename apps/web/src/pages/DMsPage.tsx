@@ -193,6 +193,7 @@ export default function DMsPage() {
     if (!activeId || !messagesLoaded) return;
     void markConversationRead(activeId)
       .then(() => Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["conversations"] }),
         queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] }),
         queryClient.invalidateQueries({ queryKey: ["notifications", "list"] }),
       ]))
@@ -213,6 +214,7 @@ export default function DMsPage() {
       if (payload.conversationId === activeId && document.visibilityState === "visible") {
         void markConversationRead(payload.conversationId)
           .then(() => Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["conversations"] }),
             queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] }),
             queryClient.invalidateQueries({ queryKey: ["notifications", "list"] }),
           ]))
@@ -495,6 +497,15 @@ export default function DMsPage() {
                       <time className="shrink-0 text-[11px] text-gray-400">
                         {formatActivityTime(c.lastMessage.createdAt)}
                       </time>
+                    )}
+                    {c.unreadCount > 0 && (
+                      <span
+                        aria-label={`${c.unreadCount} unread messages`}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700"
+                      >
+                        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-green-600" />
+                        {c.unreadCount > 99 ? "99+" : c.unreadCount}
+                      </span>
                     )}
                   </span>
                   {c.lastMessage && (

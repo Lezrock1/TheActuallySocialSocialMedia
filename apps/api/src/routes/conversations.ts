@@ -103,6 +103,24 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     });
+    const unreadMessages = memberships.length
+      ? await prisma.notification.groupBy({
+          by: ["conversationId"],
+          where: {
+            recipientId: request.userId!,
+            type: "message",
+            conversationId: { in: memberships.map((membership) => membership.conversationId) },
+            readAt: null,
+          },
+          _count: { _all: true },
+        })
+      : [];
+    const unreadCountByConversation = new Map<string, number>();
+    for (const unread of unreadMessages) {
+      if (unread.conversationId) {
+        unreadCountByConversation.set(unread.conversationId, unread._count._all);
+      }
+    }
 
     const summaries = memberships.map((m) => {
       const isGroup = m.conversation.members.length > 2 || !!m.conversation.name;
@@ -116,6 +134,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         isGroup,
         members: m.conversation.members.map((mem) => toPublicUser(mem.user)),
         otherMember: !isGroup && otherMember ? toPublicUser(otherMember.user) : null,
+        unreadCount: unreadCountByConversation.get(m.conversation.id) ?? 0,
         lastMessage: last
           ? {
               text: last.isEncrypted ? null : last.text,

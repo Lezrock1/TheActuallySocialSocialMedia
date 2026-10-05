@@ -11,13 +11,19 @@ const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? "text-[#1DA1F2]" : "text-gray-500 hover:text-gray-800"
   }`;
 
-function MobileTabIcon({ name }: { name: "feed" | "snaps" | "messages" | "alerts" }) {
+function MobileTabIcon({
+  name,
+  className = "h-[23px] w-[23px]",
+}: {
+  name: "feed" | "snaps" | "messages" | "alerts";
+  className?: string;
+}) {
   return (
     <svg
       aria-hidden="true"
       viewBox="0 0 24 24"
       fill="none"
-      className="h-[23px] w-[23px]"
+      className={className}
       stroke="currentColor"
       strokeWidth="1.8"
       strokeLinecap="round"
@@ -28,6 +34,26 @@ function MobileTabIcon({ name }: { name: "feed" | "snaps" | "messages" | "alerts
       {name === "messages" && <path d="M20.5 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5a7.5 7.5 0 1 1 17.5-3Z" />}
       {name === "alerts" && <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></>}
     </svg>
+  );
+}
+
+function CountBadge({
+  count,
+  tone,
+}: {
+  count: number;
+  tone: "red" | "green" | "yellow";
+}) {
+  if (!count) return null;
+  const toneClass = {
+    red: "bg-red-600 text-white",
+    green: "bg-green-600 text-white",
+    yellow: "bg-[#FFFC00] text-black ring-1 ring-yellow-500/60",
+  }[tone];
+  return (
+    <span className={`absolute -right-2 -top-1.5 z-10 inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-4 shadow-sm ring-2 ring-white ${toneClass}`}>
+      {count > 9 ? "9+" : count}
+    </span>
   );
 }
 
@@ -45,33 +71,6 @@ export default function NavBar() {
     refetchInterval: 30_000,
   });
 
-  function UnreadBadge({ className = "" }: { className?: string } = {}) {
-    if (!notificationCount) return null;
-    return (
-      <span className={`absolute -right-1.5 -top-1 z-10 inline-flex min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-semibold leading-4 text-white shadow-sm ${className}`}>
-        {notificationCount > 9 ? "9+" : notificationCount}
-      </span>
-    );
-  }
-
-  function SnapUnreadBadge() {
-    if (!snapUnreadCount) return null;
-    return (
-      <span className="ml-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FFFC00] px-1 text-[9px] font-semibold leading-4 text-black">
-        {snapUnreadCount > 9 ? "9+" : snapUnreadCount}
-      </span>
-    );
-  }
-
-  function MessageUnreadBadge() {
-    if (!messageUnreadCount) return null;
-    return (
-      <span className="ml-1 inline-flex min-w-4 items-center justify-center rounded-full bg-green-600 px-1 text-[9px] font-semibold leading-4 text-white">
-        {messageUnreadCount > 9 ? "9+" : messageUnreadCount}
-      </span>
-    );
-  }
-
   return (
     <>
       <nav aria-label="Primary navigation" className="mx-auto mb-3 hidden max-w-lg items-baseline justify-between border-b pb-2 sm:flex">
@@ -80,10 +79,22 @@ export default function NavBar() {
             Feed
           </NavLink>
           <NavLink to="/snaps" className={primaryLinkClass}>
-            Snaps <SnapUnreadBadge />
+            <span className="inline-flex items-center gap-1.5">
+              <span className="relative inline-flex">
+                <MobileTabIcon name="snaps" className="h-5 w-5" />
+                <CountBadge count={snapUnreadCount} tone="yellow" />
+              </span>
+              Snaps
+            </span>
           </NavLink>
           <NavLink to="/dms" className={primaryLinkClass}>
-            Messages <MessageUnreadBadge />
+            <span className="inline-flex items-center gap-1.5">
+              <span className="relative inline-flex">
+                <MobileTabIcon name="messages" className="h-5 w-5" />
+                <CountBadge count={messageUnreadCount} tone="green" />
+              </span>
+              Messages
+            </span>
           </NavLink>
         </div>
         <div className="flex gap-3">
@@ -98,8 +109,8 @@ export default function NavBar() {
             className={({ isActive }) => `inline-flex items-center gap-2 text-xs ${isActive ? "text-gray-700" : "text-gray-500"}`}
           >
             <span className="relative inline-flex">
-              <MobileTabIcon name="alerts" />
-              <UnreadBadge />
+              <MobileTabIcon name="alerts" className="h-5 w-5" />
+              <CountBadge count={notificationCount} tone="red" />
             </span>
             <span>Notifications</span>
           </NavLink>
@@ -115,18 +126,24 @@ export default function NavBar() {
           <span>Feed</span>
         </NavLink>
         <NavLink to="/snaps" className={mobileLinkClass}>
-          <MobileTabIcon name="snaps" />
-          <span className="flex items-center">Snaps <SnapUnreadBadge /></span>
+          <span className="relative inline-flex">
+            <MobileTabIcon name="snaps" />
+            <CountBadge count={snapUnreadCount} tone="yellow" />
+          </span>
+          <span>Snaps</span>
         </NavLink>
         <span aria-hidden="true" className="min-w-0" />
         <NavLink to="/dms" className={mobileLinkClass}>
-          <MobileTabIcon name="messages" />
-          <span className="flex items-center">Messages <MessageUnreadBadge /></span>
+          <span className="relative inline-flex">
+            <MobileTabIcon name="messages" />
+            <CountBadge count={messageUnreadCount} tone="green" />
+          </span>
+          <span>Messages</span>
         </NavLink>
         <NavLink to="/notifications" className={mobileLinkClass}>
           <span className="relative inline-flex">
             <MobileTabIcon name="alerts" />
-            <UnreadBadge />
+            <CountBadge count={notificationCount} tone="red" />
           </span>
           <span>Alerts</span>
         </NavLink>

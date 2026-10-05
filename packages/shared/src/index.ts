@@ -340,6 +340,7 @@ export interface ConversationSummary {
   isGroup: boolean;
   members: PublicUser[];
   otherMember: PublicUser | null;
+  unreadCount: number;
   lastMessage: {
     text: string | null;
     isEncrypted: boolean;
