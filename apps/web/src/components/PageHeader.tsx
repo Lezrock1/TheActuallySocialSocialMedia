@@ -130,11 +130,16 @@ export default function PageHeader({
             onClick={(event) => event.stopPropagation()}
           >
             <h2 id="coming-soon-title" className="text-base font-semibold">{comingSoon}</h2>
-            <p className="mt-2 text-sm leading-6 text-gray-600">
-              {comingSoon === "About us"
-                ? "InTouch is an open-source and non-profit social space to share moments and stay connected with people. We believe technology, AI, and social media should serve people — not maximize screen time or attention. With a chronological feed, no ads or ranking, plus stories, Snaps, and direct messages, InTouch helps you stay up to date and spend more time together in real life. Our goal is to put people back in control of social media. Power to the people!"
-                : "Coming soon 🦖"}
-            </p>
+            {comingSoon === "About us" ? (
+              <div className="mt-2 text-sm leading-6 text-gray-600">
+                <p>
+                  InTouch is an open-source and non-profit social space to share moments and stay connected with people. We believe technology, AI, and social media should serve people — not maximize screen time or attention. With a chronological feed, no ads or ranking, plus stories, Snaps, and direct messages, InTouch helps you stay up to date and spend more time together in real life. Our goal is to put people back in control of social media.
+                </p>
+                <p className="mt-4 font-bold text-gray-900">Power to the people! 🦖</p>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm leading-6 text-gray-600">Coming soon 🦖</p>
+            )}
             <button
               type="button"
               onClick={() => setComingSoon(null)}

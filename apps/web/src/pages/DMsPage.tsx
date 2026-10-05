@@ -358,8 +358,8 @@ export default function DMsPage() {
       <p className="mb-1 text-xs text-gray-500">
         {deviceKeyReady ? "This device is ready for encrypted messages." : "Setting up message encryption..."}
       </p>
-      <p className="mb-4 mt-1 text-[11px] text-red-600">
-        Older messages may still be stored as plaintext. Device keys stay in this browser; clearing its data can make encrypted history unreadable.
+      <p className="mb-4 mt-1 text-[11px] text-gray-500">
+        Device keys stay in this browser; clearing its data can make encrypted history unreadable.
       </p>
       {encryptionError && <p role="alert" className="mb-3 text-xs text-red-600">{encryptionError}</p>}
 
