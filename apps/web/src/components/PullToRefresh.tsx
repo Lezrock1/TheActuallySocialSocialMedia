@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-const REFRESH_THRESHOLD = 68;
+const REFRESH_THRESHOLD = 78;
 const MAX_PULL_DISTANCE = 88;
 
 export default function PullToRefresh({
@@ -21,6 +21,7 @@ export default function PullToRefresh({
 
   useEffect(() => {
     let startY: number | null = null;
+    let startX: number | null = null;
 
     function onTouchStart(event: TouchEvent) {
       if (!enabledRef.current || refreshingRef.current || event.touches.length !== 1) return;
@@ -37,17 +38,27 @@ export default function PullToRefresh({
         element = element.parentElement;
       }
       startY = event.touches[0].clientY;
+      startX = event.touches[0].clientX;
     }
 
     function onTouchMove(event: TouchEvent) {
-      if (startY === null || event.touches.length !== 1) return;
-      const pull = event.touches[0].clientY - startY;
+      if (startY === null || startX === null || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      const pull = touch.clientY - startY;
+      const horizontal = Math.abs(touch.clientX - startX);
+      if (horizontal > Math.max(14, Math.abs(pull) * 0.65)) {
+        startY = null;
+        startX = null;
+        distanceRef.current = 0;
+        setDistance(0);
+        return;
+      }
       if (pull <= 0) {
         distanceRef.current = 0;
         setDistance(0);
         return;
       }
-      if (pull > 5) {
+      if (pull > 8) {
         if (event.cancelable) event.preventDefault();
         const nextDistance = Math.min(pull * 0.72, MAX_PULL_DISTANCE);
         distanceRef.current = nextDistance;
@@ -57,6 +68,7 @@ export default function PullToRefresh({
 
     function onTouchEnd() {
       startY = null;
+      startX = null;
       if (distanceRef.current < REFRESH_THRESHOLD || refreshingRef.current) {
         distanceRef.current = 0;
         setDistance(0);
