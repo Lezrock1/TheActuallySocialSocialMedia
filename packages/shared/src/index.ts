@@ -44,6 +44,22 @@ export type LoginInput = z.infer<typeof loginSchema>;
 
 export const POST_VISIBILITY = ["public", "close_friends"] as const;
 export type PostVisibility = (typeof POST_VISIBILITY)[number];
+export const TRANSLATION_LANGUAGE_CODES = ["de", "en", "es", "fr", "it", "pt", "nl", "pl"] as const;
+export type TranslationLanguage = (typeof TRANSLATION_LANGUAGE_CODES)[number];
+export const TRANSLATION_LANGUAGES: { code: TranslationLanguage; label: string }[] = [
+  { code: "de", label: "Deutsch" },
+  { code: "en", label: "English" },
+  { code: "es", label: "Español" },
+  { code: "fr", label: "Français" },
+  { code: "it", label: "Italiano" },
+  { code: "pt", label: "Português" },
+  { code: "nl", label: "Nederlands" },
+  { code: "pl", label: "Polski" },
+];
+export const translatePostSchema = z.object({
+  postId: z.string().min(1),
+});
+export type TranslatePostInput = z.infer<typeof translatePostSchema>;
 export const MEDIA_TYPES = ["image", "video"] as const;
 export type MediaType = (typeof MEDIA_TYPES)[number];
 

@@ -25,7 +25,6 @@ export default function StoriesBar() {
   const [replySending, setReplySending] = useState(false);
   const [reactionError, setReactionError] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<PostVisibility>("public");
-  const [storyCaption, setStoryCaption] = useState("");
 
   const { data: groups = [] } = useQuery({
     queryKey: ["stories"],
@@ -138,9 +137,8 @@ export default function StoriesBar() {
       const imageKey = await uploadMedia(file);
       await apiFetch("/stories", {
         method: "POST",
-        body: JSON.stringify({ imageKey, text: storyCaption.trim() || undefined, visibility }),
+        body: JSON.stringify({ imageKey, visibility }),
       });
-      setStoryCaption("");
       await queryClient.invalidateQueries({ queryKey: ["stories"] });
     } finally {
       setUploading(false);
@@ -161,14 +159,6 @@ export default function StoriesBar() {
         </select>
       </div>
       <LiveRoomsBar compact />
-      <textarea
-        value={storyCaption}
-        onChange={(event) => setStoryCaption(event.target.value)}
-        maxLength={500}
-        rows={1}
-        placeholder="Add a story caption..."
-        className="mb-2 w-full resize-none rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
-      />
       <div className="flex gap-4 overflow-x-auto pb-2">
         <button
           onClick={() => fileInputRef.current?.click()}

@@ -16,6 +16,7 @@ model User {
   displayName  String?
   bio          String?
   avatarKey    String?
+  translationLanguage String @default("de")
   createdAt    DateTime @default(now())
 
   // last post the user has scrolled to -> drives the "you're all caught up" marker

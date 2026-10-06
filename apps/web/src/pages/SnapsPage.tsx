@@ -604,7 +604,7 @@ export default function SnapsPage() {
                   ))}
                 </div>
 
-                {shareTarget && shareTarget !== "story" && (
+                {shareTarget && (
                   <textarea
                     value={text}
                     onChange={(event) => setText(event.target.value)}

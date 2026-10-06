@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeedItem, FeedPage as FeedPageType } from "@app/shared";
 import type { PostVisibility } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
-import { mediaUrl, uploadMedia } from "../lib/upload.js";
+import { mediaUrl, uploadMediaWithInfo } from "../lib/upload.js";
 import { card, input, btnPrimary, btnSecondary } from "../lib/ui.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
@@ -15,6 +15,12 @@ import PostCard from "../components/PostCard.js";
 import Avatar from "../components/Avatar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
 import { usePageBackground } from "../lib/pageBackground.js";
+
+const MAX_VIDEO_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+function formatMegabytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 async function fetchFeed(cursor: string | null): Promise<FeedPageType> {
   const params = new URLSearchParams();
@@ -52,6 +58,8 @@ export default function FeedPage() {
   const [text, setText] = useState("");
   const [imageKey, setImageKey] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video">("image");
+  const [mediaUploading, setMediaUploading] = useState(false);
+  const [mediaNotice, setMediaNotice] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<PostVisibility>("public");
   const [posting, setPosting] = useState(false);
   const [postSuccess, setPostSuccess] = useState(false);
@@ -148,6 +156,7 @@ export default function FeedPage() {
       setText("");
       setImageKey(null);
       setMediaType("image");
+      setMediaNotice(null);
       setVisibility("public");
       setPollEnabled(false);
       setPollQuestion("");
@@ -163,8 +172,24 @@ export default function FeedPage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    setImageKey(await uploadMedia(file));
-    setMediaType(file.type.startsWith("video/") ? "video" : "image");
+    setComposerError(null);
+    setMediaUploading(true);
+    setMediaNotice(file.type.startsWith("video/") && file.size > MAX_VIDEO_UPLOAD_BYTES
+      ? `Compressing ${formatMegabytes(file.size)} video for upload…`
+      : null);
+    try {
+      const upload = await uploadMediaWithInfo(file);
+      setImageKey(upload.key);
+      setMediaType(file.type.startsWith("video/") ? "video" : "image");
+      setMediaNotice(upload.compressed
+        ? `Video reduced from ${formatMegabytes(upload.originalSize)} to ${formatMegabytes(upload.storedSize)} to fit the 50 MB limit.`
+        : null);
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : "Media upload failed.");
+      setMediaNotice(null);
+    } finally {
+      setMediaUploading(false);
+    }
   }
 
   // Advance the seen marker to the newest item shown in the feed.
@@ -223,6 +248,7 @@ export default function FeedPage() {
         ) : (
           <img src={mediaUrl(imageKey)} alt="" className="max-h-48 rounded-lg object-cover" />
         ))}
+        {mediaNotice && <p role="status" className="text-xs text-blue-700">{mediaNotice}</p>}
         {pollEnabled && (
           <div className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3">
             <input
@@ -281,9 +307,10 @@ export default function FeedPage() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
+              disabled={mediaUploading}
               className={btnSecondary}
             >
-              {imageKey ? "Change media" : "Add photo or video"}
+              {mediaUploading ? "Uploading…" : imageKey ? "Change media" : "Add photo or video"}
             </button>
             <select
               value={visibility}
@@ -298,12 +325,13 @@ export default function FeedPage() {
             ref={fileInputRef}
             type="file"
             accept="image/*,video/mp4,video/webm,video/quicktime"
+            disabled={mediaUploading}
             className="hidden"
             onChange={(e) => void onSelectImage(e)}
           />
           <button
             type="submit"
-            disabled={posting}
+            disabled={posting || mediaUploading}
             aria-label={postSuccess ? "Post published" : "Post"}
             className={`${btnPrimary} relative h-10 w-24 shrink-0 overflow-hidden rounded-full px-0 font-semibold transition-colors duration-300 ease-in-out focus-visible:ring-2 focus-visible:ring-offset-2 ${postSuccess ? "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600" : "bg-[#1D9BF0] hover:bg-[#1688D4] focus-visible:ring-[#1D9BF0]"}`}
           >

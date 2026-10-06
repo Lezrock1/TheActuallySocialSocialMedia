@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { updateProfileSchema } from "@app/shared";
+import { TRANSLATION_LANGUAGE_CODES, updateProfileSchema } from "@app/shared";
 import type { UserProfile } from "@app/shared";
+import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
@@ -14,8 +15,32 @@ import { ownsMedia } from "../mediaAccess.js";
 
 const DEFAULT_LIMIT = 20;
 const USER_DIRECTORY_LIMIT = 20;
+const updateUserPreferencesSchema = z.object({
+  translationLanguage: z.enum(TRANSLATION_LANGUAGE_CODES),
+}).strict();
 
 export async function userRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/users/me/preferences", { preHandler: requireAuth }, async (request, reply) => {
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: request.userId! },
+      select: { translationLanguage: true },
+    });
+    return reply.send(user);
+  });
+
+  app.patch("/users/me/preferences", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = updateUserPreferencesSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+    const user = await prisma.user.update({
+      where: { id: request.userId! },
+      data: parsed.data,
+      select: { translationLanguage: true },
+    });
+    return reply.send(user);
+  });
+
   app.get("/users/suggestions", { preHandler: requireAuth }, async (request, reply) => {
     const [following, blockedUserIds] = await Promise.all([
       prisma.follow.findMany({

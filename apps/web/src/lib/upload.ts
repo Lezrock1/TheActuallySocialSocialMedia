@@ -1,6 +1,13 @@
 import { apiFetch } from "./api.js";
 
-export async function uploadMedia(file: File): Promise<string> {
+export interface MediaUploadInfo {
+  key: string;
+  compressed: boolean;
+  originalSize: number;
+  storedSize: number;
+}
+
+export async function uploadMediaWithInfo(file: File): Promise<MediaUploadInfo> {
   const form = new FormData();
   form.append("file", file);
   const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
@@ -13,8 +20,11 @@ export async function uploadMedia(file: File): Promise<string> {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? "Upload failed");
   }
-  const { key } = (await res.json()) as { key: string };
-  return key;
+  return (await res.json()) as MediaUploadInfo;
+}
+
+export async function uploadMedia(file: File): Promise<string> {
+  return (await uploadMediaWithInfo(file)).key;
 }
 
 export function mediaUrl(key: string): string {

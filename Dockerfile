@@ -15,7 +15,7 @@ COPY . .
 
 FROM workspace AS api
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends openssl \
+	&& apt-get install -y --no-install-recommends openssl ffmpeg \
 	&& rm -rf /var/lib/apt/lists/*
 RUN pnpm --filter @app/api exec prisma generate --schema prisma/schema.prisma
 RUN pnpm --filter @app/api build

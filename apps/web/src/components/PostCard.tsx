@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { TRANSLATION_LANGUAGES } from "@app/shared";
 import type { FeedPost } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import { mediaUrl } from "../lib/upload.js";
@@ -10,6 +12,19 @@ import FactCheckTransparency from "./FactCheckTransparency.js";
 import CommentsSection from "./CommentsSection.js";
 import PollCard from "./PollCard.js";
 import LinkedMentions from "./LinkedMentions.js";
+import { detectPostLanguage } from "../lib/translationLanguage.js";
+import type { TranslationLanguage } from "@app/shared";
+
+const languageCodes: Record<string, string> = {
+  de: "deu",
+  en: "eng",
+  es: "spa",
+  fr: "fra",
+  it: "ita",
+  pt: "por",
+  nl: "nld",
+  pl: "pol",
+};
 
 export default function PostCard({
   post,
@@ -23,16 +38,61 @@ export default function PostCard({
   onDeleted?: (postId: string) => void;
 }) {
   const [commentCount, setCommentCount] = useState(post.commentCount);
+  const [translation, setTranslation] = useState<string | null>(null);
+  const [translationVisible, setTranslationVisible] = useState(false);
+  const [translationLoading, setTranslationLoading] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  const { data: translationPreferences } = useQuery({
+    queryKey: ["user-preferences"],
+    queryFn: () => apiFetch<{ translationLanguage: TranslationLanguage }>("/users/me/preferences"),
+  });
+  const translationLanguage = translationPreferences?.translationLanguage ?? "de";
+  const [sourceLanguage, setSourceLanguage] = useState("und");
+  const canTranslate = !!post.text && sourceLanguage !== "und" && sourceLanguage !== languageCodes[translationLanguage];
+  const languageLabel = TRANSLATION_LANGUAGES.find((language) => language.code === translationLanguage)?.label ?? "Deutsch";
   const isOwn = currentUserId && post.author.id === currentUserId;
 
   useEffect(() => {
     setCommentCount(post.commentCount);
   }, [post.commentCount]);
 
+  useEffect(() => {
+    let active = true;
+    if (!post.text) {
+      setSourceLanguage("und");
+      return () => { active = false; };
+    }
+    void detectPostLanguage(post.text)
+      .then((language) => { if (active) setSourceLanguage(language); })
+      .catch(() => { if (active) setSourceLanguage("und"); });
+    return () => { active = false; };
+  }, [post.text]);
+
   async function onDelete() {
     if (!confirm("Permanently delete this post?")) return;
     await apiFetch(`/posts/${post.id}`, { method: "DELETE" });
     onDeleted?.(post.id);
+  }
+
+  async function onTranslate() {
+    if (translation) {
+      setTranslationVisible((visible) => !visible);
+      return;
+    }
+    setTranslationLoading(true);
+    setTranslationError(null);
+    try {
+      const result = await apiFetch<{ translation: string }>("/ai/translate", {
+        method: "POST",
+        body: JSON.stringify({ postId: post.id }),
+      });
+      setTranslation(result.translation);
+      setTranslationVisible(true);
+    } catch (error) {
+      setTranslationError(error instanceof Error ? error.message : "Could not translate this post.");
+    } finally {
+      setTranslationLoading(false);
+    }
   }
 
   return (
@@ -56,6 +116,30 @@ export default function PostCard({
         )}
       </div>
       {post.text && <p className="whitespace-pre-wrap text-[15px] leading-snug"><LinkedMentions text={post.text} /></p>}
+      {canTranslate && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => void onTranslate()}
+            disabled={translationLoading}
+            aria-expanded={translationVisible}
+            className="text-xs font-medium text-blue-700 hover:text-blue-900 disabled:opacity-50"
+          >
+            {translationLoading ? "Translating…" : translationVisible ? "Hide translation" : `Translate to ${languageLabel}`}
+          </button>
+          {translationError && (
+            <p role="alert" className="mt-1 text-xs text-red-600">
+              {translationError} <Link to="/settings/ai" className="font-medium underline">AI Tools</Link>
+            </p>
+          )}
+          {translation && translationVisible && (
+            <div className="mt-2 border-l-2 border-blue-300 pl-3">
+              <p className="mb-1 text-[10px] font-semibold uppercase text-gray-400">{languageLabel}</p>
+              <p className="whitespace-pre-wrap text-[15px] leading-snug">{translation}</p>
+            </div>
+          )}
+        </div>
+      )}
       {post.pollId && <PollCard pollId={post.pollId} />}
       {post.imageKey && post.mediaType === "video" ? (
         <video
