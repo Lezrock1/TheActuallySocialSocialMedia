@@ -24,7 +24,6 @@ import CallOverlay from "../components/CallOverlay.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
 import LiveRoomsBar from "../components/LiveRoomsBar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
-import { usePageBackground } from "../lib/pageBackground.js";
 import {
   activityList,
   activityRow,
@@ -108,7 +107,6 @@ async function fetchEncryptionKeys(id: string): Promise<PublicEncryptionKey[]> {
 }
 
 export default function DMsPage() {
-  usePageBackground("chat");
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const call = useWebRtcCall(user?.id);

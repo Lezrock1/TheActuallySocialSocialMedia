@@ -103,7 +103,12 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    return reply.send({ groups: Array.from(groups.values()) });
+    const orderedGroups = Array.from(groups.values()).sort((a, b) => {
+      const latestA = a.stories[a.stories.length - 1]?.createdAt ?? "";
+      const latestB = b.stories[b.stories.length - 1]?.createdAt ?? "";
+      return latestB.localeCompare(latestA) || a.author.username.localeCompare(b.author.username);
+    });
+    return reply.send({ groups: orderedGroups });
   });
 
   app.post<{ Params: { id: string } }>(

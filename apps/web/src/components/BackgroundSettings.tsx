@@ -5,7 +5,7 @@ import type { PageBackgroundPreference, PageSurface } from "../lib/pageBackgroun
 import { btnSecondary, card } from "../lib/ui.js";
 
 const surfaces: { id: PageSurface; label: string }[] = [
-  { id: "feed", label: "Feed" },
+  { id: "feed", label: "All pages" },
   { id: "chat", label: "Messages" },
 ];
 

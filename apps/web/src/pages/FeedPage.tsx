@@ -14,7 +14,6 @@ import StoriesBar from "../components/StoriesBar.js";
 import PostCard from "../components/PostCard.js";
 import Avatar from "../components/Avatar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
-import { usePageBackground } from "../lib/pageBackground.js";
 
 const MAX_VIDEO_UPLOAD_BYTES = 50 * 1024 * 1024;
 
@@ -52,7 +51,6 @@ function FollowActivityCard({ item }: { item: Extract<FeedItem, { type: "follow"
 
 export default function FeedPage() {
   const { user } = useAuth();
-  usePageBackground("feed");
   const queryClient = useQueryClient();
   const [pages, setPages] = useState<FeedPageType[]>([]);
   const [text, setText] = useState("");
