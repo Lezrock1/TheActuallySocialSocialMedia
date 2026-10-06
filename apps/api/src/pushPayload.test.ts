@@ -30,4 +30,15 @@ describe("createPushPayload", () => {
     expect(payload.body).toBe("@sam sent you a Snap");
     expect(payload.url).toBe("/snaps");
   });
+
+  it("announces story reactions without including story content", () => {
+    const payload = createPushPayload({
+      notificationId: "notification-3",
+      actorUsername: "jules",
+      type: "story_reaction",
+    });
+
+    expect(payload.body).toBe("@jules reacted to your story");
+    expect(payload.url).toBe("/notifications");
+  });
 });

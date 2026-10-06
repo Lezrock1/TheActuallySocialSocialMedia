@@ -4,6 +4,9 @@ import { env } from "./env.js";
 import { verifyAuthToken } from "./auth/token.js";
 import { prisma } from "./db.js";
 import { toPublicUser } from "./serializers.js";
+import { isBlocked } from "./visibility.js";
+import { LIVE_ROOM_AUDIENCES, MAX_LIVE_ROOM_PARTICIPANTS } from "@app/shared";
+import type { LiveRoomAudience } from "@app/shared";
 
 interface ActiveCall {
   conversationId: string;
@@ -11,9 +14,10 @@ interface ActiveCall {
   participantIds: Set<string>;
   memberIds: string[];
   isRoom: boolean;
+  audience: LiveRoomAudience;
 }
 
-const MAX_CALL_PARTICIPANTS = 6;
+const MAX_CALL_PARTICIPANTS = MAX_LIVE_ROOM_PARTICIPANTS;
 
 function parseCookies(header: string | undefined): Record<string, string> {
   const result: Record<string, string> = {};
@@ -26,6 +30,56 @@ function parseCookies(header: string | undefined): Record<string, string> {
     result[key] = decodeURIComponent(value);
   }
   return result;
+}
+
+async function canViewLiveRoom(userId: string, call: ActiveCall): Promise<boolean> {
+  if (call.memberIds.includes(userId)) return true;
+  if (!call.isRoom || await isBlocked(call.hostUserId, userId)) return false;
+  if (call.audience === "everyone") return true;
+  if (call.audience === "close_friends") {
+    return !!(await prisma.closeFriend.findUnique({
+      where: { ownerId_friendId: { ownerId: call.hostUserId, friendId: userId } },
+      select: { id: true },
+    }));
+  }
+  if (call.audience === "friends") {
+    return !!(await prisma.follow.findFirst({
+      where: {
+        OR: [
+          { followerId: call.hostUserId, followeeId: userId },
+          { followerId: userId, followeeId: call.hostUserId },
+        ],
+      },
+      select: { id: true },
+    }));
+  }
+  return false;
+}
+
+async function notifyLiveRoomAudienceChanged(io: SocketIOServer, call: ActiveCall): Promise<void> {
+  if (call.audience === "everyone") {
+    io.emit("live-rooms:changed", {});
+    return;
+  }
+  const userIds = new Set(call.memberIds);
+  if (call.audience === "close_friends") {
+    const friends = await prisma.closeFriend.findMany({
+      where: { ownerId: call.hostUserId },
+      select: { friendId: true },
+    });
+    for (const friend of friends) userIds.add(friend.friendId);
+  } else if (call.audience === "friends") {
+    const follows = await prisma.follow.findMany({
+      where: {
+        OR: [{ followerId: call.hostUserId }, { followeeId: call.hostUserId }],
+      },
+      select: { followerId: true, followeeId: true },
+    });
+    for (const follow of follows) {
+      userIds.add(follow.followerId === call.hostUserId ? follow.followeeId : follow.followerId);
+    }
+  }
+  emitToUsers(io, [...userIds], "live-rooms:changed", {});
 }
 
 export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
@@ -59,6 +113,7 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
       conversationId: string;
       callType: "audio" | "video";
       isRoom?: boolean;
+      audience?: LiveRoomAudience;
     }, acknowledge: (result: { ok: boolean; error?: string }) => void) => {
       void (async () => {
         const userId = socket.data.userId as string;
@@ -72,6 +127,10 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
         }
         if (payload.isRoom && payload.callType !== "video") {
           acknowledge({ ok: false, error: "Live rooms require video" });
+          return;
+        }
+        if (payload.isRoom && !LIVE_ROOM_AUDIENCES.includes(payload.audience ?? "invited")) {
+          acknowledge({ ok: false, error: "Choose a valid room audience" });
           return;
         }
         if (members.length < 2 || members.length > MAX_CALL_PARTICIPANTS) {
@@ -90,9 +149,10 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
           participantIds: new Set([userId]),
           memberIds: members.map((member) => member.userId),
           isRoom: payload.isRoom === true,
+          audience: payload.isRoom ? payload.audience ?? "invited" : "invited",
         });
         if (payload.isRoom) {
-          emitToUsers(io, members.map((member) => member.userId), "live-rooms:changed", {});
+          void notifyLiveRoomAudienceChanged(io, activeCalls.get(payload.callId)!).catch(() => undefined);
         } else {
           emitToUsers(
             io,
@@ -113,23 +173,22 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
     socket.on("live-rooms:list", (acknowledge: (rooms: import("@app/shared").LiveRoom[]) => void) => {
       void (async () => {
         const userId = socket.data.userId as string;
-        const memberships = await prisma.conversationMember.findMany({
-          where: { userId },
-          select: { conversationId: true },
-        });
-        const memberConversationIds = new Set(memberships.map((membership) => membership.conversationId));
-        const activeRooms = [...activeCalls.entries()].filter(([, call]) =>
-          call.isRoom && memberConversationIds.has(call.conversationId)
-        );
+        const candidates = [...activeCalls.entries()].filter(([, call]) => call.isRoom);
+        const activeRooms = (await Promise.all(candidates.map(async (entry) =>
+          await canViewLiveRoom(userId, entry[1]) ? entry : null
+        ))).filter((entry): entry is [string, ActiveCall] => entry !== null);
         if (activeRooms.length === 0) {
           acknowledge([]);
           return;
         }
         const conversations = await prisma.conversation.findMany({
           where: { id: { in: activeRooms.map(([, call]) => call.conversationId) } },
-          include: { members: { include: { user: true } } },
+        });
+        const participants = await prisma.user.findMany({
+          where: { id: { in: activeRooms.flatMap(([, call]) => [...call.participantIds]) } },
         });
         const conversationsById = new Map(conversations.map((conversation) => [conversation.id, conversation]));
+        const participantsById = new Map(participants.map((participant) => [participant.id, participant]));
         acknowledge(activeRooms.flatMap(([callId, call]) => {
           const conversation = conversationsById.get(call.conversationId);
           if (!conversation) return [];
@@ -138,8 +197,12 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
             conversationId: call.conversationId,
             title: conversation.name ?? "Live room",
             hostUserId: call.hostUserId,
+            audience: call.audience,
             participantIds: [...call.participantIds],
-            members: conversation.members.map((member) => toPublicUser(member.user)),
+            members: [...call.participantIds].flatMap((participantId) => {
+              const participant = participantsById.get(participantId);
+              return participant ? [toPublicUser(participant)] : [];
+            }),
           }];
         }));
       })().catch(() => acknowledge([]));
@@ -152,6 +215,10 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
       void (async () => {
         const userId = socket.data.userId as string;
         const call = activeCalls.get(payload.callId);
+        if (!call || call.conversationId !== payload.conversationId) {
+          acknowledge({ ok: false, error: "This call is no longer available" });
+          return;
+        }
         const membership = await prisma.conversationMember.findUnique({
           where: {
             conversationId_userId: {
@@ -160,7 +227,7 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
             },
           },
         });
-        if (!call || call.conversationId !== payload.conversationId || !membership) {
+        if (!membership && !(await canViewLiveRoom(userId, call))) {
           acknowledge({ ok: false, error: "This call is no longer available" });
           return;
         }
@@ -172,7 +239,7 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
         const peerIds = [...call.participantIds].filter((peerId) => peerId !== userId);
         call.participantIds.add(userId);
         emitToUsers(io, peerIds, "call:participant-joined", { callId: payload.callId, userId });
-        if (call.isRoom) emitToUsers(io, call.memberIds, "live-rooms:changed", {});
+        if (call.isRoom) void notifyLiveRoomAudienceChanged(io, call).catch(() => undefined);
         acknowledge({ ok: true, peerIds });
       })().catch(() => acknowledge({ ok: false, error: "Could not join the call" }));
     });
@@ -223,11 +290,11 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
       if (userId === call.hostUserId) {
         activeCalls.delete(callId);
         emitToUsers(io, otherParticipants, "call:ended", { callId });
-        if (call.isRoom) emitToUsers(io, call.memberIds, "live-rooms:changed", {});
+        if (call.isRoom) void notifyLiveRoomAudienceChanged(io, call).catch(() => undefined);
         return;
       }
       emitToUsers(io, otherParticipants, "call:participant-left", { callId, userId });
-      if (call.isRoom) emitToUsers(io, call.memberIds, "live-rooms:changed", {});
+      if (call.isRoom) void notifyLiveRoomAudienceChanged(io, call).catch(() => undefined);
       if (otherParticipants.length === 0) activeCalls.delete(callId);
     }
   });

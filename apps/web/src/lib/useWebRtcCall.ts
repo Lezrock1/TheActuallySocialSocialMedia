@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LiveRoom } from "@app/shared";
+import type { LiveRoom, LiveRoomAudience } from "@app/shared";
 import { getSocket } from "./socket.js";
 
 export type CallType = "audio" | "video";
@@ -18,6 +18,7 @@ export interface ActiveCall {
   hostUserId: string;
   participantIds: string[];
   isRoom: boolean;
+  audience: LiveRoomAudience;
 }
 
 interface CallAcknowledgement {
@@ -224,7 +225,12 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
     };
   }, [clearCall, createPeer, ignoreIncomingCalls, receiveSignal, updateIncomingCall, userId]);
 
-  async function startCall(conversationId: string, callType: CallType, isRoom = false) {
+  async function startCall(
+    conversationId: string,
+    callType: CallType,
+    isRoom = false,
+    audience: LiveRoomAudience = "invited"
+  ) {
     if (!userId || activeCallRef.current) return;
     setCallError(null);
     try {
@@ -240,11 +246,12 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
         hostUserId: userId,
         participantIds: [userId],
         isRoom,
+        audience,
       };
       localStreamRef.current = stream;
       setLocalStream(stream);
       updateActiveCall(call);
-      const result = await emitWithAck<CallAcknowledgement>("call:start", { callId, conversationId, callType, isRoom });
+      const result = await emitWithAck<CallAcknowledgement>("call:start", { callId, conversationId, callType, isRoom, audience });
       if (!result.ok) throw new Error(result.error ?? "Could not start the call");
     } catch (error) {
       clearCall();
@@ -267,6 +274,7 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
         hostUserId: room.hostUserId,
         participantIds: [userId],
         isRoom: true,
+        audience: room.audience,
       });
       const result = await emitWithAck<CallAcknowledgement>("call:join", {
         callId: room.callId,
@@ -302,6 +310,7 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
         hostUserId: incoming.callerId,
         participantIds: [userId],
         isRoom: false,
+        audience: "invited",
       });
       updateIncomingCall(null);
       const result = await emitWithAck<CallAcknowledgement>("call:join", {

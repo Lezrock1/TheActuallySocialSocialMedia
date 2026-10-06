@@ -11,6 +11,7 @@ const enabledPreferences: NotificationPreferences = {
   comments: true,
   commentReplies: true,
   commentLikes: true,
+  storyReactions: true,
   mentions: true,
   closeFriends: true,
 };
@@ -30,6 +31,7 @@ describe("isNotificationEnabled", () => {
       "comment",
       "comment_reply",
       "comment_like",
+      "story_reaction",
       "mention",
       "close_friend",
     ];
@@ -41,5 +43,6 @@ describe("isNotificationEnabled", () => {
     expect(isNotificationEnabled("close_friend_post", { ...enabledPreferences, postsFromCloseFriends: false })).toBe(false);
     expect(isNotificationEnabled("snap", { ...enabledPreferences, snaps: false })).toBe(false);
     expect(isNotificationEnabled("message", { ...enabledPreferences, messages: false })).toBe(false);
+    expect(isNotificationEnabled("story_reaction", { ...enabledPreferences, storyReactions: false })).toBe(false);
   });
 });

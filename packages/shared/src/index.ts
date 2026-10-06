@@ -220,6 +220,7 @@ export const NOTIFICATION_TYPES = [
   "comment",
   "comment_reply",
   "comment_like",
+  "story_reaction",
   "mention",
   "message",
   "snap",
@@ -236,6 +237,7 @@ export interface NotificationPreferences {
   comments: boolean;
   commentReplies: boolean;
   commentLikes: boolean;
+  storyReactions: boolean;
   mentions: boolean;
   closeFriends: boolean;
 }
@@ -345,11 +347,16 @@ export interface SnapStreakSummary {
   waitingForThem: boolean;
 }
 
+export const LIVE_ROOM_AUDIENCES = ["invited", "close_friends", "friends", "everyone"] as const;
+export type LiveRoomAudience = (typeof LIVE_ROOM_AUDIENCES)[number];
+export const MAX_LIVE_ROOM_PARTICIPANTS = 10;
+
 export interface LiveRoom {
   callId: string;
   conversationId: string;
   title: string;
   hostUserId: string;
+  audience: LiveRoomAudience;
   participantIds: string[];
   members: PublicUser[];
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { LiveRoom, PublicUser } from "@app/shared";
+import { LIVE_ROOM_AUDIENCES, MAX_LIVE_ROOM_PARTICIPANTS } from "@app/shared";
+import type { LiveRoom, LiveRoomAudience, PublicUser } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import { useAuth } from "../auth/AuthContext.js";
 import { useWebRtcCall } from "../lib/useWebRtcCall.js";
@@ -31,6 +32,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
   const call = useWebRtcCall(user?.id, true);
   const [createOpen, setCreateOpen] = useState(false);
   const [roomName, setRoomName] = useState("");
+  const [audience, setAudience] = useState<LiveRoomAudience>("invited");
   const [selectedUsernames, setSelectedUsernames] = useState<string[]>([]);
   const [starting, setStarting] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
@@ -65,7 +67,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
     setRoomError(null);
     setSelectedUsernames((selected) => selected.includes(username)
       ? selected.filter((selectedUsername) => selectedUsername !== username)
-      : selected.length < 5 ? [...selected, username] : selected);
+      : selected.length < MAX_LIVE_ROOM_PARTICIPANTS - 1 ? [...selected, username] : selected);
   }
 
   async function startRoom() {
@@ -83,7 +85,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
       const members = [user, ...friends.filter((friend) => selectedUsernames.includes(friend.username))];
       setLocalRoomMembers(members);
       setCreateOpen(false);
-      await call.startCall(result.conversationId, "video", true);
+      await call.startCall(result.conversationId, "video", true, audience);
       void queryClient.invalidateQueries({ queryKey: ["live-rooms"] });
     } catch (error) {
       setRoomError(error instanceof Error ? error.message : "Could not start this room.");
@@ -100,7 +102,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
         <div className={compact ? "shrink-0" : "mb-2 flex items-center justify-between gap-2"}>
           <div className="min-w-0">
             <h2 className={`truncate font-semibold ${compact ? "text-xs text-red-600" : "text-base text-gray-900"}`}>{compact ? "Live now" : "Live rooms"}</h2>
-            {!compact && <p className="mt-0.5 text-xs leading-4 text-gray-500">Drop in with up to 5 friends</p>}
+            {!compact && <p className="mt-0.5 text-xs leading-4 text-gray-500">Up to {MAX_LIVE_ROOM_PARTICIPANTS} people, including you</p>}
           </div>
           {!compact && <button
             type="button"
@@ -166,6 +168,20 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
                 className={`${input} mt-1 w-full`}
               />
             </label>
+            <label className="mb-2 block text-xs font-medium text-gray-700">
+              Who can join?
+              <select
+                value={audience}
+                onChange={(event) => setAudience(event.target.value as LiveRoomAudience)}
+                className={`${input} mt-1 w-full`}
+              >
+                {LIVE_ROOM_AUDIENCES.map((option) => (
+                  <option key={option} value={option}>
+                    {option === "invited" ? "Invitees only" : option === "close_friends" ? "Close friends" : option === "friends" ? "All friends" : "Everyone on InTouch"}
+                  </option>
+                ))}
+              </select>
+            </label>
             <p className="mb-2 text-[11px] text-gray-500">Choose friends to invite. They can join while the room is live.</p>
             <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-100">
               {friends.map((friend) => {
@@ -189,7 +205,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
               {friends.length === 0 && <p className="px-3 py-3 text-xs text-gray-500">Follow friends to invite them to a room.</p>}
             </div>
             <div className="mt-2 flex items-center justify-between gap-2">
-              <span className="text-[11px] text-gray-500">{selectedUsernames.length}/5 friends</span>
+              <span className="text-[11px] text-gray-500">{selectedUsernames.length}/{MAX_LIVE_ROOM_PARTICIPANTS - 1} invitees</span>
               <button
                 type="button"
                 onClick={() => void startRoom()}

@@ -6,7 +6,7 @@ import { activityList, activityRow, btnSecondary, formatActivityTime } from "../
 import Avatar from "../components/Avatar.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
-import PushNotificationSettings from "../components/PushNotificationSettings.js";
+import PullToRefresh from "../components/PullToRefresh.js";
 
 async function fetchNotifications(cursor: string | null): Promise<NotificationsPageData> {
   const params = new URLSearchParams();
@@ -28,6 +28,8 @@ function notificationText(notification: UserNotification): string {
       return "replied to your comment";
     case "comment_like":
       return "liked your comment";
+    case "story_reaction":
+      return "reacted to your story";
     case "mention":
       return "mentioned you";
     case "message":
@@ -60,9 +62,12 @@ export default function NotificationsPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
+      <PullToRefresh onRefresh={() => Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["notifications", "list"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] }),
+      ])} />
       <PageHeader title="Notifications" />
       <NavBar />
-      <PushNotificationSettings />
 
       <div className="mb-3 flex min-h-10 items-center justify-between gap-3">
         <p className="text-sm text-gray-500">

@@ -8,6 +8,7 @@ import { env } from "../env.js";
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
+const FEED_NOTIFICATION_TYPES = ["post", "close_friend_post"];
 const pushSubscriptionSchema = z.object({
   endpoint: z.string().url().max(2048).refine((value) => {
     const url = new URL(value);
@@ -33,6 +34,7 @@ const notificationPreferencesSchema = z.object({
   comments: z.boolean().optional(),
   commentReplies: z.boolean().optional(),
   commentLikes: z.boolean().optional(),
+  storyReactions: z.boolean().optional(),
   mentions: z.boolean().optional(),
   closeFriends: z.boolean().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, "Choose at least one setting");
@@ -46,6 +48,7 @@ function toNotificationPreferences(value: {
   comments: boolean;
   commentReplies: boolean;
   commentLikes: boolean;
+  storyReactions: boolean;
   mentions: boolean;
   closeFriends: boolean;
 }): NotificationPreferences {
@@ -58,6 +61,7 @@ function toNotificationPreferences(value: {
     comments: value.comments,
     commentReplies: value.commentReplies,
     commentLikes: value.commentLikes,
+    storyReactions: value.storyReactions,
     mentions: value.mentions,
     closeFriends: value.closeFriends,
   };
@@ -127,15 +131,22 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     "/notifications/unread-count",
     { preHandler: requireAuth },
     async (request, reply) => {
-      const [unreadCount, messageUnreadCount] = await Promise.all([
+      const [unreadCount, messageUnreadCount, feedUnreadCount] = await Promise.all([
         prisma.notification.count({
-          where: { recipientId: request.userId!, readAt: null, type: { not: "message" } },
+          where: {
+            recipientId: request.userId!,
+            readAt: null,
+            type: { notIn: ["message", ...FEED_NOTIFICATION_TYPES] },
+          },
         }),
         prisma.notification.count({
           where: { recipientId: request.userId!, readAt: null, type: "message" },
         }),
+        prisma.notification.count({
+          where: { recipientId: request.userId!, readAt: null, type: { in: FEED_NOTIFICATION_TYPES } },
+        }),
       ]);
-      return reply.send({ unreadCount, messageUnreadCount });
+      return reply.send({ unreadCount, messageUnreadCount, feedUnreadCount });
     }
   );
 
@@ -146,7 +157,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
       const limit = Math.min(Math.max(Number(request.query.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
       const [rows, unreadCount] = await Promise.all([
         prisma.notification.findMany({
-          where: { recipientId: request.userId! },
+          where: { recipientId: request.userId!, type: { notIn: ["message", ...FEED_NOTIFICATION_TYPES] } },
           include: { actor: true, comment: { select: { text: true } } },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: limit + 1,
@@ -155,7 +166,11 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
             : {}),
         }),
         prisma.notification.count({
-          where: { recipientId: request.userId!, readAt: null },
+          where: {
+            recipientId: request.userId!,
+            readAt: null,
+            type: { notIn: ["message", ...FEED_NOTIFICATION_TYPES] },
+          },
         }),
       ]);
       const hasMore = rows.length > limit;
@@ -182,11 +197,31 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.post(
+    "/notifications/feed/read",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const result = await prisma.notification.updateMany({
+        where: {
+          recipientId: request.userId!,
+          readAt: null,
+          type: { in: FEED_NOTIFICATION_TYPES },
+        },
+        data: { readAt: new Date() },
+      });
+      return reply.send({ updated: result.count });
+    }
+  );
+
+  app.post(
     "/notifications/read-all",
     { preHandler: requireAuth },
     async (request, reply) => {
       const result = await prisma.notification.updateMany({
-        where: { recipientId: request.userId!, readAt: null },
+        where: {
+          recipientId: request.userId!,
+          readAt: null,
+          type: { notIn: ["message", ...FEED_NOTIFICATION_TYPES] },
+        },
         data: { readAt: new Date() },
       });
       return reply.send({ updated: result.count });

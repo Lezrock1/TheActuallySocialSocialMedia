@@ -16,6 +16,7 @@ import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import Avatar from "../components/Avatar.js";
 import CameraIcon from "../components/CameraIcon.js";
+import PullToRefresh from "../components/PullToRefresh.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
 import { activityList, activityRow, card, formatActivityTime } from "../lib/ui.js";
 
@@ -413,6 +414,11 @@ export default function SnapsPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-4 pb-28 sm:py-8 sm:pb-8">
+      <PullToRefresh enabled={!studioOpen && !viewing} onRefresh={() => Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
+        queryClient.invalidateQueries({ queryKey: ["snap-streaks"] }),
+        queryClient.invalidateQueries({ queryKey: ["snaps", "unread-count"] }),
+      ])} />
       <PageHeader title="Snaps" />
       <NavBar />
       <div className="mb-4 flex flex-col items-start gap-2">

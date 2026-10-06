@@ -13,6 +13,7 @@ import PageHeader from "../components/PageHeader.js";
 import StoriesBar from "../components/StoriesBar.js";
 import PostCard from "../components/PostCard.js";
 import Avatar from "../components/Avatar.js";
+import PullToRefresh from "../components/PullToRefresh.js";
 import { usePageBackground } from "../lib/pageBackground.js";
 
 async function fetchFeed(cursor: string | null): Promise<FeedPageType> {
@@ -175,6 +176,8 @@ export default function FeedPage() {
         body: JSON.stringify({ itemId: newestItem.id, itemType: newestItem.type }),
       });
     }
+    await apiFetch("/notifications/feed/read", { method: "POST" });
+    void queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] });
   }
 
   const newestItemKey = allPages[0]?.items[0]
@@ -194,6 +197,14 @@ export default function FeedPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
+      <PullToRefresh onRefresh={async () => {
+        setPages([]);
+        setLoadMoreError(false);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["feed", "first"] }),
+          queryClient.invalidateQueries({ queryKey: ["stories"] }),
+        ]);
+      }} />
       <PageHeader title="Feed" showSearch />
       <NavBar />
 

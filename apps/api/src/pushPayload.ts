@@ -16,6 +16,7 @@ const activityText: Record<NotificationType, string> = {
   comment: "commented on your post",
   comment_reply: "replied to your comment",
   comment_like: "liked your comment",
+  story_reaction: "reacted to your story",
   mention: "mentioned you",
   message: "sent you a message",
   snap: "sent you a Snap",

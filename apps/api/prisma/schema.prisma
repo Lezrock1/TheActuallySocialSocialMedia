@@ -186,6 +186,7 @@ model NotificationPreference {
   comments             Boolean  @default(true)
   commentReplies       Boolean  @default(true)
   commentLikes         Boolean  @default(true)
+  storyReactions       Boolean  @default(true)
   mentions             Boolean  @default(true)
   closeFriends         Boolean  @default(true)
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)

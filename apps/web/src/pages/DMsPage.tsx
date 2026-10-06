@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { MAX_LIVE_ROOM_PARTICIPANTS } from "@app/shared";
 import type { ConversationMessage, ConversationSummary, PublicUser } from "@app/shared";
 import type { EncryptedMessagePayload } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
@@ -22,6 +23,7 @@ import Avatar from "../components/Avatar.js";
 import CallOverlay from "../components/CallOverlay.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
 import LiveRoomsBar from "../components/LiveRoomsBar.js";
+import PullToRefresh from "../components/PullToRefresh.js";
 import { usePageBackground } from "../lib/pageBackground.js";
 import {
   activityList,
@@ -111,6 +113,8 @@ export default function DMsPage() {
   const queryClient = useQueryClient();
   const call = useWebRtcCall(user?.id);
   const friendPickerRef = useRef<HTMLDivElement>(null);
+  const messageScrollRef = useRef<HTMLDivElement>(null);
+  const scrolledConversationRef = useRef<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -179,6 +183,16 @@ export default function DMsPage() {
     queryFn: () => fetchMessages(activeId!),
     enabled: !!activeId,
   });
+  useLayoutEffect(() => {
+    if (!activeId || !messagesLoaded || !messageScrollRef.current) return;
+    const container = messageScrollRef.current;
+    if (scrolledConversationRef.current !== activeId) {
+      container.scrollTop = container.scrollHeight;
+      scrolledConversationRef.current = activeId;
+      return;
+    }
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }, [activeId, decryptedMessages, messages, messagesLoaded]);
   const { data: encryptionKeys = [], isError: encryptionKeysError } = useQuery({
     queryKey: ["conversation-encryption-keys", activeId],
     queryFn: () => fetchEncryptionKeys(activeId!),
@@ -187,7 +201,7 @@ export default function DMsPage() {
   const activeConversation = conversations.find((conversation) => conversation.id === activeId);
   const callConversationId = call.activeCall?.conversationId ?? call.incomingCall?.conversationId;
   const callConversation = conversations.find((conversation) => conversation.id === callConversationId);
-  const canCall = !!activeConversation && activeConversation.members.length >= 2 && activeConversation.members.length <= 6;
+  const canCall = !!activeConversation && activeConversation.members.length >= 2 && activeConversation.members.length <= MAX_LIVE_ROOM_PARTICIPANTS;
   const membersWithKeys = new Set(encryptionKeys.map((key) => key.userId));
   const allMembersHaveKeys = !!activeConversation &&
     activeConversation.members.length > 0 &&
@@ -357,6 +371,14 @@ export default function DMsPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
+      <PullToRefresh enabled={!call.activeCall && !call.incomingCall} onRefresh={async () => {
+        const refreshes = [
+          queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+          queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] }),
+        ];
+        if (activeId) refreshes.push(queryClient.invalidateQueries({ queryKey: ["messages", activeId] }));
+        await Promise.all(refreshes);
+      }} />
       <PageHeader title="Messages" />
       <NavBar />
       <p className="mb-1 text-xs text-gray-500">
@@ -614,7 +636,7 @@ export default function DMsPage() {
             {encryptionKeysError && (
               <p role="alert" className="mb-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
-            <div className={`${card} mb-3 flex max-h-[55vh] min-h-40 flex-col gap-2 overflow-y-auto`}>
+            <div ref={messageScrollRef} className={`${card} mb-3 flex max-h-[55vh] min-h-40 flex-col gap-2 overflow-y-auto`}>
               {messages.map((message) => {
                 const content = message.isEncrypted
                   ? decryptedMessages[message.id] ?? "Decrypting message..."
@@ -637,6 +659,8 @@ export default function DMsPage() {
                         <img
                           src={mediaUrl(parsed.storyReply.imageKey)}
                           alt={`Story by @${parsed.storyReply.authorUsername}`}
+                          loading="lazy"
+                          decoding="async"
                           className="h-14 w-10 shrink-0 rounded object-cover"
                         />
                         <span className="min-w-0 py-1">
@@ -665,6 +689,8 @@ export default function DMsPage() {
                 <img
                   src={mediaUrl(storyReplyContext.imageKey)}
                   alt={`Story by @${storyReplyContext.authorUsername}`}
+                  loading="lazy"
+                  decoding="async"
                   className="h-14 w-10 shrink-0 rounded object-cover"
                 />
                 <span className="min-w-0 flex-1">

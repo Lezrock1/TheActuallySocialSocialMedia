@@ -42,13 +42,14 @@ function CountBadge({
   tone,
 }: {
   count: number;
-  tone: "red" | "green" | "yellow";
+  tone: "red" | "green" | "yellow" | "blue";
 }) {
   if (!count) return null;
   const toneClass = {
     red: "bg-red-600 text-white",
     green: "bg-green-600 text-white",
     yellow: "bg-[#FFFC00] text-black ring-1 ring-yellow-500/60",
+    blue: "bg-[#1D9BF0] text-white",
   }[tone];
   return (
     <span className={`absolute -right-2 -top-1.5 z-10 inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-4 shadow-sm ring-2 ring-white ${toneClass}`}>
@@ -58,9 +59,9 @@ function CountBadge({
 }
 
 export default function NavBar() {
-  const { data: { unreadCount: notificationCount = 0, messageUnreadCount = 0 } = {} } = useQuery({
+  const { data: { unreadCount: notificationCount = 0, messageUnreadCount = 0, feedUnreadCount = 0 } = {} } = useQuery({
     queryKey: ["notifications", "unread-count"],
-    queryFn: () => apiFetch<{ unreadCount: number; messageUnreadCount: number }>("/notifications/unread-count"),
+    queryFn: () => apiFetch<{ unreadCount: number; messageUnreadCount: number; feedUnreadCount: number }>("/notifications/unread-count"),
     staleTime: 30_000,
       refetchInterval: 30_000,
   });
@@ -77,7 +78,10 @@ export default function NavBar() {
         <div className="flex items-center gap-6">
           <NavLink to="/" end className={primaryLinkClass}>
             <span className="inline-flex items-center gap-1.5">
-              <MobileTabIcon name="feed" className="h-5 w-5" />
+              <span className="relative inline-flex">
+                <MobileTabIcon name="feed" className="h-5 w-5" />
+                <CountBadge count={feedUnreadCount} tone="blue" />
+              </span>
               Feed
             </span>
           </NavLink>
@@ -125,7 +129,10 @@ export default function NavBar() {
         style={{ paddingBottom: "max(0.4rem, env(safe-area-inset-bottom))" }}
       >
         <NavLink to="/" end className={mobileLinkClass}>
-          <MobileTabIcon name="feed" />
+          <span className="relative inline-flex">
+            <MobileTabIcon name="feed" />
+            <CountBadge count={feedUnreadCount} tone="blue" />
+          </span>
           <span>Feed</span>
         </NavLink>
         <NavLink to="/snaps" className={mobileLinkClass}>

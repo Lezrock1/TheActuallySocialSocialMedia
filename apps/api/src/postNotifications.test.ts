@@ -11,6 +11,7 @@ const allEnabled: NotificationPreferences = {
   comments: true,
   commentReplies: true,
   commentLikes: true,
+  storyReactions: true,
   mentions: true,
   closeFriends: true,
 };

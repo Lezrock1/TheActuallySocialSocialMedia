@@ -240,7 +240,9 @@ export default function StoriesBar() {
               <img
                 src={mediaUrl(viewing.stories[storyIndex].imageKey)}
                 alt={`Story ${storyIndex + 1} from @${viewing.author.username}`}
+                loading="eager"
                 decoding="async"
+                fetchPriority="high"
                 className="h-full w-full object-contain"
               />
               <button

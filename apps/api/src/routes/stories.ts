@@ -7,6 +7,7 @@ import { toPublicUser } from "../serializers.js";
 import { deleteMediaIfUnreferenced } from "../storage.js";
 import { ownsMedia } from "../mediaAccess.js";
 import { getBlockedUserIds, getCloseFriendGrantedAuthorIds, isBlocked } from "../visibility.js";
+import { createUserNotification } from "../notifications.js";
 
 const STORY_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
@@ -148,6 +149,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
           storyId_userId: { storyId: story.id, userId: request.userId! },
         },
       });
+      let shouldNotifyAuthor = false;
       if (existing?.emoji === parsed.data.emoji) {
         await prisma.storyReaction.delete({ where: { id: existing.id } });
       } else {
@@ -158,6 +160,15 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
           create: { storyId: story.id, userId: request.userId!, emoji: parsed.data.emoji },
           update: { emoji: parsed.data.emoji },
         });
+        shouldNotifyAuthor = true;
+      }
+      if (shouldNotifyAuthor) {
+        await createUserNotification({
+          recipientId: story.authorId,
+          actorId: request.userId!,
+          type: "story_reaction",
+          dedupeKey: `story-reaction:${story.id}:${request.userId}`,
+        }).catch((error) => request.log.error(error, "Story reaction notification creation failed"));
       }
 
       const reactions = await prisma.storyReaction.findMany({

@@ -9,6 +9,7 @@ const preferenceByType: Record<NotificationType, keyof NotificationPreferences> 
   comment: "comments",
   comment_reply: "commentReplies",
   comment_like: "commentLikes",
+  story_reaction: "storyReactions",
   mention: "mentions",
   close_friend: "closeFriends",
 };

@@ -1,0 +1,1 @@
+ALTER TABLE "NotificationPreference" ADD COLUMN "storyReactions" BOOLEAN NOT NULL DEFAULT true;

@@ -69,6 +69,8 @@ export default function PostCard({
         <img
           src={mediaUrl(post.imageKey)}
           alt=""
+          loading="lazy"
+          decoding="async"
           className="mt-2 max-h-96 w-full rounded-lg object-cover"
         />
       )}
