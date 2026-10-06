@@ -14,7 +14,7 @@ export default function PageHeader({
   const [comingSoon, setComingSoon] = useState<string | null>(null);
 
   const headerIconButton =
-    "flex h-11 w-11 shrink-0 items-center justify-center rounded-none border-0 text-gray-600 transition hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 sm:h-9 sm:w-9 sm:rounded-full sm:border sm:border-gray-200 sm:hover:bg-gray-50";
+    "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-transparent text-gray-600 transition-[background-color,color,transform] duration-200 hover:bg-gray-100 hover:text-gray-900 active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#007AFF]/15 sm:h-9 sm:w-9 sm:border-gray-200";
 
   function showComingSoon(section: string) {
     setMenuOpen(false);
@@ -22,7 +22,7 @@ export default function PageHeader({
   }
 
   return (
-    <header className="relative z-50 mb-2 flex items-center justify-between">
+    <header className="page-header-enter relative z-50 mb-2 flex items-center justify-between">
       <h1 className="min-w-0 flex-1 truncate text-xl font-semibold">{title}</h1>
       <div className="flex shrink-0 items-center gap-1 text-sm sm:gap-2">
         <Link to={`/u/${user?.username}`} className="max-w-20 truncate underline sm:max-w-none">
@@ -58,7 +58,7 @@ export default function PageHeader({
           {menuOpen && (
             <div
               role="menu"
-              className="absolute right-0 top-full mt-2 w-48 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg"
+              className="menu-enter absolute right-0 top-full mt-2 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white/95 py-1 text-sm shadow-xl backdrop-blur-xl"
             >
               <Link
                 to="/settings/ai"

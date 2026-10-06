@@ -30,6 +30,7 @@ const notificationPreferencesSchema = z.object({
   postsFromCloseFriends: z.boolean().optional(),
   snaps: z.boolean().optional(),
   messages: z.boolean().optional(),
+  liveRooms: z.boolean().optional(),
   follows: z.boolean().optional(),
   comments: z.boolean().optional(),
   commentReplies: z.boolean().optional(),
@@ -44,6 +45,7 @@ function toNotificationPreferences(value: {
   postsFromCloseFriends: boolean;
   snaps: boolean;
   messages: boolean;
+  liveRooms: boolean;
   follows: boolean;
   comments: boolean;
   commentReplies: boolean;
@@ -57,6 +59,7 @@ function toNotificationPreferences(value: {
     postsFromCloseFriends: value.postsFromCloseFriends,
     snaps: value.snaps,
     messages: value.messages,
+    liveRooms: value.liveRooms,
     follows: value.follows,
     comments: value.comments,
     commentReplies: value.commentReplies,

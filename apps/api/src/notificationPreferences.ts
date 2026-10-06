@@ -5,6 +5,7 @@ const preferenceByType: Record<NotificationType, keyof NotificationPreferences> 
   close_friend_post: "postsFromCloseFriends",
   snap: "snaps",
   message: "messages",
+  live_room: "liveRooms",
   follow: "follows",
   comment: "comments",
   comment_reply: "commentReplies",

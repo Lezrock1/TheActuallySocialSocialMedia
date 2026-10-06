@@ -71,7 +71,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
   }
 
   async function startRoom() {
-    if (!user || selectedUsernames.length === 0 || starting) return;
+    if (!user || starting || (audience === "invited" && selectedUsernames.length === 0)) return;
     setStarting(true);
     setRoomError(null);
     try {
@@ -80,6 +80,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
         body: JSON.stringify({
           name: roomName.trim() || "Live room",
           usernames: selectedUsernames,
+          allowEmpty: audience !== "invited" && selectedUsernames.length === 0,
         }),
       });
       const members = [user, ...friends.filter((friend) => selectedUsernames.includes(friend.username))];
@@ -182,7 +183,11 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
                 ))}
               </select>
             </label>
-            <p className="mb-2 text-[11px] text-gray-500">Choose friends to invite. They can join while the room is live.</p>
+            <p className="mb-2 text-[11px] text-gray-500">
+              {audience === "invited"
+                ? "Invite at least one friend. Only invitees can join."
+                : "Invite friends or go live without invites. Others in this audience can join while the room is live."}
+            </p>
             <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-100">
               {friends.map((friend) => {
                 const selected = selectedUsernames.includes(friend.username);
@@ -202,14 +207,14 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
                   </button>
                 );
               })}
-              {friends.length === 0 && <p className="px-3 py-3 text-xs text-gray-500">Follow friends to invite them to a room.</p>}
+              {friends.length === 0 && <p className="px-3 py-3 text-xs text-gray-500">No friends to invite.</p>}
             </div>
             <div className="mt-2 flex items-center justify-between gap-2">
               <span className="text-[11px] text-gray-500">{selectedUsernames.length}/{MAX_LIVE_ROOM_PARTICIPANTS - 1} invitees</span>
               <button
                 type="button"
                 onClick={() => void startRoom()}
-                disabled={starting || !selectedUsernames.length}
+                disabled={starting || (audience === "invited" && !selectedUsernames.length)}
                 className={`${btnSecondary} min-h-9 text-xs`}
               >
                 {starting ? "Starting…" : "Go live"}

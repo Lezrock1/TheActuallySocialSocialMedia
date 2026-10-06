@@ -7,6 +7,7 @@ const enabledPreferences: NotificationPreferences = {
   postsFromCloseFriends: true,
   snaps: true,
   messages: true,
+  liveRooms: true,
   follows: true,
   comments: true,
   commentReplies: true,
@@ -27,6 +28,7 @@ describe("isNotificationEnabled", () => {
       "close_friend_post",
       "snap",
       "message",
+      "live_room",
       "follow",
       "comment",
       "comment_reply",
@@ -43,6 +45,7 @@ describe("isNotificationEnabled", () => {
     expect(isNotificationEnabled("close_friend_post", { ...enabledPreferences, postsFromCloseFriends: false })).toBe(false);
     expect(isNotificationEnabled("snap", { ...enabledPreferences, snaps: false })).toBe(false);
     expect(isNotificationEnabled("message", { ...enabledPreferences, messages: false })).toBe(false);
+    expect(isNotificationEnabled("live_room", { ...enabledPreferences, liveRooms: false })).toBe(false);
     expect(isNotificationEnabled("story_reaction", { ...enabledPreferences, storyReactions: false })).toBe(false);
   });
 });

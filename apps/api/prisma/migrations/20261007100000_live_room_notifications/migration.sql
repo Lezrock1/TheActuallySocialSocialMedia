@@ -1,0 +1,1 @@
+ALTER TABLE "NotificationPreference" ADD COLUMN "liveRooms" BOOLEAN NOT NULL DEFAULT true;

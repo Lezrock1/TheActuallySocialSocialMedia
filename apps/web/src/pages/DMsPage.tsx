@@ -125,13 +125,21 @@ export default function DMsPage() {
   const [startingConversation, setStartingConversation] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [storyReplyContext, setStoryReplyContext] = useState<StoryReplyContext | null>(null);
-  const [messageView, setMessageView] = useState<"chats" | "create_group" | "live_rooms">("chats");
+  const [messageView, setMessageView] = useState<"chats" | "create_group" | "live_rooms">(() =>
+    searchParams.get("view") === "live_rooms" ? "live_rooms" : "chats"
+  );
   const groupMode = messageView === "create_group";
   const [groupName, setGroupName] = useState("");
   const [deviceKeyReady, setDeviceKeyReady] = useState(false);
   const [encryptionError, setEncryptionError] = useState<string | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
   const [decryptedMessages, setDecryptedMessages] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (searchParams.get("view") !== "live_rooms") return;
+    setActiveId(null);
+    setMessageView("live_rooms");
+  }, [searchParams]);
 
   useEffect(() => {
     const state = location.state as {
@@ -381,12 +389,6 @@ export default function DMsPage() {
       }} />
       <PageHeader title="Messages" />
       <NavBar />
-      <p className="mb-1 text-xs text-gray-500">
-        {deviceKeyReady ? "This device is ready for encrypted messages." : "Setting up message encryption..."}
-      </p>
-      <p className="mb-4 mt-1 text-[11px] text-gray-500">
-        Device keys stay in this browser; clearing its data can make encrypted history unreadable.
-      </p>
       {encryptionError && <p role="alert" className="mb-3 text-xs text-red-600">{encryptionError}</p>}
 
       <div className="flex flex-col gap-6">
@@ -724,6 +726,10 @@ export default function DMsPage() {
           </section>
         )}
       </div>
+      <footer className="mt-6 border-t border-gray-100 pt-3 text-[11px] leading-5 text-gray-500">
+        <p>{deviceKeyReady ? "This device is ready for encrypted messages." : "Setting up message encryption..."}</p>
+        <p>Device keys stay in this browser; clearing its data can make encrypted history unreadable.</p>
+      </footer>
       <CallOverlay
         incomingCall={call.incomingCall}
         activeCall={call.activeCall}

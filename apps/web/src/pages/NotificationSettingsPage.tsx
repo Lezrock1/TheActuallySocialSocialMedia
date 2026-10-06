@@ -23,6 +23,7 @@ const sections: {
     options: [
       { key: "snaps", label: "Snaps", description: "New Snaps sent to you." },
       { key: "messages", label: "Messages", description: "New direct and group messages." },
+      { key: "liveRooms", label: "Live Rooms", description: "When a room you can join goes live." },
     ],
   },
   {

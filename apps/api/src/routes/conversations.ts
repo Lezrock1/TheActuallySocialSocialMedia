@@ -77,7 +77,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         request.userId!,
         ...otherUsers.map((u) => u.id).filter((id) => id !== request.userId),
       ];
-      if (memberIds.length < 2) {
+      if (memberIds.length < 2 && !parsed.data.allowEmpty) {
         return reply.code(400).send({ error: "Need at least one other member" });
       }
 
@@ -122,13 +122,14 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    const summaries = memberships.map((m) => {
+    const summaries = memberships.flatMap((m) => {
+      if (m.conversation.members.length === 1 && m.conversation.messages.length === 0) return [];
       const isGroup = m.conversation.members.length > 2 || !!m.conversation.name;
       const otherMember = m.conversation.members.find(
         (mem) => mem.userId !== request.userId
       );
       const last = m.conversation.messages[0];
-      return {
+      return [{
         id: m.conversation.id,
         name: m.conversation.name,
         isGroup,
@@ -143,7 +144,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
               senderId: last.senderId,
             }
           : null,
-      };
+      }];
     });
     summaries.sort((a, b) => {
       if (!a.lastMessage) return b.lastMessage ? 1 : 0;

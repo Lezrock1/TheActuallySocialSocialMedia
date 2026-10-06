@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 import LoginPage from "./pages/LoginPage.js";
 import RegisterPage from "./pages/RegisterPage.js";
@@ -22,8 +22,10 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 }
 
 function AppRoutes() {
+  const location = useLocation();
   return (
-    <Routes>
+    <div key={location.pathname} className="route-enter">
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route
@@ -114,7 +116,8 @@ function AppRoutes() {
           </RequireAuth>
         }
       />
-    </Routes>
+      </Routes>
+    </div>
   );
 }
 

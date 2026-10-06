@@ -7,6 +7,7 @@ const allEnabled: NotificationPreferences = {
   postsFromCloseFriends: true,
   snaps: true,
   messages: true,
+  liveRooms: true,
   follows: true,
   comments: true,
   commentReplies: true,

@@ -34,6 +34,8 @@ function notificationText(notification: UserNotification): string {
       return "mentioned you";
     case "message":
       return "sent you a message";
+    case "live_room":
+      return "started a Live Room you can join";
     case "snap":
       return "sent you a Snap";
     case "close_friend":
@@ -85,7 +87,9 @@ export default function NotificationsPage() {
 
       <div className={activityList}>
         {notifications.map((notification) => {
-          const target = notification.postId
+          const target = notification.type === "live_room"
+            ? "/dms?view=live_rooms"
+            : notification.postId
             ? `/post/${notification.postId}`
             : notification.conversationId
               ? `/dms?conversation=${notification.conversationId}`

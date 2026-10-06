@@ -239,6 +239,7 @@ export const NOTIFICATION_TYPES = [
   "story_reaction",
   "mention",
   "message",
+  "live_room",
   "snap",
   "close_friend",
 ] as const;
@@ -249,6 +250,7 @@ export interface NotificationPreferences {
   postsFromCloseFriends: boolean;
   snaps: boolean;
   messages: boolean;
+  liveRooms: boolean;
   follows: boolean;
   comments: boolean;
   commentReplies: boolean;
@@ -365,7 +367,7 @@ export interface SnapStreakSummary {
 
 export const LIVE_ROOM_AUDIENCES = ["invited", "close_friends", "friends", "everyone"] as const;
 export type LiveRoomAudience = (typeof LIVE_ROOM_AUDIENCES)[number];
-export const MAX_LIVE_ROOM_PARTICIPANTS = 10;
+export const MAX_LIVE_ROOM_PARTICIPANTS = 16;
 
 export interface LiveRoom {
   callId: string;
@@ -405,7 +407,8 @@ export type StartConversationInput = z.infer<typeof startConversationSchema>;
 
 export const createGroupConversationSchema = z.object({
   name: z.string().min(1).max(60).optional(),
-  usernames: z.array(z.string()).min(1).max(50),
+  usernames: z.array(z.string()).max(50),
+  allowEmpty: z.boolean().optional(),
 });
 export type CreateGroupConversationInput = z.infer<
   typeof createGroupConversationSchema

@@ -183,6 +183,7 @@ model NotificationPreference {
   postsFromCloseFriends Boolean @default(true)
   snaps                Boolean  @default(true)
   messages             Boolean  @default(true)
+  liveRooms             Boolean  @default(true)
   follows              Boolean  @default(true)
   comments             Boolean  @default(true)
   commentReplies       Boolean  @default(true)

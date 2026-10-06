@@ -19,12 +19,15 @@ const activityText: Record<NotificationType, string> = {
   story_reaction: "reacted to your story",
   mention: "mentioned you",
   message: "sent you a message",
+  live_room: "started a Live Room you can join",
   snap: "sent you a Snap",
   close_friend: "added you as a close friend",
 };
 
 export function createPushPayload(input: PushPayloadInput) {
-  const url = input.conversationId
+  const url = input.type === "live_room"
+    ? "/dms?view=live_rooms"
+    : input.conversationId
     ? `/dms?conversation=${encodeURIComponent(input.conversationId)}`
     : input.snapId
       ? "/snaps"

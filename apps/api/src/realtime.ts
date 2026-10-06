@@ -4,9 +4,10 @@ import { env } from "./env.js";
 import { verifyAuthToken } from "./auth/token.js";
 import { prisma } from "./db.js";
 import { toPublicUser } from "./serializers.js";
-import { isBlocked } from "./visibility.js";
+import { getBlockedUserIds, isBlocked } from "./visibility.js";
 import { LIVE_ROOM_AUDIENCES, MAX_LIVE_ROOM_PARTICIPANTS } from "@app/shared";
 import type { LiveRoomAudience } from "@app/shared";
+import { createUserNotification } from "./notifications.js";
 
 interface ActiveCall {
   conversationId: string;
@@ -56,11 +57,7 @@ async function canViewLiveRoom(userId: string, call: ActiveCall): Promise<boolea
   return false;
 }
 
-async function notifyLiveRoomAudienceChanged(io: SocketIOServer, call: ActiveCall): Promise<void> {
-  if (call.audience === "everyone") {
-    io.emit("live-rooms:changed", {});
-    return;
-  }
+async function getLiveRoomAudienceUserIds(call: ActiveCall): Promise<string[]> {
   const userIds = new Set(call.memberIds);
   if (call.audience === "close_friends") {
     const friends = await prisma.closeFriend.findMany({
@@ -79,7 +76,30 @@ async function notifyLiveRoomAudienceChanged(io: SocketIOServer, call: ActiveCal
       userIds.add(follow.followerId === call.hostUserId ? follow.followeeId : follow.followerId);
     }
   }
-  emitToUsers(io, [...userIds], "live-rooms:changed", {});
+  return [...userIds];
+}
+
+async function notifyLiveRoomAudienceChanged(io: SocketIOServer, call: ActiveCall): Promise<void> {
+  if (call.audience === "everyone") {
+    io.emit("live-rooms:changed", {});
+    return;
+  }
+  emitToUsers(io, await getLiveRoomAudienceUserIds(call), "live-rooms:changed", {});
+}
+
+async function notifyLiveRoomStarted(callId: string, call: ActiveCall): Promise<void> {
+  const audienceIds = call.audience === "everyone"
+    ? call.memberIds
+    : await getLiveRoomAudienceUserIds(call);
+  const blockedIds = new Set(await getBlockedUserIds(call.hostUserId));
+  const recipients = [...new Set(audienceIds)]
+    .filter((recipientId) => recipientId !== call.hostUserId && !blockedIds.has(recipientId));
+  await Promise.all(recipients.map((recipientId) => createUserNotification({
+    recipientId,
+    actorId: call.hostUserId,
+    type: "live_room",
+    dedupeKey: `live-room:${callId}:${recipientId}`,
+  })));
 }
 
 export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
@@ -133,8 +153,9 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
           acknowledge({ ok: false, error: "Choose a valid room audience" });
           return;
         }
-        if (members.length < 2 || members.length > MAX_CALL_PARTICIPANTS) {
-          acknowledge({ ok: false, error: `Calls support 2–${MAX_CALL_PARTICIPANTS} participants` });
+        const minimumParticipants = payload.isRoom && payload.audience !== "invited" ? 1 : 2;
+        if (members.length < minimumParticipants || members.length > MAX_CALL_PARTICIPANTS) {
+          acknowledge({ ok: false, error: `Calls support ${minimumParticipants}–${MAX_CALL_PARTICIPANTS} participants` });
           return;
         }
         if (activeCalls.has(payload.callId) ||
@@ -152,7 +173,9 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
           audience: payload.isRoom ? payload.audience ?? "invited" : "invited",
         });
         if (payload.isRoom) {
-          void notifyLiveRoomAudienceChanged(io, activeCalls.get(payload.callId)!).catch(() => undefined);
+          const call = activeCalls.get(payload.callId)!;
+          void notifyLiveRoomAudienceChanged(io, call).catch(() => undefined);
+          void notifyLiveRoomStarted(payload.callId, call).catch(() => undefined);
         } else {
           emitToUsers(
             io,
@@ -291,6 +314,9 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
         activeCalls.delete(callId);
         emitToUsers(io, otherParticipants, "call:ended", { callId });
         if (call.isRoom) void notifyLiveRoomAudienceChanged(io, call).catch(() => undefined);
+        if (call.isRoom && call.memberIds.length === 1) {
+          void prisma.conversation.delete({ where: { id: call.conversationId } }).catch(() => undefined);
+        }
         return;
       }
       emitToUsers(io, otherParticipants, "call:participant-left", { callId, userId });

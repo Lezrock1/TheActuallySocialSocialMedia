@@ -310,7 +310,7 @@ export default function FeedPage() {
               disabled={mediaUploading}
               className={btnSecondary}
             >
-              {mediaUploading ? "Uploading…" : imageKey ? "Change media" : "Add photo or video"}
+              {mediaUploading ? "Uploading…" : imageKey ? "Change media" : "Add photo"}
             </button>
             <select
               value={visibility}

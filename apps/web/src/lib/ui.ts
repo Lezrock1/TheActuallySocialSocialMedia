@@ -1,14 +1,14 @@
 // Shared Tailwind class fragments so the app looks consistent everywhere.
-export const card = "rounded-xl border border-gray-200 bg-white p-4 shadow-sm";
-export const activityList = "overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm";
+export const card = "rounded-xl border border-gray-200 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.05)]";
+export const activityList = "overflow-hidden rounded-xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.05)]";
 export const activityRow =
-  "flex w-full min-w-0 items-center gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-300";
+  "flex w-full min-w-0 items-center gap-3 border-b border-gray-100 px-4 py-3 text-left transition-[background-color,transform] duration-200 last:border-b-0 hover:bg-gray-50 active:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#007AFF]";
 export const input =
-  "rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-1 focus:ring-black";
+  "rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm placeholder:text-gray-400 transition-[border-color,box-shadow] duration-200 focus:border-[#007AFF] focus:outline-none focus:ring-4 focus:ring-[#007AFF]/10 disabled:bg-gray-50 disabled:text-gray-500";
 export const btnPrimary =
-  "rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50";
+  "rounded-xl bg-[#007AFF] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-[background-color,box-shadow,transform] duration-200 hover:bg-[#006BE0] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#007AFF]/20 disabled:cursor-not-allowed disabled:opacity-50";
 export const btnSecondary =
-  "rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50";
+  "rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition-[background-color,border-color,transform] duration-200 hover:border-gray-300 hover:bg-gray-50 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#007AFF]/10 disabled:cursor-not-allowed disabled:opacity-50";
 export const btnDanger = "text-xs font-medium text-red-600 hover:underline";
 export const pill = "rounded-full px-2.5 py-0.5 text-[11px] font-medium";
 
