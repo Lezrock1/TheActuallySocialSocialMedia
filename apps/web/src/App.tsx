@@ -13,6 +13,7 @@ import NotificationsPage from "./pages/NotificationsPage.js";
 import PeopleSearchPage from "./pages/PeopleSearchPage.js";
 import NotificationSettingsPage from "./pages/NotificationSettingsPage.js";
 import AccountSettingsPage from "./pages/AccountSettingsPage.js";
+import { MobileNav } from "./components/NavBar.js";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -23,7 +24,10 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 
 function AppRoutes() {
   const location = useLocation();
+  const { user } = useAuth();
+  const showMobileNav = !!user && location.pathname !== "/login" && location.pathname !== "/register";
   return (
+    <>
     <div key={location.pathname} className="route-enter">
       <Routes>
       <Route path="/login" element={<LoginPage />} />
@@ -118,6 +122,8 @@ function AppRoutes() {
       />
       </Routes>
     </div>
+    {showMobileNav && <MobileNav />}
+    </>
   );
 }
 

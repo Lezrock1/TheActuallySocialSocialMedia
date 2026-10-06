@@ -333,7 +333,7 @@ export default function FeedPage() {
             type="submit"
             disabled={posting || mediaUploading}
             aria-label={postSuccess ? "Post published" : "Post"}
-            className={`${btnPrimary} relative h-10 w-24 shrink-0 overflow-hidden rounded-full px-0 font-semibold transition-colors duration-300 ease-in-out focus-visible:ring-2 focus-visible:ring-offset-2 ${postSuccess ? "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600" : "bg-[#1D9BF0] hover:bg-[#1688D4] focus-visible:ring-[#1D9BF0]"}`}
+            className={`${btnPrimary} relative h-10 w-24 shrink-0 overflow-hidden rounded-full px-0 font-semibold transition-colors duration-300 ease-in-out focus-visible:ring-2 focus-visible:ring-offset-2 ${postSuccess ? "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600" : "bg-black hover:bg-gray-800 focus-visible:ring-black"}`}
           >
             <span aria-hidden="true" className={`absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-300 ease-out ${postSuccess ? "scale-90 opacity-0" : "scale-100 opacity-100"}`}>
               Post

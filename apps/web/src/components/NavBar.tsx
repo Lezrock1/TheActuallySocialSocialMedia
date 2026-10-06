@@ -7,8 +7,8 @@ const primaryLinkClass = ({ isActive }: { isActive: boolean }) =>
   `inline-flex h-10 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors ${isActive ? "border-[#1D9BF0] text-gray-900" : "border-transparent text-gray-600 hover:text-gray-900"}`;
 
 const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[10px] font-medium leading-none transition-[background-color,color,transform] duration-200 active:scale-95 ${
-    isActive ? "bg-[#007AFF]/[0.08] text-[#007AFF]" : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+  `flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-[10px] font-medium leading-none transition-[color,transform] duration-300 ease-out active:scale-95 ${
+    isActive ? "text-[#1DA1F2]" : "text-gray-500 hover:text-gray-800"
   }`;
 
 function MobileTabIcon({
@@ -58,7 +58,7 @@ function CountBadge({
   );
 }
 
-export default function NavBar() {
+function useNavCounts() {
   const { data: { unreadCount: notificationCount = 0, messageUnreadCount = 0, feedUnreadCount = 0 } = {} } = useQuery({
     queryKey: ["notifications", "unread-count"],
     queryFn: () => apiFetch<{ unreadCount: number; messageUnreadCount: number; feedUnreadCount: number }>("/notifications/unread-count"),
@@ -71,6 +71,11 @@ export default function NavBar() {
     staleTime: 30_000,
     refetchInterval: 30_000,
   });
+  return { notificationCount, messageUnreadCount, feedUnreadCount, snapUnreadCount };
+}
+
+export default function NavBar() {
+  const { notificationCount, messageUnreadCount, feedUnreadCount, snapUnreadCount } = useNavCounts();
 
   return (
     <>
@@ -123,9 +128,18 @@ export default function NavBar() {
           </NavLink>
         </div>
       </nav>
+    </>
+  );
+}
+
+// Rendered once outside the page transition so tab changes never remount it.
+export function MobileNav() {
+  const { notificationCount, messageUnreadCount, feedUnreadCount, snapUnreadCount } = useNavCounts();
+
+  return (
       <nav
         aria-label="Primary navigation"
-        className="fixed bottom-2 left-1/2 z-40 grid w-[90%] max-w-lg -translate-x-1/2 grid-cols-5 items-stretch gap-1 rounded-[1.4rem] border border-white/70 bg-white/78 px-3 pt-1 shadow-[0_-8px_28px_rgba(15,23,42,0.09)] backdrop-blur-2xl sm:hidden"
+        className="fixed bottom-2 left-1/2 z-40 grid w-[90%] max-w-lg -translate-x-1/2 grid-cols-5 items-stretch gap-1 rounded-2xl border border-white/70 bg-white/85 px-3 pt-1 shadow-[0_-8px_28px_rgba(15,23,42,0.09)] backdrop-blur-xl sm:hidden"
         style={{ paddingBottom: "max(0.4rem, env(safe-area-inset-bottom))" }}
       >
         <NavLink to="/" end className={mobileLinkClass}>
@@ -165,6 +179,5 @@ export default function NavBar() {
           <CameraIcon />
         </NavLink>
       </nav>
-    </>
   );
 }
