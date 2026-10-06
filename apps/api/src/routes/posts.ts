@@ -85,6 +85,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         authorId: request.userId!,
         text: parsed.data.text,
         imageKey: parsed.data.imageKey,
+        mediaType: parsed.data.mediaType ?? "image",
         parentPostId: parsed.data.parentPostId,
         visibility: parsed.data.visibility ?? "public",
         ...(parsed.data.poll

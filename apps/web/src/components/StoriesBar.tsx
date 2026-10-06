@@ -7,6 +7,7 @@ import type { PostVisibility, StoryGroup } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import { mediaUrl, uploadMedia } from "../lib/upload.js";
 import Avatar from "./Avatar.js";
+import LiveRoomsBar from "./LiveRoomsBar.js";
 
 async function fetchStoryGroups(): Promise<StoryGroup[]> {
   const res = await apiFetch<{ groups: StoryGroup[] }>("/stories");
@@ -24,6 +25,7 @@ export default function StoriesBar() {
   const [replySending, setReplySending] = useState(false);
   const [reactionError, setReactionError] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<PostVisibility>("public");
+  const [storyCaption, setStoryCaption] = useState("");
 
   const { data: groups = [] } = useQuery({
     queryKey: ["stories"],
@@ -136,8 +138,9 @@ export default function StoriesBar() {
       const imageKey = await uploadMedia(file);
       await apiFetch("/stories", {
         method: "POST",
-        body: JSON.stringify({ imageKey, visibility }),
+        body: JSON.stringify({ imageKey, text: storyCaption.trim() || undefined, visibility }),
       });
+      setStoryCaption("");
       await queryClient.invalidateQueries({ queryKey: ["stories"] });
     } finally {
       setUploading(false);
@@ -157,6 +160,15 @@ export default function StoriesBar() {
           <option value="close_friends">Close friends only</option>
         </select>
       </div>
+      <LiveRoomsBar compact />
+      <textarea
+        value={storyCaption}
+        onChange={(event) => setStoryCaption(event.target.value)}
+        maxLength={500}
+        rows={1}
+        placeholder="Add a story caption..."
+        className="mb-2 w-full resize-none rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+      />
       <div className="flex gap-4 overflow-x-auto pb-2">
         <button
           onClick={() => fileInputRef.current?.click()}
@@ -247,6 +259,11 @@ export default function StoriesBar() {
                 className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-3 pb-4 pt-12"
                 onClick={(event) => event.stopPropagation()}
               >
+                {viewing.stories[storyIndex].text && (
+                  <p className="mb-3 text-center text-base font-semibold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
+                    {viewing.stories[storyIndex].text}
+                  </p>
+                )}
                 {viewing.stories[storyIndex].reactionCounts.length > 0 && (
                   <div className="mb-2 flex gap-2 text-xs text-white/90">
                     {viewing.stories[storyIndex].reactionCounts.map((reaction) => (

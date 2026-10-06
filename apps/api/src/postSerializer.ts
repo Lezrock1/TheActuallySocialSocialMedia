@@ -1,4 +1,4 @@
-import type { FeedPost, PostVisibility } from "@app/shared";
+import type { FeedPost, MediaType, PostVisibility } from "@app/shared";
 import { toPublicUser } from "./serializers.js";
 
 export const postWithCountsInclude = {
@@ -12,6 +12,7 @@ export function toFeedPost(post: {
   author: Parameters<typeof toPublicUser>[0];
   text: string | null;
   imageKey: string | null;
+  mediaType: string;
   createdAt: Date;
   visibility: string;
   parentPostId: string | null;
@@ -24,6 +25,7 @@ export function toFeedPost(post: {
     author: toPublicUser(post.author),
     text: post.text,
     imageKey: post.imageKey,
+    mediaType: post.mediaType as MediaType,
     createdAt: post.createdAt.toISOString(),
     visibility: post.visibility as PostVisibility,
     parentPostId: post.parentPostId,

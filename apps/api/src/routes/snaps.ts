@@ -175,6 +175,9 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
         const isUserA = streak.userAId === request.userId;
         const mySnapAt = isUserA ? streak.pendingUserAAt : streak.pendingUserBAt;
         const theirSnapAt = isUserA ? streak.pendingUserBAt : streak.pendingUserAAt;
+        const mostRecentSnapAt = [streak.lastExchangeAt, streak.pendingUserAAt, streak.pendingUserBAt]
+          .filter((sentAt): sentAt is Date => sentAt !== null)
+          .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
         const isExpired = !streak.lastExchangeAt ||
           now - streak.lastExchangeAt.getTime() > 48 * 60 * 60 * 1000;
         const isPendingFresh = (sentAt: Date | null) =>
@@ -183,7 +186,7 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
           friend: toPublicUser(isUserA ? streak.userB : streak.userA),
           currentStreak: isExpired ? 0 : streak.currentStreak,
           bestStreak: streak.bestStreak,
-          lastExchangeAt: streak.lastExchangeAt?.toISOString() ?? null,
+          lastExchangeAt: mostRecentSnapAt?.toISOString() ?? null,
           waitingForYou: isPendingFresh(theirSnapAt) && !isPendingFresh(mySnapAt),
           waitingForThem: isPendingFresh(mySnapAt) && !isPendingFresh(theirSnapAt),
         };

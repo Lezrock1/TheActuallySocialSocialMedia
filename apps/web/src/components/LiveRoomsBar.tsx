@@ -25,7 +25,7 @@ async function fetchLiveRooms(): Promise<LiveRoom[]> {
   });
 }
 
-export default function LiveRoomsBar() {
+export default function LiveRoomsBar({ compact = false }: { compact?: boolean }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const call = useWebRtcCall(user?.id, true);
@@ -92,15 +92,17 @@ export default function LiveRoomsBar() {
     }
   }
 
+  if (compact && (!rooms.length || roomsError)) return null;
+
   return (
     <>
-      <section aria-label="Live rooms" className="min-w-0">
-        <div className="mb-2 flex items-center justify-between gap-2">
+      <section aria-label="Live rooms" className={compact ? "flex min-w-0 items-center gap-3 border-b border-gray-100 py-2" : "min-w-0"}>
+        <div className={compact ? "shrink-0" : "mb-2 flex items-center justify-between gap-2"}>
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-gray-900">Live rooms</h2>
-            <p className="mt-0.5 text-xs leading-4 text-gray-500">Drop in with up to 5 friends</p>
+            <h2 className={`truncate font-semibold ${compact ? "text-xs text-red-600" : "text-base text-gray-900"}`}>{compact ? "Live now" : "Live rooms"}</h2>
+            {!compact && <p className="mt-0.5 text-xs leading-4 text-gray-500">Drop in with up to 5 friends</p>}
           </div>
-          <button
+          {!compact && <button
             type="button"
             onClick={() => {
               setRoomError(null);
@@ -110,13 +112,13 @@ export default function LiveRoomsBar() {
             className={`${btnPrimary} min-h-9 shrink-0 px-3 text-xs`}
           >
             {createOpen ? "Cancel" : "Start room"}
-          </button>
+          </button>}
         </div>
 
-        {call.callError && <p role="alert" className="mt-2 text-xs text-red-600">{call.callError}</p>}
-        {roomsError && <p className="mt-2 text-xs text-gray-500">Could not load live rooms.</p>}
+        {!compact && call.callError && <p role="alert" className="mt-2 text-xs text-red-600">{call.callError}</p>}
+        {!compact && roomsError && <p className="mt-2 text-xs text-gray-500">Could not load live rooms.</p>}
 
-        <div className="-mx-1 flex min-w-0 gap-4 overflow-x-auto px-1 pb-2">
+        <div className={compact ? "flex min-w-0 flex-1 gap-3 overflow-x-auto" : "-mx-1 flex min-w-0 gap-4 overflow-x-auto px-1 pb-2"}>
           {rooms.map((room) => {
             const host = room.members.find((member) => member.id === room.hostUserId);
             const alreadyInRoom = room.participantIds.includes(user?.id ?? "");
@@ -147,12 +149,12 @@ export default function LiveRoomsBar() {
               </button>
             );
           })}
-          {!roomsError && rooms.length === 0 && (
+          {!compact && !roomsError && rooms.length === 0 && (
             <p className="py-2 text-xs text-gray-500">No friends are live right now.</p>
           )}
         </div>
 
-        {createOpen && (
+        {!compact && createOpen && (
           <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
             <label className="mb-2 block text-xs font-medium text-gray-700">
               Room name
@@ -200,9 +202,9 @@ export default function LiveRoomsBar() {
             {roomError && <p role="alert" className="mt-2 text-xs text-red-600">{roomError}</p>}
           </div>
         )}
-        <p className="mt-2 border-t border-gray-100 pt-2 text-[10px] leading-4 text-gray-400">
+        {!compact && <p className="mt-2 border-t border-gray-100 pt-2 text-[10px] leading-4 text-gray-400">
           Rooms stay live while the host remains on this page. Always-on livestreams need dedicated streaming infrastructure.
-        </p>
+        </p>}
       </section>
 
       <CallOverlay

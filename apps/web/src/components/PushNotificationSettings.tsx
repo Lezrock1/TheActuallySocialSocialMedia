@@ -36,6 +36,11 @@ function decodeApplicationServerKey(value: string): ArrayBuffer {
   return bytes.buffer as ArrayBuffer;
 }
 
+async function getActiveServiceWorkerRegistration(): Promise<ServiceWorkerRegistration> {
+  await navigator.serviceWorker.register("/sw.js");
+  return navigator.serviceWorker.ready;
+}
+
 async function saveSubscription(subscription: PushSubscription): Promise<void> {
   const value = subscription.toJSON();
   if (!value.endpoint || !value.keys?.p256dh || !value.keys.auth) {
@@ -78,7 +83,7 @@ export default function PushNotificationSettings() {
           return;
         }
         if (Notification.permission === "granted") {
-          const registration = await navigator.serviceWorker.register("/sw.js");
+          const registration = await getActiveServiceWorkerRegistration();
           const subscription = await registration.pushManager.getSubscription();
           if (subscription) {
             await saveSubscription(subscription);
@@ -130,7 +135,7 @@ export default function PushNotificationSettings() {
         setStatus(permission === "denied" ? "permission-denied" : "ready");
         return;
       }
-      const registration = await navigator.serviceWorker.register("/sw.js");
+      const registration = await getActiveServiceWorkerRegistration();
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: decodeApplicationServerKey(config.publicKey),

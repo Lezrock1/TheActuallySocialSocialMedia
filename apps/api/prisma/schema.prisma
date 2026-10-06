@@ -83,6 +83,7 @@ model Post {
   authorId     String
   text         String?
   imageKey     String?
+  mediaType    String   @default("image")
   createdAt    DateTime @default(now())
   // "public" | "close_friends"
   visibility   String   @default("public")
@@ -194,6 +195,7 @@ model Story {
   id         String   @id @default(cuid())
   authorId   String
   imageKey   String
+  text       String?
   createdAt  DateTime @default(now())
   expiresAt  DateTime
   // "public" | "close_friends"

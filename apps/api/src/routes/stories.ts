@@ -24,6 +24,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
       data: {
         authorId: request.userId!,
         imageKey: parsed.data.imageKey,
+        text: parsed.data.text,
         visibility: parsed.data.visibility ?? "public",
         expiresAt: new Date(Date.now() + STORY_LIFETIME_MS),
       },
@@ -32,6 +33,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
       story: {
         id: story.id,
         imageKey: story.imageKey,
+        text: story.text,
         createdAt: story.createdAt.toISOString(),
         expiresAt: story.expiresAt.toISOString(),
         visibility: story.visibility as PostVisibility,
@@ -77,6 +79,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
       const storyDto = {
         id: story.id,
         imageKey: story.imageKey,
+        text: story.text,
         createdAt: story.createdAt.toISOString(),
         expiresAt: story.expiresAt.toISOString(),
         visibility: story.visibility as PostVisibility,

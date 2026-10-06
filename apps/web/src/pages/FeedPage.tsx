@@ -13,6 +13,7 @@ import PageHeader from "../components/PageHeader.js";
 import StoriesBar from "../components/StoriesBar.js";
 import PostCard from "../components/PostCard.js";
 import Avatar from "../components/Avatar.js";
+import { usePageBackground } from "../lib/pageBackground.js";
 
 async function fetchFeed(cursor: string | null): Promise<FeedPageType> {
   const params = new URLSearchParams();
@@ -44,10 +45,12 @@ function FollowActivityCard({ item }: { item: Extract<FeedItem, { type: "follow"
 
 export default function FeedPage() {
   const { user } = useAuth();
+  usePageBackground("feed");
   const queryClient = useQueryClient();
   const [pages, setPages] = useState<FeedPageType[]>([]);
   const [text, setText] = useState("");
   const [imageKey, setImageKey] = useState<string | null>(null);
+  const [mediaType, setMediaType] = useState<"image" | "video">("image");
   const [visibility, setVisibility] = useState<PostVisibility>("public");
   const [posting, setPosting] = useState(false);
   const [postSuccess, setPostSuccess] = useState(false);
@@ -131,6 +134,7 @@ export default function FeedPage() {
         body: JSON.stringify({
           text: text || undefined,
           imageKey: imageKey ?? undefined,
+          mediaType: imageKey ? mediaType : undefined,
           visibility,
           poll: pollEnabled ? { question: pollQuestion.trim(), options: normalizedOptions } : undefined,
         }),
@@ -142,6 +146,7 @@ export default function FeedPage() {
       }, 2000);
       setText("");
       setImageKey(null);
+      setMediaType("image");
       setVisibility("public");
       setPollEnabled(false);
       setPollQuestion("");
@@ -158,6 +163,7 @@ export default function FeedPage() {
     e.target.value = "";
     if (!file) return;
     setImageKey(await uploadMedia(file));
+    setMediaType(file.type.startsWith("video/") ? "video" : "image");
   }
 
   // Advance the seen marker to the newest item shown in the feed.
@@ -201,13 +207,11 @@ export default function FeedPage() {
           className={`${input} resize-none`}
           rows={3}
         />
-        {imageKey && (
-          <img
-            src={mediaUrl(imageKey)}
-            alt=""
-            className="max-h-48 rounded-lg object-cover"
-          />
-        )}
+        {imageKey && (mediaType === "video" ? (
+          <video src={mediaUrl(imageKey)} controls playsInline preload="metadata" className="max-h-64 w-full rounded-lg bg-black" />
+        ) : (
+          <img src={mediaUrl(imageKey)} alt="" className="max-h-48 rounded-lg object-cover" />
+        ))}
         {pollEnabled && (
           <div className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3">
             <input
@@ -268,7 +272,7 @@ export default function FeedPage() {
               onClick={() => fileInputRef.current?.click()}
               className={btnSecondary}
             >
-              {imageKey ? "Change image" : "Add image"}
+              {imageKey ? "Change media" : "Add photo or video"}
             </button>
             <select
               value={visibility}
@@ -282,7 +286,7 @@ export default function FeedPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/mp4,video/webm,video/quicktime"
             className="hidden"
             onChange={(e) => void onSelectImage(e)}
           />

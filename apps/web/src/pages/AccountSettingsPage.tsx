@@ -7,6 +7,7 @@ import { deleteDeviceEncryptionKeys } from "../lib/encryption.js";
 import { forgetDeviceEncryptionKeyRegistration } from "../lib/encryptionRegistration.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import BackgroundSettings from "../components/BackgroundSettings.js";
 import { btnPrimary, card, input } from "../lib/ui.js";
 
 interface AccountDetails {
@@ -202,6 +203,7 @@ export default function AccountSettingsPage() {
       <PageHeader title="Settings" />
       <NavBar />
       <p className="mb-4 text-sm leading-5 text-gray-500">Manage the details you use to sign in.</p>
+      <BackgroundSettings />
 
       {accountQuery.isLoading && <p className="py-6 text-center text-sm text-gray-500">Loading account…</p>}
       {accountQuery.isError && <p role="alert" className="mb-4 text-sm text-red-600">Could not load account settings.</p>}

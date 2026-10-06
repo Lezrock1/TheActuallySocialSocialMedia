@@ -91,6 +91,16 @@ export default function SnapsPage() {
   });
 
   const normalizedSearch = friendSearch.trim().replace(/^@/, "").toLocaleLowerCase();
+  const streakByFriend = new Map(streaks.map((streak) => [streak.friend.id, streak]));
+  const newFriendCandidates = following
+    .filter((friend) => !streakByFriend.has(friend.id))
+    .sort((a, b) => a.username.localeCompare(b.username));
+  const suggestionStart = Math.floor(Date.now() / 86_400_000) % Math.max(newFriendCandidates.length, 1);
+  const suggestedFriendIds = new Set(
+    Array.from({ length: Math.min(2, newFriendCandidates.length) }, (_, index) =>
+      newFriendCandidates[(suggestionStart + index) % newFriendCandidates.length]?.id
+    ).filter((id): id is string => !!id)
+  );
   const matchingFriends = following
     .filter((friend) => {
       if (!normalizedSearch) return true;
@@ -98,23 +108,32 @@ export default function SnapsPage() {
         friend.displayName?.toLocaleLowerCase().includes(normalizedSearch);
     })
     .sort((a, b) => {
-      const aName = `${a.displayName ?? ""} ${a.username}`.toLocaleLowerCase();
-      const bName = `${b.displayName ?? ""} ${b.username}`.toLocaleLowerCase();
-      return Number(!aName.startsWith(normalizedSearch)) - Number(!bName.startsWith(normalizedSearch));
+      if (normalizedSearch) {
+        const aName = `${a.displayName ?? ""} ${a.username}`.toLocaleLowerCase();
+        const bName = `${b.displayName ?? ""} ${b.username}`.toLocaleLowerCase();
+        const matchOrder = Number(!aName.startsWith(normalizedSearch)) - Number(!bName.startsWith(normalizedSearch));
+        if (matchOrder) return matchOrder;
+      }
+      const aLastSnap = streakByFriend.get(a.id)?.lastExchangeAt;
+      const bLastSnap = streakByFriend.get(b.id)?.lastExchangeAt;
+      const recentOrder = (bLastSnap ? Date.parse(bLastSnap) : 0) - (aLastSnap ? Date.parse(aLastSnap) : 0);
+      if (recentOrder) return recentOrder;
+      const suggestionOrder = Number(!suggestedFriendIds.has(a.id)) - Number(!suggestedFriendIds.has(b.id));
+      if (suggestionOrder) return suggestionOrder;
+      return (a.displayName || a.username).localeCompare(b.displayName || b.username);
     });
-  const streakByFriend = new Map(streaks.map((streak) => [streak.friend.id, streak]));
-    const friendsWithStreaks = following
-      .map((friend) => ({ friend, streak: streakByFriend.get(friend.id) }))
-      .sort((aEntry, bEntry) => {
-        const waitingDifference = Number(bEntry.streak?.waitingForYou ?? false) -
-          Number(aEntry.streak?.waitingForYou ?? false);
-        if (waitingDifference) return waitingDifference;
-        const currentDifference = (bEntry.streak?.currentStreak ?? 0) -
-          (aEntry.streak?.currentStreak ?? 0);
-        if (currentDifference) return currentDifference;
-        return (aEntry.friend.displayName || aEntry.friend.username)
-          .localeCompare(bEntry.friend.displayName || bEntry.friend.username);
-      });
+  const friendsWithStreaks = following
+    .map((friend) => ({ friend, streak: streakByFriend.get(friend.id) }))
+    .sort((aEntry, bEntry) => {
+      const waitingDifference = Number(bEntry.streak?.waitingForYou ?? false) -
+        Number(aEntry.streak?.waitingForYou ?? false);
+      if (waitingDifference) return waitingDifference;
+      const currentDifference = (bEntry.streak?.currentStreak ?? 0) -
+        (aEntry.streak?.currentStreak ?? 0);
+      if (currentDifference) return currentDifference;
+      return (aEntry.friend.displayName || aEntry.friend.username)
+        .localeCompare(bEntry.friend.displayName || bEntry.friend.username);
+    });
 
   useEffect(() => {
     return () => {
@@ -223,6 +242,10 @@ export default function SnapsPage() {
     if (!context) {
       setCameraError("Could not capture this photo. Please try again.");
       return;
+    }
+    if (cameraFacingMode === "user") {
+      context.translate(canvas.width, 0);
+      context.scale(-1, 1);
     }
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     canvas.toBlob((blob) => {
@@ -336,7 +359,7 @@ export default function SnapsPage() {
         } else {
           await apiFetch("/stories", {
             method: "POST",
-            body: JSON.stringify({ imageKey, visibility: "public" }),
+            body: JSON.stringify({ imageKey, text: text.trim() || undefined, visibility: "public" }),
           });
         }
       }
@@ -494,14 +517,22 @@ export default function SnapsPage() {
           />
           <header className="z-10 flex min-h-14 items-center justify-between border-b border-white/15 px-4">
             <button type="button" onClick={closeStudio} className="min-h-10 px-2 text-sm text-white/80 hover:text-white">Cancel</button>
-            <h2 className="text-sm font-semibold">{studioStep === "capture" ? "Camera" : "Review photo"}</h2>
+            <h2 className="text-sm font-semibold">
+              {studioStep === "capture" ? "Camera" : shareTarget === "snap" ? "Choose friends" : "Review photo"}
+            </h2>
             <span className="w-14" aria-hidden="true" />
           </header>
 
           {studioStep === "capture" ? (
             <>
               <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
-                <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className={`h-full w-full object-cover ${cameraFacingMode === "user" ? "-scale-x-100" : ""}`}
+                />
                 {cameraError && (
                   <p role="alert" className="absolute left-4 right-4 top-1/2 -translate-y-1/2 text-center text-sm text-white">{cameraError}</p>
                 )}
@@ -537,10 +568,14 @@ export default function SnapsPage() {
             </>
           ) : (
             <>
-              <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black px-4 py-3">
-                {previewUrl && <img src={previewUrl} alt="Captured photo preview" className="max-h-full max-w-full rounded-lg object-contain" />}
+              <div className={shareTarget === "snap"
+                ? "flex min-h-0 basis-[20vh] items-center justify-center overflow-hidden bg-black px-4 py-2"
+                : "flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black px-4 py-3"}>
+                {previewUrl && <img src={previewUrl} alt="Captured photo preview" className={shareTarget === "snap" ? "max-h-full max-w-full rounded-lg object-contain" : "max-h-full max-w-full rounded-lg object-contain"} />}
               </div>
-              <footer className="max-h-[55vh] overflow-y-auto border-t border-white/15 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 text-gray-900">
+              <footer className={shareTarget === "snap"
+                ? "flex min-h-0 flex-1 flex-col overflow-hidden border-t border-white/15 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 text-gray-900"
+                : "max-h-[55vh] overflow-y-auto border-t border-white/15 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 text-gray-900"}>
                 <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Share to</p>
                 <div className="grid grid-cols-3 gap-2">
                   {([
@@ -575,7 +610,7 @@ export default function SnapsPage() {
                 )}
 
                 {shareTarget === "snap" && (
-                  <div className="mt-3">
+                  <div className="mt-2 flex min-h-0 flex-1 flex-col">
                     <label htmlFor="snap-friend-search" className="mb-2 block text-xs font-semibold text-gray-600">Send to friends</label>
                     <input
                       id="snap-friend-search"
@@ -584,7 +619,7 @@ export default function SnapsPage() {
                       placeholder="Search by name or @username"
                       className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
                     />
-                    <div className="max-h-[55vh] overflow-y-auto rounded-lg border border-gray-200">
+                    <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-gray-200">
                       {matchingFriends.map((friend) => {
                         const selected = selectedRecipients.includes(friend.username);
                         const streak = streakByFriend.get(friend.id);
@@ -594,12 +629,17 @@ export default function SnapsPage() {
                             type="button"
                             onClick={() => toggleRecipient(friend.username)}
                             aria-pressed={selected}
-                            className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-1.5 text-left last:border-b-0 hover:bg-gray-50"
+                            className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50"
                           >
                             <Avatar avatarKey={friend.avatarKey} username={friend.username} size={32} />
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-sm font-medium">{friend.displayName || `@${friend.username}`}</span>
                               {friend.displayName && <span className="block text-xs text-gray-500">@{friend.username}</span>}
+                              {suggestedFriendIds.has(friend.id) && (
+                                <span className="mt-0.5 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                                  New friend · send a Snap!
+                                </span>
+                              )}
                             </span>
                             <span className="shrink-0 text-xs font-semibold text-orange-600">🔥 {streak?.currentStreak ?? 0}</span>
                             <span className={`flex h-5 w-5 items-center justify-center rounded-full border text-xs ${selected ? "border-fuchsia-600 bg-fuchsia-600 text-white" : "border-gray-300 text-transparent"}`}>✓</span>
@@ -610,7 +650,7 @@ export default function SnapsPage() {
                         <p className="px-3 py-3 text-sm text-gray-500">{following.length ? "No friends match that search." : "Follow someone to send them a Snap."}</p>
                       )}
                     </div>
-                    {selectedRecipients.length > 0 && <p className="mt-1 text-xs text-gray-500">Selected: {selectedRecipients.map((name) => `@${name}`).join(", ")}</p>}
+                    {selectedRecipients.length > 0 && <p className="mt-1 shrink-0 text-xs text-gray-500">{selectedRecipients.length} selected</p>}
                   </div>
                 )}
 

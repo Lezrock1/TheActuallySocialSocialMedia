@@ -57,7 +57,15 @@ export default function PostCard({
       </div>
       {post.text && <p className="whitespace-pre-wrap text-[15px] leading-snug"><LinkedMentions text={post.text} /></p>}
       {post.pollId && <PollCard pollId={post.pollId} />}
-      {post.imageKey && (
+      {post.imageKey && post.mediaType === "video" ? (
+        <video
+          src={mediaUrl(post.imageKey)}
+          controls
+          playsInline
+          preload="metadata"
+          className="mt-2 max-h-[32rem] w-full rounded-lg bg-black"
+        />
+      ) : post.imageKey && (
         <img
           src={mediaUrl(post.imageKey)}
           alt=""

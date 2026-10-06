@@ -44,6 +44,8 @@ export type LoginInput = z.infer<typeof loginSchema>;
 
 export const POST_VISIBILITY = ["public", "close_friends"] as const;
 export type PostVisibility = (typeof POST_VISIBILITY)[number];
+export const MEDIA_TYPES = ["image", "video"] as const;
+export type MediaType = (typeof MEDIA_TYPES)[number];
 
 export const createPollSchema = z.object({
   question: z.string().trim().min(1).max(180),
@@ -57,6 +59,7 @@ export type CreatePollInput = z.infer<typeof createPollSchema>;
 export const createPostSchema = z.object({
   text: z.string().max(2000).optional(),
   imageKey: z.string().optional(),
+  mediaType: z.enum(MEDIA_TYPES).optional(),
   parentPostId: z.string().optional(),
   visibility: z.enum(POST_VISIBILITY).optional(),
   poll: createPollSchema.optional(),
@@ -76,6 +79,7 @@ export interface FeedPost {
   author: PublicUser;
   text: string | null;
   imageKey: string | null;
+  mediaType: MediaType;
   createdAt: string;
   visibility: PostVisibility;
   parentPostId: string | null;
@@ -257,6 +261,7 @@ export interface NotificationsPage {
 
 export const createStorySchema = z.object({
   imageKey: z.string().min(1),
+  text: z.string().max(500).optional(),
   visibility: z.enum(POST_VISIBILITY).optional(),
 });
 export type CreateStoryInput = z.infer<typeof createStorySchema>;
@@ -264,6 +269,7 @@ export type CreateStoryInput = z.infer<typeof createStorySchema>;
 export interface Story {
   id: string;
   imageKey: string;
+  text: string | null;
   createdAt: string;
   expiresAt: string;
   visibility: PostVisibility;
