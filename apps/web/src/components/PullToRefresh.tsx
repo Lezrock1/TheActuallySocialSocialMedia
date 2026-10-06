@@ -26,7 +26,7 @@ export default function PullToRefresh({
       if (!enabledRef.current || refreshingRef.current || event.touches.length !== 1) return;
       if (window.scrollY > 1 || document.documentElement.scrollTop > 1) return;
       const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("input, textarea, select, button, video, audio, [contenteditable='true']")) return;
+      if (target?.closest("input, textarea, select, video, audio, [contenteditable='true']")) return;
 
       let element = target instanceof HTMLElement ? target : null;
       while (element && element !== document.body) {

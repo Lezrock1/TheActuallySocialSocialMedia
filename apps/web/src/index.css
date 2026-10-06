@@ -9,6 +9,11 @@
   --system-blue: #007aff;
 }
 
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
 body {
   background-color: var(--page-background);
   color: var(--primary-text);
