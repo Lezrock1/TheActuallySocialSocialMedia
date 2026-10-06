@@ -720,7 +720,7 @@ export default function DMsPage() {
               />
               <button
                 disabled={!deviceKeyReady || !allMembersHaveKeys}
-                className={`${btnPrimary} min-h-10 shrink-0 disabled:opacity-50`}
+                className={`${btnPrimary} min-h-10 shrink-0 bg-green-700 hover:bg-green-800 focus-visible:ring-green-700/20 disabled:opacity-50`}
               >Send</button>
             </form>
           </section>

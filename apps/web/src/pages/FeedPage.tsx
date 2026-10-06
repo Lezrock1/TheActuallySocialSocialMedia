@@ -221,7 +221,7 @@ export default function FeedPage() {
   let boundaryShown = false;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
+    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PullToRefresh onRefresh={async () => {
         setPages([]);
         setLoadMoreError(false);
