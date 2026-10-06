@@ -14,7 +14,7 @@ import PeopleSearchPage from "./pages/PeopleSearchPage.js";
 import NotificationSettingsPage from "./pages/NotificationSettingsPage.js";
 import AccountSettingsPage from "./pages/AccountSettingsPage.js";
 import { MobileNav } from "./components/NavBar.js";
-import { usePageBackground } from "./lib/pageBackground.js";
+import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -26,7 +26,7 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 function AppRoutes() {
   const location = useLocation();
   const { user } = useAuth();
-  usePageBackground(location.pathname === "/dms" ? "chat" : "feed");
+  usePageBackground(pageSurfaceForPath(location.pathname));
   const showMobileNav = !!user && location.pathname !== "/login" && location.pathname !== "/register";
   return (
     <>

@@ -16,6 +16,7 @@ import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
 import { useWebRtcCall } from "../lib/useWebRtcCall.js";
 import { getSocket } from "../lib/socket.js";
 import { mediaUrl } from "../lib/upload.js";
+import { useConversationBackground } from "../lib/pageBackground.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
@@ -108,6 +109,7 @@ async function fetchEncryptionKeys(id: string): Promise<PublicEncryptionKey[]> {
 
 export default function DMsPage() {
   const { user } = useAuth();
+  const conversationBackgroundStyle = useConversationBackground();
   const queryClient = useQueryClient();
   const call = useWebRtcCall(user?.id);
   const friendPickerRef = useRef<HTMLDivElement>(null);
@@ -642,7 +644,7 @@ export default function DMsPage() {
             {encryptionKeysError && (
               <p role="alert" className="mb-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
-            <div ref={messageScrollRef} className={`${card} mb-3 flex max-h-[55vh] min-h-40 flex-col gap-2 overflow-y-auto`}>
+            <div ref={messageScrollRef} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[55vh] min-h-40 flex-col gap-2 overflow-y-auto`}>
               {messages.map((message) => {
                 const content = message.isEncrypted
                   ? decryptedMessages[message.id] ?? "Decrypting message..."

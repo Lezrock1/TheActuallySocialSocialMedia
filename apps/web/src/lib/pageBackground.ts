@@ -1,7 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { mediaUrl } from "./upload.js";
 
-export type PageSurface = "feed" | "chat";
+export const PAGE_SURFACES = ["feed", "snaps", "messages", "alerts", "profile", "people", "settings", "other"] as const;
+export type PageSurface = (typeof PAGE_SURFACES)[number];
+export type BackgroundKey = PageSurface | "all" | "conversation";
+export type BackgroundMode = "shared" | "custom";
 
 export interface PageBackgroundPreference {
   color: string;
@@ -9,15 +13,32 @@ export interface PageBackgroundPreference {
 }
 
 const STORAGE_PREFIX = "intouch:page-background:";
+const MODE_STORAGE_KEY = "intouch:page-background-mode";
 const CHANGE_EVENT = "intouch:page-background-change";
-const DEFAULT_BACKGROUND: PageBackgroundPreference = {
+export const DEFAULT_BACKGROUND: PageBackgroundPreference = {
   color: "#f7f7f8",
   imageKey: null,
 };
 
-export function readPageBackground(surface: PageSurface): PageBackgroundPreference {
+export function readBackgroundMode(): BackgroundMode {
   try {
-    const value = localStorage.getItem(`${STORAGE_PREFIX}${surface}`);
+    return localStorage.getItem(MODE_STORAGE_KEY) === "shared" ? "shared" : "custom";
+  } catch {
+    return "custom";
+  }
+}
+
+export function saveBackgroundMode(mode: BackgroundMode): void {
+  localStorage.setItem(MODE_STORAGE_KEY, mode);
+  window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+export function readPageBackground(surface: BackgroundKey): PageBackgroundPreference {
+  try {
+    const storageKey = surface === "messages" && !localStorage.getItem(`${STORAGE_PREFIX}messages`)
+      ? "chat"
+      : surface;
+    const value = localStorage.getItem(`${STORAGE_PREFIX}${storageKey}`);
     if (!value) return DEFAULT_BACKGROUND;
     const parsed = JSON.parse(value) as Partial<PageBackgroundPreference>;
     return {
@@ -31,9 +52,47 @@ export function readPageBackground(surface: PageSurface): PageBackgroundPreferen
   }
 }
 
-export function savePageBackground(surface: PageSurface, preference: PageBackgroundPreference): void {
+export function hasSavedPageBackground(surface: PageSurface): boolean {
+  try {
+    return localStorage.getItem(`${STORAGE_PREFIX}${surface}`) !== null ||
+      (surface === "messages" && localStorage.getItem(`${STORAGE_PREFIX}chat`) !== null);
+  } catch {
+    return false;
+  }
+}
+
+export function savePageBackground(surface: BackgroundKey, preference: PageBackgroundPreference): void {
   localStorage.setItem(`${STORAGE_PREFIX}${surface}`, JSON.stringify(preference));
   window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+export function resetPageBackgrounds(): void {
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith(STORAGE_PREFIX)) localStorage.removeItem(key);
+  }
+  saveBackgroundMode("shared");
+}
+
+export function pageSurfaceForPath(pathname: string): PageSurface {
+  if (pathname === "/") return "feed";
+  if (pathname.startsWith("/snaps")) return "snaps";
+  if (pathname.startsWith("/dms")) return "messages";
+  if (pathname.startsWith("/notifications")) return "alerts";
+  if (pathname.startsWith("/u/")) return "profile";
+  if (pathname.startsWith("/people")) return "people";
+  if (pathname.startsWith("/settings")) return "settings";
+  return "other";
+}
+
+function backgroundStyle(preference: PageBackgroundPreference, imageOverlayOpacity: number): CSSProperties {
+  return {
+    backgroundColor: preference.color,
+    backgroundImage: preference.imageKey
+      ? `linear-gradient(rgba(247, 247, 248, ${imageOverlayOpacity}), rgba(247, 247, 248, ${imageOverlayOpacity})), url("${mediaUrl(preference.imageKey)}")`
+      : "none",
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+  };
 }
 
 export function usePageBackground(surface: PageSurface): void {
@@ -47,11 +106,8 @@ export function usePageBackground(surface: PageSurface): void {
       backgroundAttachment: body.style.backgroundAttachment,
     };
     const apply = () => {
-      const preference = readPageBackground(surface);
-      body.style.backgroundColor = preference.color;
-      body.style.backgroundImage = preference.imageKey
-        ? `linear-gradient(rgba(247, 247, 248, 0.78), rgba(247, 247, 248, 0.78)), url("${mediaUrl(preference.imageKey)}")`
-        : "none";
+      const key = readBackgroundMode() === "shared" ? "all" : surface;
+      Object.assign(body.style, backgroundStyle(readPageBackground(key), 0.78));
       body.style.backgroundSize = "cover";
       body.style.backgroundPosition = "center";
       body.style.backgroundAttachment = "fixed";
@@ -65,4 +121,20 @@ export function usePageBackground(surface: PageSurface): void {
       Object.assign(body.style, previous);
     };
   }, [surface]);
+}
+
+export function useConversationBackground(): CSSProperties {
+  const [preference, setPreference] = useState(() => readPageBackground("conversation"));
+
+  useEffect(() => {
+    const refresh = () => setPreference(readPageBackground("conversation"));
+    window.addEventListener(CHANGE_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(CHANGE_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
+  return backgroundStyle(preference, 0.38);
 }
