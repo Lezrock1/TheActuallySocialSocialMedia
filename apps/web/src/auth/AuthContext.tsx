@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { PublicUser } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
 import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
+import { preloadMediaKeys } from "../lib/upload.js";
 
 interface AuthContextValue {
   user: PublicUser | null;
@@ -50,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (user) {
       void registerDeviceEncryptionKey(user.id).catch(() => undefined);
+      preloadMediaKeys([user.avatarKey], { priority: "high" });
     }
   }, [user]);
 

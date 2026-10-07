@@ -1,6 +1,9 @@
+const SHELL_CACHE = "intouch-shell-v2";
+const MEDIA_CACHE = "intouch-media-v1";
+
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
-    const cache = await caches.open("intouch-shell-v1");
+    const cache = await caches.open(SHELL_CACHE);
     await cache.addAll(["/", "/index.html", "/manifest.webmanifest", "/icon.svg", "/apple-touch-icon.png"]);
     await self.skipWaiting();
   })());
@@ -11,7 +14,10 @@ self.addEventListener("activate", (event) => {
     const keys = await caches.keys();
     await Promise.all(
       keys
-        .filter((key) => key.startsWith("intouch-shell-") && key !== "intouch-shell-v1")
+        .filter((key) =>
+          (key.startsWith("intouch-shell-") && key !== SHELL_CACHE)
+          || (key.startsWith("intouch-media-") && key !== MEDIA_CACHE)
+        )
         .map((key) => caches.delete(key))
     );
     await self.clients.claim();
@@ -22,13 +28,13 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const requestUrl = new URL(event.request.url);
-  if (requestUrl.origin !== self.location.origin) return;
+  const isSameOrigin = requestUrl.origin === self.location.origin;
 
-  if (event.request.mode === "navigate") {
+  if (isSameOrigin && event.request.mode === "navigate") {
     event.respondWith((async () => {
       try {
         const response = await fetch(event.request);
-        const cache = await caches.open("intouch-shell-v1");
+        const cache = await caches.open(SHELL_CACHE);
         await cache.put("/index.html", response.clone());
         return response;
       } catch {
@@ -40,15 +46,23 @@ self.addEventListener("fetch", (event) => {
   }
 
   const destination = event.request.destination;
-  const cacheable = ["script", "style", "image", "font", "manifest"].includes(destination);
+  const isImage = destination === "image";
+  const isMediaRequest = isImage && requestUrl.pathname.includes("/media/");
+  const cacheable =
+    (isSameOrigin && ["script", "style", "font", "manifest"].includes(destination))
+    || (isImage && (isSameOrigin || isMediaRequest));
   if (!cacheable) return;
 
+  const targetCache = isImage ? MEDIA_CACHE : SHELL_CACHE;
+
   event.respondWith((async () => {
-    const cached = await caches.match(event.request);
+    const cache = await caches.open(targetCache);
+    const cached = await cache.match(event.request);
     const fetchPromise = fetch(event.request)
       .then(async (response) => {
-        const cache = await caches.open("intouch-shell-v1");
-        await cache.put(event.request, response.clone());
+        if (response.ok || response.type === "opaque") {
+          await cache.put(event.request, response.clone());
+        }
         return response;
       })
       .catch(() => undefined);

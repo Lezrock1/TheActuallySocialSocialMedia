@@ -5,13 +5,53 @@ import type { FormEvent } from "react";
 import { STORY_REACTIONS } from "@app/shared";
 import type { PostVisibility, StoryGroup } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
-import { mediaUrl, uploadMedia } from "../lib/upload.js";
+import { mediaUrl, preloadMediaKeys, uploadMedia } from "../lib/upload.js";
 import Avatar from "./Avatar.js";
 import LiveRoomsBar from "./LiveRoomsBar.js";
 
 async function fetchStoryGroups(): Promise<StoryGroup[]> {
   const res = await apiFetch<{ groups: StoryGroup[] }>("/stories");
   return res.groups;
+}
+
+function formatRemainingTime(expiresAt: string): string {
+  const remainingMs = new Date(expiresAt).getTime() - Date.now();
+  if (remainingMs <= 0) return "Ending now";
+  const minutes = Math.ceil(remainingMs / (60 * 1000));
+  if (minutes < 60) return `${minutes}m left`;
+  const hours = Math.ceil(minutes / 60);
+  return `${hours}h left`;
+}
+
+interface NetworkInformationLike extends EventTarget {
+  effectiveType?: string;
+  downlink?: number;
+  saveData?: boolean;
+}
+
+interface StoryLoadingPolicy {
+  previewCount: number;
+  preloadCount: number;
+}
+
+function getStoryLoadingPolicy(): StoryLoadingPolicy {
+  const connection = (navigator as Navigator & { connection?: NetworkInformationLike }).connection;
+  if (!connection) return { previewCount: 6, preloadCount: 2 };
+  if (
+    connection.saveData
+    || connection.effectiveType === "slow-2g"
+    || connection.effectiveType === "2g"
+    || (connection.downlink !== undefined && connection.downlink < 0.8)
+  ) {
+    return { previewCount: 3, preloadCount: 1 };
+  }
+  if (
+    connection.effectiveType === "3g"
+    || (connection.downlink !== undefined && connection.downlink <= 2)
+  ) {
+    return { previewCount: 6, preloadCount: 2 };
+  }
+  return { previewCount: 12, preloadCount: 4 };
 }
 
 export default function StoriesBar() {
@@ -27,11 +67,19 @@ export default function StoriesBar() {
   const [visibility, setVisibility] = useState<PostVisibility>("public");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [retryFile, setRetryFile] = useState<File | null>(null);
+  const [loadingPolicy, setLoadingPolicy] = useState(getStoryLoadingPolicy);
 
   const { data: groups = [] } = useQuery({
     queryKey: ["stories"],
     queryFn: fetchStoryGroups,
   });
+
+  useEffect(() => {
+    const connection = (navigator as Navigator & { connection?: NetworkInformationLike }).connection;
+    const updatePolicy = () => setLoadingPolicy(getStoryLoadingPolicy());
+    connection?.addEventListener("change", updatePolicy);
+    return () => connection?.removeEventListener("change", updatePolicy);
+  }, []);
 
   const viewingGroupIndex = viewing
     ? groups.findIndex((group) => group.author.id === viewing.author.id)
@@ -47,6 +95,28 @@ export default function StoriesBar() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [viewing, storyIndex, groups]);
+
+  useEffect(() => {
+    const keysToWarm: Array<string | null> = [];
+    groups.slice(0, loadingPolicy.preloadCount).forEach((group) => {
+      const latestStory = group.stories[group.stories.length - 1];
+      keysToWarm.push(latestStory?.imageKey ?? null);
+    });
+
+    if (viewing) {
+      keysToWarm.push(
+        viewing.stories[storyIndex]?.imageKey ?? null,
+        viewing.stories[storyIndex - 1]?.imageKey ?? null,
+        viewing.stories[storyIndex + 1]?.imageKey ?? null,
+        viewing.author.avatarKey
+      );
+    }
+
+    preloadMediaKeys(keysToWarm, {
+      priority: viewing ? "high" : "low",
+      addHint: !!viewing,
+    });
+  }, [groups, loadingPolicy.preloadCount, storyIndex, viewing]);
 
   function advanceStory(direction: -1 | 1) {
     if (!viewing) return;
@@ -213,13 +283,55 @@ export default function StoriesBar() {
           >
             <span className="rounded-full bg-gradient-to-br from-gray-700 to-gray-900 p-0.5">
               <span className="block rounded-full border-2 border-white">
-                <Avatar avatarKey={group.stories[0].imageKey} username={group.author.username} size={52} />
+                <Avatar avatarKey={group.author.avatarKey} username={group.author.username} size={52} priority="low" />
               </span>
             </span>
             <span className="max-w-[60px] truncate text-[11px] text-gray-600">@{group.author.username}</span>
           </button>
         ))}
       </div>
+
+      {groups.length > 0 && (
+        <div className="mt-2 flex gap-2 overflow-x-auto pb-1" aria-label="Story previews">
+          {groups.slice(0, loadingPolicy.previewCount).map((group, index) => {
+            const latestStory = group.stories[group.stories.length - 1];
+            if (!latestStory) return null;
+            return (
+              <button
+                key={`preview-${group.author.id}`}
+                type="button"
+                onClick={() => openStoryGroup(group)}
+                className="relative h-40 w-28 shrink-0 overflow-hidden rounded-2xl border border-black/10 bg-black text-left shadow-sm"
+              >
+                <img
+                  src={mediaUrl(latestStory.imageKey)}
+                  alt={`Story preview from @${group.author.username}`}
+                  loading={index < loadingPolicy.preloadCount ? "eager" : "lazy"}
+                  decoding="async"
+                  fetchPriority={index === 0 ? "high" : "auto"}
+                  className="h-full w-full object-cover"
+                />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                <div className="absolute inset-x-2 bottom-2 text-white">
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <Avatar
+                      avatarKey={group.author.avatarKey}
+                      username={group.author.username}
+                      size={20}
+                      priority={index === 0 ? "high" : "low"}
+                    />
+                    <span className="min-w-0 truncate text-[11px] font-semibold">@{group.author.username}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-white/90">
+                    <span>{group.stories.length} {group.stories.length === 1 ? "story" : "stories"}</span>
+                    <span>{formatRemainingTime(latestStory.expiresAt)}</span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {viewing && (
         <div

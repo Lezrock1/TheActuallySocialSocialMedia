@@ -1,22 +1,33 @@
-import { memo } from "react";
-import { mediaUrl } from "../lib/upload.js";
+import { memo, useEffect } from "react";
+import { mediaUrl, preloadMediaKeys } from "../lib/upload.js";
 
 function Avatar({
   avatarKey,
   username,
   size = 36,
+  priority = "auto",
 }: {
   avatarKey: string | null;
   username: string;
   size?: number;
+  priority?: "auto" | "high" | "low";
 }) {
+  useEffect(() => {
+    if (!avatarKey || priority === "low") return;
+    preloadMediaKeys([avatarKey], { priority: priority === "high" ? "high" : "low", addHint: false });
+  }, [avatarKey, priority]);
+
   if (avatarKey) {
+    const eager = priority === "high" || (priority === "auto" && size >= 32);
     return (
       <img
         src={mediaUrl(avatarKey)}
         alt={username}
-        loading="lazy"
+        loading={eager ? "eager" : "lazy"}
         decoding="async"
+        fetchPriority={priority === "high" ? "high" : priority === "low" ? "low" : "auto"}
+        width={size}
+        height={size}
         style={{ width: size, height: size }}
         className="shrink-0 rounded-full object-cover"
       />
