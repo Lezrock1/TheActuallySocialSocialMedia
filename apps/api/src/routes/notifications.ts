@@ -199,6 +199,18 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
+  app.post<{ Params: { id: string } }>(
+    "/notifications/:id/read",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      await prisma.notification.updateMany({
+        where: { id: request.params.id, recipientId: request.userId!, readAt: null },
+        data: { readAt: new Date() },
+      });
+      return reply.code(204).send();
+    }
+  );
+
   app.post(
     "/notifications/feed/read",
     { preHandler: requireAuth },

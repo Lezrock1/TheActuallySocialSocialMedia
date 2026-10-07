@@ -319,6 +319,7 @@ export interface PollSummary {
   options: { id: string; text: string; voteCount: number }[];
   totalVotes: number;
   myVoteOptionId: string | null;
+  isAuthor: boolean;
 }
 
 export const encryptedSnapPayloadSchema = z.object({

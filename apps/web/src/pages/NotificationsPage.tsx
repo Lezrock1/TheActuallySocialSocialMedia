@@ -54,6 +54,12 @@ export default function NotificationsPage() {
   const notifications = query.data?.pages.flatMap((page) => page.notifications) ?? [];
   const unreadCount = query.data?.pages[0]?.unreadCount ?? 0;
 
+  function markRead(notificationId: string) {
+    void apiFetch(`/notifications/${notificationId}/read`, { method: "POST" })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["notifications"] }))
+      .catch(() => undefined);
+  }
+
   async function markAllRead() {
     await apiFetch("/notifications/read-all", { method: "POST" });
     await Promise.all([
@@ -100,6 +106,7 @@ export default function NotificationsPage() {
             <Link
               key={notification.id}
               to={target}
+              onClick={() => { if (!notification.readAt) markRead(notification.id); }}
               className={`${activityRow} items-start ${
                 notification.readAt ? "" : "bg-blue-50/60 hover:bg-blue-50"
               }`}

@@ -41,6 +41,7 @@ async function getVisiblePoll(pollId: string, userId: string) {
     })),
     totalVotes,
     myVoteOptionId: poll.votes[0]?.optionId ?? null,
+    isAuthor: poll.post.authorId === userId,
   };
 }
 
@@ -65,6 +66,7 @@ export async function pollRoutes(app: FastifyInstance): Promise<void> {
       }
       const poll = await getVisiblePoll(request.params.id, request.userId!);
       if (!poll) return reply.code(404).send({ error: "Poll not found" });
+      if (poll.myVoteOptionId) return reply.code(409).send({ error: "You already voted" });
 
       const option = await prisma.pollOption.findFirst({
         where: { id: parsed.data.optionId, pollId: request.params.id },
