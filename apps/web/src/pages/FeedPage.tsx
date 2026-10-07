@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import type { FeedItem, FeedPage as FeedPageType } from "@app/shared";
 import type { PostVisibility } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
@@ -50,6 +51,22 @@ function FollowActivityCard({ item }: { item: Extract<FeedItem, { type: "follow"
   );
 }
 
+type FeedRow =
+  | {
+      key: string;
+      kind: "boundary";
+    }
+  | {
+      key: string;
+      kind: "post";
+      item: Extract<FeedItem, { type: "post" }>;
+    }
+  | {
+      key: string;
+      kind: "follow";
+      item: Extract<FeedItem, { type: "follow" }>;
+    };
+
 export default function FeedPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -69,8 +86,9 @@ export default function FeedPage() {
   const [postSendError, setPostSendError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const postSuccessTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+  const feedListRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
+  const [virtualScrollMargin, setVirtualScrollMargin] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
 
@@ -104,19 +122,57 @@ export default function FeedPage() {
     }
   }, []);
 
+  const feedRows = useMemo<FeedRow[]>(() => {
+    const rows: FeedRow[] = [];
+    let boundaryShown = false;
+    allPages.forEach((page, pageIndex) => {
+      page.items.forEach((item, itemIndex) => {
+        const showBoundary = page.boundaryIndex === itemIndex && !boundaryShown;
+        if (showBoundary) {
+          rows.push({ key: `boundary:${pageIndex}:${itemIndex}`, kind: "boundary" });
+          boundaryShown = true;
+        }
+        if (item.type === "post") {
+          rows.push({ key: `post:${item.id}`, kind: "post", item });
+        } else {
+          rows.push({ key: `follow:${item.id}`, kind: "follow", item });
+        }
+      });
+    });
+    return rows;
+  }, [allPages]);
+
+  useEffect(() => {
+    function updateScrollMargin() {
+      if (!feedListRef.current) return;
+      const rect = feedListRef.current.getBoundingClientRect();
+      setVirtualScrollMargin(rect.top + window.scrollY);
+    }
+    updateScrollMargin();
+    window.addEventListener("resize", updateScrollMargin);
+    window.addEventListener("orientationchange", updateScrollMargin);
+    return () => {
+      window.removeEventListener("resize", updateScrollMargin);
+      window.removeEventListener("orientationchange", updateScrollMargin);
+    };
+  }, [feedRows.length]);
+
+  const rowVirtualizer = useWindowVirtualizer({
+    count: feedRows.length,
+    estimateSize: (index) => (feedRows[index]?.kind === "boundary" ? 44 : 360),
+    overscan: 4,
+    scrollMargin: virtualScrollMargin,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+
   useEffect(() => {
     const cursor = lastPage?.nextCursor;
-    const sentinel = loadMoreSentinelRef.current;
-    if (!cursor || !sentinel) return;
-
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting && !loadingMore && !loadMoreError) {
-        void loadMore(cursor);
-      }
-    }, { rootMargin: "600px 0px" });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [lastPage?.nextCursor, loadMore, loadMoreError, loadingMore]);
+    const lastVirtual = virtualRows[virtualRows.length - 1];
+    if (!cursor || !lastVirtual || loadingMore || loadMoreError) return;
+    if (lastVirtual.index >= feedRows.length - 1) {
+      void loadMore(cursor);
+    }
+  }, [feedRows.length, lastPage?.nextCursor, loadMore, loadMoreError, loadingMore, virtualRows]);
 
   async function submitPostDraft() {
     if (!text.trim() && !imageKey && !pollEnabled) return;
@@ -223,12 +279,10 @@ export default function FeedPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newestItemKey]);
 
-  async function onPostDeleted() {
+  const onPostDeleted = useCallback((_postId: string) => {
     setPages([]);
-    await queryClient.invalidateQueries({ queryKey: ["feed", "first"] });
-  }
-
-  let boundaryShown = false;
+    void queryClient.invalidateQueries({ queryKey: ["feed", "first"] });
+  }, [queryClient]);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
@@ -378,38 +432,44 @@ export default function FeedPage() {
         </p>
       )}
 
-      <div className="flex flex-col gap-3">
-        {allPages.map((page) =>
-          page.items.map((item, itemIdx) => {
-            const showBoundary =
-              page.boundaryIndex === itemIdx && !boundaryShown;
-            if (showBoundary) boundaryShown = true;
-            return (
-              <div key={`${item.type}:${item.id}`}>
-                {showBoundary && (
-                  <div className="my-4 flex items-center gap-2 text-center text-sm text-gray-400">
-                    <span className="h-px flex-1 bg-gray-200" />
-                    <span>✓ You are all caught up</span>
-                    <span className="h-px flex-1 bg-gray-200" />
-                  </div>
-                )}
-                {item.type === "post" ? (
+      <div ref={feedListRef} className="relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+        {virtualRows.map((virtualRow) => {
+          const row = feedRows[virtualRow.index];
+          if (!row) return null;
+          return (
+            <div
+              key={row.key}
+              ref={rowVirtualizer.measureElement}
+              data-index={virtualRow.index}
+              className="absolute left-0 top-0 w-full"
+              style={{ transform: `translateY(${virtualRow.start - virtualScrollMargin}px)` }}
+            >
+              {row.kind === "boundary" ? (
+                <div className="my-4 flex items-center gap-2 text-center text-sm text-gray-400">
+                  <span className="h-px flex-1 bg-gray-200" />
+                  <span>✓ You are all caught up</span>
+                  <span className="h-px flex-1 bg-gray-200" />
+                </div>
+              ) : row.kind === "post" ? (
+                <div className="pb-3">
                   <PostCard
-                    post={item.post}
+                    post={row.item.post}
                     currentUserId={user?.id}
-                    onDeleted={() => void onPostDeleted()}
+                    onDeleted={onPostDeleted}
                   />
-                ) : (
-                  <FollowActivityCard item={item} />
-                )}
-              </div>
-            );
-          })
-        )}
+                </div>
+              ) : (
+                <div className="pb-3">
+                  <FollowActivityCard item={row.item} />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {lastPage?.nextCursor && (
-        <div ref={loadMoreSentinelRef} className="flex min-h-12 items-center justify-center py-3">
+        <div className="flex min-h-12 items-center justify-center py-3">
           {loadingMore && <p className="text-xs text-gray-400">Loading more posts...</p>}
           {loadMoreError && (
             <button

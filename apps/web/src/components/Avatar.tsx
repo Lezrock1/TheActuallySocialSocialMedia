@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { mediaUrl } from "../lib/upload.js";
 
-export default function Avatar({
+function Avatar({
   avatarKey,
   username,
   size = 36,
@@ -30,3 +31,5 @@ export default function Avatar({
     </div>
   );
 }
+
+export default memo(Avatar);

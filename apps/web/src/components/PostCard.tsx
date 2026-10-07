@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { TRANSLATION_LANGUAGES } from "@app/shared";
@@ -27,7 +27,7 @@ const languageCodes: Record<string, string> = {
   pl: "pol",
 };
 
-export default function PostCard({
+function PostCard({
   post,
   seen,
   currentUserId,
@@ -202,3 +202,5 @@ export default function PostCard({
     </article>
   );
 }
+
+export default memo(PostCard);

@@ -1,9 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
 import { MAX_LIVE_ROOM_PARTICIPANTS } from "@app/shared";
-import type { ConversationMessage, ConversationSummary, PublicUser } from "@app/shared";
+import type {
+  ConversationMessage,
+  ConversationMessagesPage,
+  ConversationSummary,
+  PublicUser,
+} from "@app/shared";
 import type { EncryptedMessagePayload } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import {
@@ -48,6 +54,8 @@ interface DecryptedMessageContent {
   storyReply?: StoryReplyContext;
 }
 
+const MESSAGE_PAGE_LIMIT = 40;
+
 function parseDecryptedMessage(content: string): DecryptedMessageContent {
   try {
     const value = JSON.parse(content) as {
@@ -90,11 +98,17 @@ async function fetchFollowing(username: string): Promise<PublicUser[]> {
   return res.users;
 }
 
-async function fetchMessages(id: string): Promise<ConversationMessage[]> {
-  const res = await apiFetch<{ messages: ConversationMessage[] }>(
-    `/conversations/${id}/messages`
+async function fetchMessagesPage(
+  id: string,
+  cursor: string | null
+): Promise<ConversationMessagesPage> {
+  const params = new URLSearchParams();
+  params.set("limit", String(MESSAGE_PAGE_LIMIT));
+  if (cursor) params.set("cursor", cursor);
+  const res = await apiFetch<ConversationMessagesPage>(
+    `/conversations/${id}/messages?${params.toString()}`
   );
-  return res.messages;
+  return res;
 }
 
 async function markConversationRead(id: string): Promise<void> {
@@ -117,6 +131,8 @@ export default function DMsPage() {
   const messageScrollRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLInputElement>(null);
   const scrolledConversationRef = useRef<string | null>(null);
+  const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const lastVisibleMessageIdRef = useRef<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -209,21 +225,46 @@ export default function DMsPage() {
       return Number(!aName.startsWith(normalizedFriendSearch)) - Number(!bName.startsWith(normalizedFriendSearch));
     });
 
-  const { data: messages = [], isSuccess: messagesLoaded } = useQuery({
+  const messagesQuery = useInfiniteQuery({
     queryKey: ["messages", activeId],
-    queryFn: () => fetchMessages(activeId!),
+    queryFn: ({ pageParam }) => fetchMessagesPage(activeId!, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: !!activeId,
   });
+  const messagePages = messagesQuery.data?.pages ?? [];
+  const messages = [...messagePages].reverse().flatMap((page) => page.messages);
+  const messagesLoaded = messagesQuery.isSuccess;
+  const newestMessageId = messages[messages.length - 1]?.id ?? null;
+
   useLayoutEffect(() => {
     if (!activeId || !messagesLoaded || !messageScrollRef.current) return;
     const container = messageScrollRef.current;
+
     if (scrolledConversationRef.current !== activeId) {
       container.scrollTop = container.scrollHeight;
       scrolledConversationRef.current = activeId;
+      lastVisibleMessageIdRef.current = newestMessageId;
       return;
     }
-    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-  }, [activeId, decryptedMessages, messages, messagesLoaded]);
+
+    if (prependScrollAnchorRef.current) {
+      const { scrollHeight, scrollTop } = prependScrollAnchorRef.current;
+      const delta = container.scrollHeight - scrollHeight;
+      container.scrollTop = scrollTop + delta;
+      prependScrollAnchorRef.current = null;
+      lastVisibleMessageIdRef.current = newestMessageId;
+      return;
+    }
+
+    if (newestMessageId && newestMessageId !== lastVisibleMessageIdRef.current) {
+      const nearBottom = container.scrollHeight - (container.scrollTop + container.clientHeight) <= 120;
+      if (nearBottom) {
+        container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+      }
+      lastVisibleMessageIdRef.current = newestMessageId;
+    }
+  }, [activeId, messagesLoaded, newestMessageId]);
   const { data: encryptionKeys = [], isError: encryptionKeysError } = useQuery({
     queryKey: ["conversation-encryption-keys", activeId],
     queryFn: () => fetchEncryptionKeys(activeId!),
@@ -255,9 +296,25 @@ export default function DMsPage() {
       conversationId: string;
       message: ConversationMessage;
     }) {
-      queryClient.setQueryData<ConversationMessage[]>(
+      queryClient.setQueryData<InfiniteData<ConversationMessagesPage>>(
         ["messages", payload.conversationId],
-        (prev) => (prev ? [...prev, payload.message] : prev)
+        (current) => {
+          if (!current || current.pages.length === 0) return current;
+          const [latestPage, ...olderPages] = current.pages;
+          if (latestPage.messages.some((message) => message.id === payload.message.id)) {
+            return current;
+          }
+          return {
+            ...current,
+            pages: [
+              {
+                ...latestPage,
+                messages: [...latestPage.messages, payload.message],
+              },
+              ...olderPages,
+            ],
+          };
+        }
       );
       void queryClient.invalidateQueries({ queryKey: ["conversations"] });
       if (payload.conversationId === activeId && document.visibilityState === "visible") {
@@ -331,6 +388,16 @@ export default function DMsPage() {
       cancelled = true;
     };
   }, [messages, user]);
+
+  function loadOlderMessages() {
+    if (!messagesQuery.hasNextPage || messagesQuery.isFetchingNextPage || !messageScrollRef.current) return;
+    const container = messageScrollRef.current;
+    prependScrollAnchorRef.current = {
+      scrollHeight: container.scrollHeight,
+      scrollTop: container.scrollTop,
+    };
+    void messagesQuery.fetchNextPage();
+  }
 
   async function startConversation(username: string) {
     setStartingConversation(true);
@@ -672,6 +739,18 @@ export default function DMsPage() {
               <p role="alert" className="mb-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
             <div ref={messageScrollRef} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[55vh] min-h-40 flex-col gap-2 overflow-y-auto`}>
+              {messagesQuery.hasNextPage && (
+                <div className="self-center pb-1 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={loadOlderMessages}
+                    disabled={messagesQuery.isFetchingNextPage}
+                    className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {messagesQuery.isFetchingNextPage ? "Loading older messages..." : "Load older messages"}
+                  </button>
+                </div>
+              )}
               {messages.map((message) => {
                 const content = message.isEncrypted
                   ? decryptedMessages[message.id] ?? "Decrypting message..."

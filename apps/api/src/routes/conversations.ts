@@ -13,6 +13,9 @@ import { createUserNotification } from "../notifications.js";
 import { emitToUsers } from "../realtime.js";
 import { isBlocked } from "../visibility.js";
 
+const DEFAULT_MESSAGES_LIMIT = 40;
+const MAX_MESSAGES_LIMIT = 100;
+
 export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     "/conversations",
@@ -154,7 +157,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ conversations: summaries });
   });
 
-  app.get<{ Params: { id: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { cursor?: string; limit?: string } }>(
     "/conversations/:id/messages",
     { preHandler: requireAuth },
     async (request, reply) => {
@@ -169,10 +172,25 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       if (!membership) {
         return reply.code(404).send({ error: "Conversation not found" });
       }
-      const messages = await prisma.message.findMany({
+
+      const limit = Math.min(
+        Math.max(Number(request.query.limit) || DEFAULT_MESSAGES_LIMIT, 1),
+        MAX_MESSAGES_LIMIT
+      );
+      const rows = await prisma.message.findMany({
         where: { conversationId: request.params.id },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        ...(request.query.cursor
+          ? { cursor: { id: request.query.cursor }, skip: 1 }
+          : {}),
       });
+
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const nextCursor = hasMore ? pageRows[pageRows.length - 1]?.id ?? null : null;
+      const messages = [...pageRows].reverse();
+
       return reply.send({
         messages: messages.map((m) => ({
           id: m.id,
@@ -184,6 +202,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
             : null,
           createdAt: m.createdAt.toISOString(),
         })),
+        nextCursor,
       });
     }
   );

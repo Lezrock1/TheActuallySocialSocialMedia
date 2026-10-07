@@ -1,22 +1,22 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
-import LoginPage from "./pages/LoginPage.js";
-import RegisterPage from "./pages/RegisterPage.js";
-import FeedPage from "./pages/FeedPage.js";
-import SnapsPage from "./pages/SnapsPage.js";
-import DMsPage from "./pages/DMsPage.js";
-import AiSettingsPage from "./pages/AiSettingsPage.js";
-import ProfilePage from "./pages/ProfilePage.js";
-import PostThreadPage from "./pages/PostThreadPage.js";
-import InvitationsPage from "./pages/InvitationsPage.js";
-import NotificationsPage from "./pages/NotificationsPage.js";
-import PeopleSearchPage from "./pages/PeopleSearchPage.js";
-import NotificationSettingsPage from "./pages/NotificationSettingsPage.js";
-import AccountSettingsPage from "./pages/AccountSettingsPage.js";
-import SecuritySettingsPage from "./pages/SecuritySettingsPage.js";
-import NotFoundPage from "./pages/NotFoundPage.js";
-import ApiUnavailablePage from "./pages/ApiUnavailablePage.js";
+const LoginPage = lazy(() => import("./pages/LoginPage.js"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage.js"));
+const FeedPage = lazy(() => import("./pages/FeedPage.js"));
+const SnapsPage = lazy(() => import("./pages/SnapsPage.js"));
+const DMsPage = lazy(() => import("./pages/DMsPage.js"));
+const AiSettingsPage = lazy(() => import("./pages/AiSettingsPage.js"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage.js"));
+const PostThreadPage = lazy(() => import("./pages/PostThreadPage.js"));
+const InvitationsPage = lazy(() => import("./pages/InvitationsPage.js"));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage.js"));
+const PeopleSearchPage = lazy(() => import("./pages/PeopleSearchPage.js"));
+const NotificationSettingsPage = lazy(() => import("./pages/NotificationSettingsPage.js"));
+const AccountSettingsPage = lazy(() => import("./pages/AccountSettingsPage.js"));
+const SecuritySettingsPage = lazy(() => import("./pages/SecuritySettingsPage.js"));
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage.js"));
+const ApiUnavailablePage = lazy(() => import("./pages/ApiUnavailablePage.js"));
 import { MobileNav } from "./components/NavBar.js";
 import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
 import { AppBootSkeleton } from "./components/LoadingSkeleton.js";
@@ -60,107 +60,109 @@ function AppRoutes() {
   return (
     <>
     <div key={location.pathname} className="route-enter">
-      <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route
-        path="/"
-        element={
-          <RequireAuth>
-            <FeedPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/snaps"
-        element={
-          <RequireAuth>
-            <SnapsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/dms"
-        element={
-          <RequireAuth>
-            <DMsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/settings/ai"
-        element={
-          <RequireAuth>
-            <AiSettingsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/settings/notifications"
-        element={
-          <RequireAuth>
-            <NotificationSettingsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/settings/account"
-        element={
-          <RequireAuth>
-            <AccountSettingsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/settings/security"
-        element={
-          <RequireAuth>
-            <SecuritySettingsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/invitations"
-        element={
-          <RequireAuth>
-            <InvitationsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/notifications"
-        element={
-          <RequireAuth>
-            <NotificationsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/people"
-        element={
-          <RequireAuth>
-            <PeopleSearchPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/u/:username"
-        element={
-          <RequireAuth>
-            <ProfilePage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/post/:id"
-        element={
-          <RequireAuth>
-            <PostThreadPage />
-          </RequireAuth>
-        }
-      />
-      <Route path="*" element={<NotFoundPage />} />
-      </Routes>
+      <Suspense fallback={<AppBootSkeleton />}>
+        <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route
+          path="/"
+          element={
+            <RequireAuth>
+              <FeedPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/snaps"
+          element={
+            <RequireAuth>
+              <SnapsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/dms"
+          element={
+            <RequireAuth>
+              <DMsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/settings/ai"
+          element={
+            <RequireAuth>
+              <AiSettingsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/settings/notifications"
+          element={
+            <RequireAuth>
+              <NotificationSettingsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/settings/account"
+          element={
+            <RequireAuth>
+              <AccountSettingsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/settings/security"
+          element={
+            <RequireAuth>
+              <SecuritySettingsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/invitations"
+          element={
+            <RequireAuth>
+              <InvitationsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/notifications"
+          element={
+            <RequireAuth>
+              <NotificationsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/people"
+          element={
+            <RequireAuth>
+              <PeopleSearchPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/u/:username"
+          element={
+            <RequireAuth>
+              <ProfilePage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/post/:id"
+          element={
+            <RequireAuth>
+              <PostThreadPage />
+            </RequireAuth>
+          }
+        />
+        <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </Suspense>
     </div>
     {showMobileNav && <MobileNav />}
     </>

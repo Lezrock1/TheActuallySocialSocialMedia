@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import type { NotificationsPage as NotificationsPageData, UserNotification } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import { activityList, activityRow, btnSecondary, formatActivityTime } from "../lib/ui.js";
@@ -47,6 +49,8 @@ function notificationText(notification: UserNotification): string {
 
 export default function NotificationsPage() {
   const queryClient = useQueryClient();
+  const notificationsListRef = useRef<HTMLDivElement>(null);
+  const [virtualScrollMargin, setVirtualScrollMargin] = useState(0);
   const query = useInfiniteQuery({
     queryKey: ["notifications", "list"],
     queryFn: ({ pageParam }) => fetchNotifications(pageParam),
@@ -55,6 +59,37 @@ export default function NotificationsPage() {
   });
   const notifications = query.data?.pages.flatMap((page) => page.notifications) ?? [];
   const unreadCount = query.data?.pages[0]?.unreadCount ?? 0;
+
+  useEffect(() => {
+    function updateScrollMargin() {
+      if (!notificationsListRef.current) return;
+      const rect = notificationsListRef.current.getBoundingClientRect();
+      setVirtualScrollMargin(rect.top + window.scrollY);
+    }
+    updateScrollMargin();
+    window.addEventListener("resize", updateScrollMargin);
+    window.addEventListener("orientationchange", updateScrollMargin);
+    return () => {
+      window.removeEventListener("resize", updateScrollMargin);
+      window.removeEventListener("orientationchange", updateScrollMargin);
+    };
+  }, [notifications.length]);
+
+  const rowVirtualizer = useWindowVirtualizer({
+    count: notifications.length,
+    estimateSize: () => 92,
+    overscan: 6,
+    scrollMargin: virtualScrollMargin,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+
+  useEffect(() => {
+    const lastVirtual = virtualRows[virtualRows.length - 1];
+    if (!lastVirtual || !query.hasNextPage || query.isFetchingNextPage) return;
+    if (lastVirtual.index >= notifications.length - 1) {
+      void query.fetchNextPage();
+    }
+  }, [notifications.length, query, virtualRows]);
 
   function updateUnreadBadge(delta: number) {
     queryClient.setQueryData<{ unreadCount: number; messageUnreadCount: number; feedUnreadCount: number }>(
@@ -150,8 +185,10 @@ export default function NotificationsPage() {
       {query.isLoading && <CardListSkeleton rows={3} />}
       {query.isError && <p role="alert" className="py-6 text-center text-sm text-red-600">Could not load notifications.</p>}
 
-      <div className={activityList}>
-        {notifications.map((notification) => {
+      <div ref={notificationsListRef} className={activityList} style={{ position: "relative", height: `${rowVirtualizer.getTotalSize()}px` }}>
+        {virtualRows.map((virtualRow) => {
+          const notification = notifications[virtualRow.index];
+          if (!notification) return null;
           const target = notification.type === "live_room"
             ? "/dms?view=live_rooms"
             : notification.postId
@@ -162,37 +199,44 @@ export default function NotificationsPage() {
                 ? "/snaps"
                 : `/u/${notification.actor.username}`;
           return (
-            <Link
+            <div
               key={notification.id}
-              to={target}
-              onClick={() => { if (!notification.readAt) markRead(notification.id); }}
-              className={`${activityRow} items-start ${
-                notification.readAt ? "" : "bg-blue-50/60 hover:bg-blue-50"
-              }`}
+              ref={rowVirtualizer.measureElement}
+              data-index={virtualRow.index}
+              className="absolute left-0 top-0 w-full"
+              style={{ transform: `translateY(${virtualRow.start - virtualScrollMargin}px)` }}
             >
-              <Avatar
-                avatarKey={notification.actor.avatarKey}
-                username={notification.actor.username}
-                size={40}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm leading-5 text-gray-800">
-                  <strong>@{notification.actor.username}</strong>{" "}
-                  {notificationText(notification)}
-                </span>
-                {notification.commentText && (
-                  <span className="mt-1 block truncate text-xs text-gray-500">
-                    {notification.commentText}
+              <Link
+                to={target}
+                onClick={() => { if (!notification.readAt) markRead(notification.id); }}
+                className={`${activityRow} items-start ${
+                  notification.readAt ? "" : "bg-blue-50/60 hover:bg-blue-50"
+                }`}
+              >
+                <Avatar
+                  avatarKey={notification.actor.avatarKey}
+                  username={notification.actor.username}
+                  size={40}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm leading-5 text-gray-800">
+                    <strong>@{notification.actor.username}</strong>{" "}
+                    {notificationText(notification)}
                   </span>
+                  {notification.commentText && (
+                    <span className="mt-1 block truncate text-xs text-gray-500">
+                      {notification.commentText}
+                    </span>
+                  )}
+                  <time className="mt-1 block text-[11px] text-gray-400">
+                    {formatActivityTime(notification.createdAt)}
+                  </time>
+                </span>
+                {!notification.readAt && (
+                  <span aria-label="Unread" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
                 )}
-                <time className="mt-1 block text-[11px] text-gray-400">
-                  {formatActivityTime(notification.createdAt)}
-                </time>
-              </span>
-              {!notification.readAt && (
-                <span aria-label="Unread" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
-              )}
-            </Link>
+              </Link>
+            </div>
           );
         })}
       </div>

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { PublicUser } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
 
-  async function bootstrapSession(): Promise<void> {
+  const bootstrapSession = useCallback(async (): Promise<void> => {
     setLoading(true);
     setBootError(null);
     try {
@@ -41,11 +41,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void bootstrapSession();
-  }, []);
+  }, [bootstrapSession]);
 
   useEffect(() => {
     if (user) {
@@ -53,34 +53,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
-  async function login(email: string, password: string) {
+  const login = useCallback(async (email: string, password: string) => {
     const res = await apiFetch<{ user: PublicUser }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
     setUser(res.user);
-  }
+  }, []);
 
-  async function register(
+  const register = useCallback(async (
     email: string,
     username: string,
     password: string,
     inviteCode: string
-  ) {
+  ) => {
     const res = await apiFetch<{ user: PublicUser }>("/auth/register", {
       method: "POST",
       body: JSON.stringify({ email, username, password, inviteCode }),
     });
     setUser(res.user);
-  }
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     await apiFetch("/auth/logout", { method: "POST" });
     setUser(null);
-  }
+  }, []);
+
+  const value = useMemo<AuthContextValue>(() => ({
+    user,
+    loading,
+    bootError,
+    login,
+    register,
+    updateUser: setUser,
+    logout,
+    retryBootstrap: bootstrapSession,
+  }), [bootError, bootstrapSession, loading, login, logout, register, user]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, bootError, login, register, updateUser: setUser, logout, retryBootstrap: bootstrapSession }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

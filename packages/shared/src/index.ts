@@ -439,6 +439,11 @@ export interface ConversationMessage {
   createdAt: string;
 }
 
+export interface ConversationMessagesPage {
+  messages: ConversationMessage[];
+  nextCursor: string | null;
+}
+
 export interface UserProfile extends PublicUser {
   bio: string | null;
   followerCount: number;
