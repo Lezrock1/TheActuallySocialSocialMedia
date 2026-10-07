@@ -8,6 +8,19 @@ import { getBlockedUserIds, isBlocked } from "./visibility.js";
 import { LIVE_ROOM_AUDIENCES, MAX_LIVE_ROOM_PARTICIPANTS } from "@app/shared";
 import type { LiveRoomAudience } from "@app/shared";
 import { createUserNotification } from "./notifications.js";
+import { createRateLimiter } from "./rateLimit.js";
+
+const socketConnectLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30 });
+const SOCKET_EVENT_WINDOW_MS = 10 * 1000;
+const SOCKET_EVENT_MAX = 150;
+
+function clientAddress(handshake: { address: string; headers: Record<string, string | string[] | undefined> }): string {
+  const forwarded = handshake.headers["x-forwarded-for"];
+  const header = Array.isArray(forwarded) ? forwarded.join(",") : forwarded;
+  // The last entry is the one appended by the trusted reverse proxy.
+  const last = header?.split(",").pop()?.trim();
+  return last || handshake.address;
+}
 
 interface ActiveCall {
   conversationId: string;
@@ -105,9 +118,14 @@ async function notifyLiveRoomStarted(callId: string, call: ActiveCall): Promise<
 export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
     cors: { origin: env.corsOrigin, credentials: true },
+    maxHttpBufferSize: 100_000,
   });
 
   io.use((socket, next) => {
+    if (!socketConnectLimiter.hit(clientAddress(socket.handshake)).allowed) {
+      next(new Error("Too many connection attempts"));
+      return;
+    }
     const cookies = parseCookies(socket.handshake.headers.cookie);
     const token = cookies.auth_token;
     if (!token) {
@@ -127,6 +145,22 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
 
   io.on("connection", (socket) => {
     socket.join(`user:${socket.data.userId}`);
+
+    let windowStart = Date.now();
+    let eventCount = 0;
+    socket.use((_packet, next) => {
+      const current = Date.now();
+      if (current - windowStart > SOCKET_EVENT_WINDOW_MS) {
+        windowStart = current;
+        eventCount = 0;
+      }
+      eventCount += 1;
+      if (eventCount > SOCKET_EVENT_MAX) {
+        if (eventCount === SOCKET_EVENT_MAX + 1) socket.disconnect(true);
+        return;
+      }
+      next();
+    });
 
     socket.on("call:start", (payload: {
       callId: string;

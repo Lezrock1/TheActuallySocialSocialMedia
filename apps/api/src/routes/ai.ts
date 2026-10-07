@@ -13,6 +13,8 @@ import { requireAuth } from "../auth/middleware.js";
 import { env } from "../env.js";
 import { encryptSecret, decryptSecret } from "../ai/crypto.js";
 import { createAdapter } from "../ai/adapters.js";
+import { assertProviderUrlAllowed, UnsafeUrlError } from "../ai/safeHttp.js";
+import { byUser, createRateLimiter, rateLimitBy } from "../rateLimit.js";
 import { isBlocked } from "../visibility.js";
 import type { ChatMessage } from "../ai/adapters.js";
 import {
@@ -20,6 +22,20 @@ import {
   systemPromptForMode,
   FACTCHECK_SUMMARY_SYSTEM_PROMPT,
 } from "../ai/prompts.js";
+
+const aiCallLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 20 });
+const aiCallGuard = rateLimitBy(aiCallLimiter, byUser);
+const providerEditLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
+const providerEditGuard = rateLimitBy(providerEditLimiter, byUser);
+
+async function checkProviderUrl(baseUrl: string): Promise<string | null> {
+  try {
+    await assertProviderUrlAllowed(baseUrl, env.allowPrivateAiUrls);
+    return null;
+  } catch (error) {
+    return error instanceof UnsafeUrlError ? error.message : "The provider URL could not be verified.";
+  }
+}
 
 function toPublicMessage(message: {
   id: string;
@@ -119,7 +135,7 @@ async function regenerateFactCheckSummary(
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     "/ai/translate",
-    { preHandler: requireAuth },
+    { preHandler: [requireAuth, aiCallGuard] },
     async (request, reply) => {
       const parsed = translatePostSchema.safeParse(request.body);
       if (!parsed.success) {
@@ -227,13 +243,16 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/ai/providers",
-    { preHandler: requireAuth },
+    { preHandler: [requireAuth, providerEditGuard] },
     async (request, reply) => {
       const parsed = createAiProviderConfigSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: parsed.error.flatten() });
       }
       const { apiKey, isDefault, ...rest } = parsed.data;
+
+      const urlError = await checkProviderUrl(rest.baseUrl);
+      if (urlError) return reply.code(400).send({ error: urlError });
 
       if (isDefault) {
         await prisma.aiProviderConfig.updateMany({
@@ -271,7 +290,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch<{ Params: { id: string } }>(
     "/ai/providers/:id",
-    { preHandler: requireAuth },
+    { preHandler: [requireAuth, providerEditGuard] },
     async (request, reply) => {
       const existing = await prisma.aiProviderConfig.findUnique({
         where: { id: request.params.id },
@@ -284,6 +303,11 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: parsed.error.flatten() });
       }
       const { apiKey, isDefault, ...rest } = parsed.data;
+
+      if (rest.baseUrl !== undefined) {
+        const urlError = await checkProviderUrl(rest.baseUrl);
+        if (urlError) return reply.code(400).send({ error: urlError });
+      }
 
       if (isDefault) {
         await prisma.aiProviderConfig.updateMany({
@@ -308,7 +332,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/ai/conversations",
-    { preHandler: requireAuth },
+    { preHandler: [requireAuth, aiCallGuard] },
     async (request, reply) => {
       const parsed = startAiConversationSchema.safeParse(request.body);
       if (!parsed.success) {
@@ -390,10 +414,9 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err) {
         request.log.error(err, "AI provider request failed");
-        const message = err instanceof Error ? err.message : "Unknown error";
         return reply
           .code(502)
-          .send({ error: `AI provider request failed: ${message}` });
+          .send({ error: "AI provider request failed. Check the provider settings." });
       }
     }
   );
@@ -421,7 +444,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Params: { id: string } }>(
     "/ai/conversations/:id/messages",
-    { preHandler: requireAuth },
+    { preHandler: [requireAuth, aiCallGuard] },
     async (request, reply) => {
       const parsed = sendAiMessageSchema.safeParse(request.body);
       if (!parsed.success) {
@@ -481,10 +504,9 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(201).send({ message: toPublicMessage(assistantMessage) });
       } catch (err) {
         request.log.error(err, "AI provider request failed");
-        const message = err instanceof Error ? err.message : "Unknown error";
         return reply
           .code(502)
-          .send({ error: `AI provider request failed: ${message}` });
+          .send({ error: "AI provider request failed. Check the provider settings." });
       }
     }
   );

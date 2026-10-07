@@ -44,6 +44,8 @@ export const env = {
   aiKeyEncryptionSecret,
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
   nodeEnv,
+  // Local Ollama etc.; ignored in production so private networks stay unreachable.
+  allowPrivateAiUrls: nodeEnv !== "production" && process.env.ALLOW_PRIVATE_AI_URLS === "true",
   s3Endpoint: process.env.S3_ENDPOINT ?? "http://localhost:8333",
   s3Bucket: process.env.S3_BUCKET ?? "media",
   s3Region: process.env.S3_REGION ?? "us-east-1",

@@ -1,9 +1,13 @@
 import { spawn } from "node:child_process";
 import { stat, rm } from "node:fs/promises";
 
-function run(command: string, args: string[]): Promise<string> {
+function run(command: string, args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    const process = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const process = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: timeoutMs,
+      killSignal: "SIGKILL",
+    });
     let stdout = "";
     let stderr = "";
     process.stdout.setEncoding("utf8");
@@ -32,7 +36,7 @@ export async function compressVideoToFit(
     "-show_entries", "format=duration",
     "-of", "default=noprint_wrappers=1:nokey=1",
     inputPath,
-  ]);
+  ], 30_000);
   const duration = Number.parseFloat(durationText);
   if (!Number.isFinite(duration) || duration <= 0) {
     throw new Error("Could not determine video duration");
@@ -63,7 +67,7 @@ export async function compressVideoToFit(
       "-movflags", "+faststart",
       "-f", "mp4",
       outputPath,
-    ]);
+    ], 10 * 60 * 1000);
     const outputSize = (await stat(outputPath)).size;
     if (outputSize <= maxBytes) return outputSize;
   }

@@ -1,3 +1,6 @@
+import { env } from "../env.js";
+import { safePostJson, UnsafeUrlError } from "./safeHttp.js";
+
 export interface AiProviderCredentials {
   baseUrl: string;
   model: string;
@@ -13,6 +16,23 @@ export interface AiProvider {
   chat(messages: ChatMessage[]): Promise<string>;
 }
 
+async function postToProvider(url: string, headers: Record<string, string>, payload: unknown): Promise<string> {
+  let response;
+  try {
+    response = await safePostJson(url, JSON.stringify(payload), {
+      headers,
+      allowPrivate: env.allowPrivateAiUrls,
+    });
+  } catch (err) {
+    if (err instanceof UnsafeUrlError) throw err;
+    throw new Error("Could not reach the AI provider");
+  }
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Provider returned status ${response.status}`);
+  }
+  return response.text;
+}
+
 // Covers OpenAI itself, and anything exposing an OpenAI-compatible
 // /chat/completions endpoint: Ollama (local), OpenRouter, Groq, etc.
 export class OpenAICompatibleAdapter implements AiProvider {
@@ -20,32 +40,17 @@ export class OpenAICompatibleAdapter implements AiProvider {
 
   async chat(messages: ChatMessage[]): Promise<string> {
     const url = `${this.creds.baseUrl.replace(/\/$/, "")}/chat/completions`;
-    let res: Response;
+    const text = await postToProvider(
+      url,
+      this.creds.apiKey ? { Authorization: `Bearer ${this.creds.apiKey}` } : {},
+      { model: this.creds.model, messages }
+    );
+    let body: { choices?: { message?: { content?: string } }[] };
     try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(this.creds.apiKey
-            ? { Authorization: `Bearer ${this.creds.apiKey}` }
-            : {}),
-        },
-        body: JSON.stringify({
-          model: this.creds.model,
-          messages,
-        }),
-      });
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      throw new Error(`Could not reach ${url} (${reason})`);
+      body = JSON.parse(text);
+    } catch {
+      throw new Error("Provider returned an invalid response");
     }
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Provider returned ${res.status}: ${body.slice(0, 300)}`);
-    }
-    const body = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
     const content = body.choices?.[0]?.message?.content;
     if (!content) {
       throw new Error("Provider returned no content");
@@ -66,31 +71,25 @@ export class AnthropicAdapter implements AiProvider {
       .filter((m) => m.role !== "system")
       .map((m) => ({ role: m.role, content: m.content }));
 
-    let res: Response;
+    const text = await postToProvider(
+      url,
+      {
+        "anthropic-version": "2023-06-01",
+        ...(this.creds.apiKey ? { "x-api-key": this.creds.apiKey } : {}),
+      },
+      {
+        model: this.creds.model,
+        max_tokens: 1024,
+        ...(systemMessage ? { system: systemMessage.content } : {}),
+        messages: conversation,
+      }
+    );
+    let body: { content?: { text?: string }[] };
     try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "anthropic-version": "2023-06-01",
-          ...(this.creds.apiKey ? { "x-api-key": this.creds.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          model: this.creds.model,
-          max_tokens: 1024,
-          ...(systemMessage ? { system: systemMessage.content } : {}),
-          messages: conversation,
-        }),
-      });
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      throw new Error(`Could not reach ${url} (${reason})`);
+      body = JSON.parse(text);
+    } catch {
+      throw new Error("Provider returned an invalid response");
     }
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Provider returned ${res.status}: ${body.slice(0, 300)}`);
-    }
-    const body = (await res.json()) as { content?: { text?: string }[] };
     const content = body.content?.[0]?.text;
     if (!content) {
       throw new Error("Provider returned no content");

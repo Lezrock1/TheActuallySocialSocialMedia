@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import argon2 from "argon2";
+import argon2, { verifyAgainstDummy } from "../auth/passwords.js";
 import {
   changePasswordSchema,
   checkUsernameSchema,
@@ -15,6 +15,14 @@ import { env } from "../env.js";
 import { toPublicUser } from "../serializers.js";
 import { hashInvitationCode } from "../invitations.js";
 import { purgeQueuedMediaDeletions } from "../storage.js";
+import { byIp, byUser, createRateLimiter, rateLimitBy, sendRateLimited } from "../rateLimit.js";
+
+const registerLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 10 });
+const loginIpLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
+const loginAccountLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
+const accountActionLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 10 });
+const usernameCheckLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 60 });
+const accountActionGuard = rateLimitBy(accountActionLimiter, byUser);
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -27,13 +35,27 @@ const COOKIE_OPTIONS = {
 class InvalidInvitationError extends Error {}
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/auth/register", async (request, reply) => {
+  app.post("/auth/register", { preHandler: rateLimitBy(registerLimiter, byIp) }, async (request, reply) => {
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
     const { email, username, password, inviteCode } = parsed.data;
     const usernameCanonical = username.toLowerCase();
+
+    // Cheap invitation check first, so callers without a valid invitation
+    // cannot trigger the expensive password hash.
+    const invitation = await prisma.invitation.findFirst({
+      where: {
+        tokenHash: hashInvitationCode(inviteCode),
+        redeemedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+    if (!invitation) {
+      return reply.code(400).send({ error: "Invitation code is invalid, expired, or already used" });
+    }
 
     const existing = await prisma.user.findFirst({
       where: {
@@ -90,13 +112,24 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
     const { email, password } = parsed.data;
+    const accountKey = email.toLowerCase();
+
+    const ipResult = loginIpLimiter.hit(request.ip);
+    if (!ipResult.allowed) return sendRateLimited(reply, ipResult.retryAfterSeconds);
+    const accountResult = loginAccountLimiter.hit(accountKey);
+    if (!accountResult.allowed) return sendRateLimited(reply, accountResult.retryAfterSeconds);
 
     const user = await prisma.user.findFirst({
-      where: { email: { equals: email.toLowerCase(), mode: "insensitive" } },
+      where: { email: { equals: accountKey, mode: "insensitive" } },
     });
-    if (!user || !(await argon2.verify(user.passwordHash, password))) {
+    if (!user) {
+      await verifyAgainstDummy(password);
       return reply.code(401).send({ error: "Invalid email or password" });
     }
+    if (!(await argon2.verify(user.passwordHash, password))) {
+      return reply.code(401).send({ error: "Invalid email or password" });
+    }
+    loginAccountLimiter.reset(accountKey);
 
     const token = signAuthToken({ userId: user.id });
     reply.setCookie(AUTH_COOKIE_NAME, token, COOKIE_OPTIONS);
@@ -133,7 +166,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.get<{ Querystring: { username?: string } }>(
     "/auth/username-availability",
-    { preHandler: requireAuth },
+    { preHandler: [requireAuth, rateLimitBy(usernameCheckLimiter, byUser)] },
     async (request, reply) => {
       const parsed = checkUsernameSchema.safeParse(request.query.username);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -148,7 +181,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
-  app.patch("/auth/account", { preHandler: requireAuth }, async (request, reply) => {
+  app.patch("/auth/account", { preHandler: [requireAuth, accountActionGuard] }, async (request, reply) => {
     const parsed = updateAccountSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const user = await prisma.user.findUnique({ where: { id: request.userId! } });
@@ -187,7 +220,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.patch("/auth/password", { preHandler: requireAuth }, async (request, reply) => {
+  app.patch("/auth/password", { preHandler: [requireAuth, accountActionGuard] }, async (request, reply) => {
     const parsed = changePasswordSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const user = await prisma.user.findUnique({ where: { id: request.userId! } });
@@ -205,7 +238,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(204).send();
   });
 
-  app.delete("/auth/account", { preHandler: requireAuth }, async (request, reply) => {
+  app.delete("/auth/account", { preHandler: [requireAuth, accountActionGuard] }, async (request, reply) => {
     const parsed = deleteAccountSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const user = await prisma.user.findUnique({ where: { id: request.userId! } });

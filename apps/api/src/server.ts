@@ -23,9 +23,31 @@ import { closeFriendRoutes } from "./routes/closeFriends.js";
 import { notificationRoutes } from "./routes/notifications.js";
 import { encryptionRoutes } from "./routes/encryption.js";
 import { pollRoutes } from "./routes/polls.js";
+import { BusyError } from "./auth/passwords.js";
+import { createRateLimiter, sendRateLimited } from "./rateLimit.js";
 
 async function main(): Promise<void> {
-  const app = Fastify({ logger: true });
+  // Caddy is the only ingress and sets X-Forwarded-For, so the client IP is trustworthy.
+  const app = Fastify({ logger: true, trustProxy: true });
+
+  const globalLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 600 });
+  app.addHook("onRequest", async (request, reply) => {
+    if (request.url === "/health" || request.method === "OPTIONS") return;
+    const result = globalLimiter.hit(request.ip);
+    if (!result.allowed) sendRateLimited(reply, result.retryAfterSeconds);
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    if (error instanceof BusyError) {
+      return reply.code(503).header("Retry-After", "5").send({ error: "Server is busy. Please try again shortly." });
+    }
+    request.log.error(error);
+    const statusCode = (error as { statusCode?: number }).statusCode;
+    if (statusCode && statusCode >= 400 && statusCode < 500) {
+      return reply.code(statusCode).send({ error: error.message });
+    }
+    return reply.code(500).send({ error: "Internal server error" });
+  });
 
   await app.register(cors, { origin: env.corsOrigin, credentials: true });
   await app.register(cookie);

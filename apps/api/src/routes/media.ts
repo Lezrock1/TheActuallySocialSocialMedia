@@ -14,6 +14,11 @@ import {
 import { prisma } from "../db.js";
 import { canReadMedia } from "../mediaAccess.js";
 import { compressVideoToFit } from "../videoCompression.js";
+import { byUser, createRateLimiter, rateLimitBy } from "../rateLimit.js";
+
+const uploadLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 20 });
+const MAX_CONCURRENT_TRANSCODES = 2;
+let activeTranscodes = 0;
 
 const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
 const MAX_RAW_UPLOAD_BYTES = 500 * 1024 * 1024 + 16;
@@ -23,7 +28,7 @@ const ALLOWED_MIME_TYPES = new Set([
 ]);
 
 export async function mediaRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/media", { preHandler: requireAuth }, async (request, reply) => {
+  app.post("/media", { preHandler: [requireAuth, rateLimitBy(uploadLimiter, byUser)] }, async (request, reply) => {
     const file = await request.file({
       limits: { fileSize: MAX_RAW_UPLOAD_BYTES },
     });
@@ -62,14 +67,24 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       let storedSize = originalSize;
       const compressed = isVideo && originalSize > MAX_MEDIA_BYTES;
       if (compressed) {
+        if (activeTranscodes >= MAX_CONCURRENT_TRANSCODES) {
+          return reply
+            .code(503)
+            .header("Retry-After", "30")
+            .send({ error: "Video processing is busy. Please try again shortly." });
+        }
         storedPath = join(temporaryDirectory, "compressed.mp4");
+        activeTranscodes += 1;
         try {
           storedSize = await compressVideoToFit(inputPath, storedPath, MAX_MEDIA_BYTES);
         } catch (error) {
           const message = error instanceof Error
             ? error.message
             : "Could not compress this video below 50 MB";
-          return reply.code(413).send({ error: message });
+          request.log.warn(message);
+          return reply.code(413).send({ error: "Could not compress this video below 50 MB" });
+        } finally {
+          activeTranscodes -= 1;
         }
         contentType = "video/mp4";
         filename = `${file.filename}.mp4`;
