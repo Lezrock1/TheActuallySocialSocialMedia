@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import type { NotificationsPage as NotificationsPageData, UserNotification } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
@@ -7,6 +8,7 @@ import Avatar from "../components/Avatar.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import PullToRefresh from "../components/PullToRefresh.js";
+import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 
 async function fetchNotifications(cursor: string | null): Promise<NotificationsPageData> {
   const params = new URLSearchParams();
@@ -54,18 +56,75 @@ export default function NotificationsPage() {
   const notifications = query.data?.pages.flatMap((page) => page.notifications) ?? [];
   const unreadCount = query.data?.pages[0]?.unreadCount ?? 0;
 
+  function updateUnreadBadge(delta: number) {
+    queryClient.setQueryData<{ unreadCount: number; messageUnreadCount: number; feedUnreadCount: number }>(
+      ["notifications", "unread-count"],
+      (current) => {
+        if (!current) return current;
+        return { ...current, unreadCount: Math.max(0, current.unreadCount + delta) };
+      }
+    );
+  }
+
   function markRead(notificationId: string) {
+    const previous = queryClient.getQueryData<InfiniteData<NotificationsPageData>>(["notifications", "list"]);
+    const decremented = Boolean(previous?.pages[0]?.notifications.some(
+      (notification) => notification.id === notificationId && !notification.readAt
+    ));
+    queryClient.setQueryData<InfiniteData<NotificationsPageData>>(["notifications", "list"], (current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        pages: current.pages.map((page, pageIndex) => {
+          const next = page.notifications.map((notification) => {
+            if (notification.id !== notificationId || notification.readAt) return notification;
+            return { ...notification, readAt: new Date().toISOString() };
+          });
+          return {
+            ...page,
+            notifications: next,
+            unreadCount: pageIndex === 0 && decremented ? Math.max(0, page.unreadCount - 1) : page.unreadCount,
+          };
+        }),
+      };
+    });
+    if (decremented) updateUnreadBadge(-1);
+
     void apiFetch(`/notifications/${notificationId}/read`, { method: "POST" })
       .then(() => queryClient.invalidateQueries({ queryKey: ["notifications"] }))
-      .catch(() => undefined);
+      .catch(() => {
+        if (previous) queryClient.setQueryData(["notifications", "list"], previous);
+        if (decremented) updateUnreadBadge(1);
+      });
   }
 
   async function markAllRead() {
-    await apiFetch("/notifications/read-all", { method: "POST" });
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["notifications", "list"] }),
-      queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] }),
-    ]);
+    const previous = queryClient.getQueryData<InfiniteData<NotificationsPageData>>(["notifications", "list"]);
+    const countBefore = previous?.pages[0]?.unreadCount ?? 0;
+    if (previous) {
+      queryClient.setQueryData<InfiniteData<NotificationsPageData>>(["notifications", "list"], {
+        ...previous,
+        pages: previous.pages.map((page, pageIndex) => ({
+          ...page,
+          unreadCount: pageIndex === 0 ? 0 : page.unreadCount,
+          notifications: page.notifications.map((notification) =>
+            notification.readAt ? notification : { ...notification, readAt: new Date().toISOString() }
+          ),
+        })),
+      });
+      if (countBefore > 0) updateUnreadBadge(-countBefore);
+    }
+
+    try {
+      await apiFetch("/notifications/read-all", { method: "POST" });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["notifications", "list"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] }),
+      ]);
+    } catch {
+      if (previous) queryClient.setQueryData(["notifications", "list"], previous);
+      if (countBefore > 0) updateUnreadBadge(countBefore);
+    }
   }
 
   return (
@@ -88,7 +147,7 @@ export default function NotificationsPage() {
         )}
       </div>
 
-      {query.isLoading && <p className="py-6 text-center text-sm text-gray-500">Loading notifications...</p>}
+      {query.isLoading && <CardListSkeleton rows={3} />}
       {query.isError && <p role="alert" className="py-6 text-center text-sm text-red-600">Could not load notifications.</p>}
 
       <div className={activityList}>
@@ -147,7 +206,7 @@ export default function NotificationsPage() {
           disabled={query.isFetchingNextPage}
           className={`${btnSecondary} mt-4 w-full`}
         >
-          {query.isFetchingNextPage ? "Loading..." : "Load older notifications"}
+          {query.isFetchingNextPage ? "Loading older notifications..." : "Load older notifications"}
         </button>
       )}
     </div>

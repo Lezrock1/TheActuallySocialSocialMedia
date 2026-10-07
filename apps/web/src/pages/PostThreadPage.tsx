@@ -8,6 +8,7 @@ import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import PostCard from "../components/PostCard.js";
+import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 import { card, input, btnPrimary } from "../lib/ui.js";
 
 interface ThreadResponse {
@@ -47,10 +48,10 @@ export default function PostThreadPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
+    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="Post" />
       <NavBar />
-      {isLoading && <p className="text-sm text-gray-500">Loading...</p>}
+      {isLoading && <CardListSkeleton rows={2} />}
       {data && (
         <div className="flex flex-col gap-3">
           {data.parent && (

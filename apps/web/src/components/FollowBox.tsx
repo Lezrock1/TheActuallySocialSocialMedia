@@ -6,6 +6,7 @@ import type { PublicUser } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
 import { card, input, btnSecondary } from "../lib/ui.js";
 import Avatar from "./Avatar.js";
+import { InlineSkeletonText } from "./LoadingSkeleton.js";
 
 interface UserDirectoryPage {
   users: PublicUser[];
@@ -116,7 +117,11 @@ export default function FollowBox({ focusRequest = 0 }: { focusRequest?: number 
               }}
             >
               {directoryQuery.isPending ? (
-                <p className="px-3 py-3 text-sm text-gray-500">Loading profiles...</p>
+                <div aria-hidden="true" className="space-y-2 px-3 py-3">
+                  <InlineSkeletonText width="w-32" />
+                  <InlineSkeletonText width="w-44" />
+                  <InlineSkeletonText width="w-28" />
+                </div>
               ) : directoryQuery.isError ? (
                 <button
                   type="button"
@@ -152,9 +157,9 @@ export default function FollowBox({ focusRequest = 0 }: { focusRequest?: number 
                     </Link>
                   ))}
                   {directoryQuery.isFetchingNextPage && (
-                    <p className="px-3 py-2 text-center text-xs text-gray-500">
-                      Loading more profiles...
-                    </p>
+                    <div aria-hidden="true" className="px-3 py-2 text-center">
+                      <InlineSkeletonText width="w-28" />
+                    </div>
                   )}
                 </>
               )}

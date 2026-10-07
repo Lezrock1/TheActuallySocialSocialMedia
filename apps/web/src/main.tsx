@@ -5,7 +5,21 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App.js";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 20_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  });
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

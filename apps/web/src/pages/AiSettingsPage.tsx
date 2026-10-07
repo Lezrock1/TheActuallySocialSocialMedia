@@ -94,7 +94,7 @@ export default function AiSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
+    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="AI Tools" />
       <NavBar />
       <p className="mb-3 text-sm text-gray-600">

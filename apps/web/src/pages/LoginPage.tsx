@@ -5,7 +5,7 @@ import { useAuth, ApiError } from "../auth/AuthContext.js";
 import { card, input, btnPrimary } from "../lib/ui.js";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, bootError } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const accountDeletionState = location.state as {
@@ -31,6 +31,11 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className={`${card} w-full max-w-sm`}>
         <h1 className="mb-6 text-xl font-semibold">Log in</h1>
+        {bootError && (
+          <p role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            Server connection issue detected. You can still try signing in, or retry shortly.
+          </p>
+        )}
         {accountDeletionState?.accountDeleted && (
           <div role="status" className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
             <p>Your account and its server data have been deleted.</p>

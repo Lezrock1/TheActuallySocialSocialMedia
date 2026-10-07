@@ -34,6 +34,7 @@ import {
   btnPrimary,
   btnSecondary,
 } from "../lib/ui.js";
+import { InlineSkeletonText } from "../components/LoadingSkeleton.js";
 
 interface StoryReplyContext {
   storyId: string;
@@ -114,6 +115,7 @@ export default function DMsPage() {
   const call = useWebRtcCall(user?.id);
   const friendPickerRef = useRef<HTMLDivElement>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
+  const composerInputRef = useRef<HTMLInputElement>(null);
   const scrolledConversationRef = useRef<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -134,6 +136,7 @@ export default function DMsPage() {
   const [encryptionError, setEncryptionError] = useState<string | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
   const [decryptedMessages, setDecryptedMessages] = useState<Record<string, string>>({});
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
 
   useEffect(() => {
     if (searchParams.get("view") !== "live_rooms") return;
@@ -163,6 +166,26 @@ export default function DMsPage() {
     }
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, [location.key, location.pathname, location.search, location.state, navigate]);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    const updateOffset = () => {
+      const offset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      setKeyboardOffset(offset);
+    };
+
+    updateOffset();
+    viewport.addEventListener("resize", updateOffset);
+    viewport.addEventListener("scroll", updateOffset);
+    window.addEventListener("orientationchange", updateOffset);
+    return () => {
+      viewport.removeEventListener("resize", updateOffset);
+      viewport.removeEventListener("scroll", updateOffset);
+      window.removeEventListener("orientationchange", updateOffset);
+    };
+  }, []);
 
   const { data: conversations = [] } = useQuery({
     queryKey: ["conversations"],
@@ -464,7 +487,11 @@ export default function DMsPage() {
                   className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
                 >
                   {friendsLoading ? (
-                    <p className="px-3 py-3 text-sm text-gray-500">Loading friends...</p>
+                    <div aria-hidden="true" className="space-y-2 px-3 py-3">
+                      <InlineSkeletonText width="w-32" />
+                      <InlineSkeletonText width="w-44" />
+                      <InlineSkeletonText width="w-28" />
+                    </div>
                   ) : matchingFriends.length === 0 ? (
                     <p className="px-3 py-3 text-sm text-gray-500">
                       {followedUsers.length ? "No followed accounts match that name." : "Follow someone first to message them."}
@@ -571,7 +598,7 @@ export default function DMsPage() {
           </div>}
           {messageView === "chats" && (
             <div className="mt-4 border-t border-gray-100 pt-3 text-[11px] leading-5 text-gray-500">
-              <p>{deviceKeyReady ? "This device is ready for encrypted messages." : "Setting up message encryption..."}</p>
+              <p>{deviceKeyReady ? "This device is ready for encrypted messages." : "Preparing encrypted messaging for this device."}</p>
               <p>Device keys stay in this browser; clearing its data can make encrypted history unreadable.</p>
             </div>
           )}
@@ -717,18 +744,35 @@ export default function DMsPage() {
                 </button>
               </div>
             )}
-            <form onSubmit={(e) => void sendMessage(e)} className="flex items-center gap-2">
-              <input
-                value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
-                placeholder="Message..."
-                className={`${input} min-w-0 flex-1`}
-              />
-              <button
-                disabled={!deviceKeyReady || !allMembersHaveKeys}
-                className={`${btnPrimary} min-h-10 shrink-0 bg-green-700 hover:bg-green-800 focus-visible:ring-green-700/20 disabled:opacity-50`}
-              >Send</button>
-            </form>
+            <div
+              className="sticky bottom-0 z-20 -mx-1 rounded-xl bg-white/90 px-1 pt-2 backdrop-blur"
+              style={{
+                paddingBottom: "max(0.35rem, env(safe-area-inset-bottom))",
+                transform: keyboardOffset > 0 ? `translateY(-${keyboardOffset}px)` : undefined,
+              }}
+            >
+              <form onSubmit={(e) => void sendMessage(e)} className="flex items-center gap-2">
+                <input
+                  ref={composerInputRef}
+                  value={messageText}
+                  onFocus={() => {
+                    window.setTimeout(() => {
+                      messageScrollRef.current?.scrollTo({
+                        top: messageScrollRef.current.scrollHeight,
+                        behavior: "smooth",
+                      });
+                    }, 60);
+                  }}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  placeholder="Message..."
+                  className={`${input} min-w-0 flex-1`}
+                />
+                <button
+                  disabled={!deviceKeyReady || !allMembersHaveKeys}
+                  className={`${btnPrimary} min-h-10 shrink-0 bg-green-700 hover:bg-green-800 focus-visible:ring-green-700/20 disabled:opacity-50`}
+                >Send</button>
+              </form>
+            </div>
           </section>
         )}
       </div>

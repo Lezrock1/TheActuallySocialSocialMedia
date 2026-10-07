@@ -7,9 +7,52 @@ export interface MediaUploadInfo {
   storedSize: number;
 }
 
+async function resizeImageForUpload(file: File, maxDimension = 2048): Promise<File> {
+  if (!file.type.startsWith("image/") || file.type === "image/gif" || file.type === "image/svg+xml") {
+    return file;
+  }
+
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read image"));
+    reader.readAsDataURL(file);
+  });
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not decode image"));
+    image.src = dataUrl;
+  });
+
+  const largestSide = Math.max(img.width, img.height);
+  if (!largestSide || largestSide <= maxDimension) return file;
+
+  const scale = maxDimension / largestSide;
+  const width = Math.round(img.width * scale);
+  const height = Math.round(img.height * scale);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return file;
+  context.drawImage(img, 0, 0, width, height);
+
+  const type = file.type === "image/png" ? "image/png" : "image/jpeg";
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.86));
+  if (!blob || blob.size >= file.size) return file;
+
+  const suffix = type === "image/png" ? "png" : "jpg";
+  const nextName = file.name.replace(/\.[a-z0-9]+$/i, `.${suffix}`);
+  return new File([blob], nextName, { type, lastModified: file.lastModified });
+}
+
 export async function uploadMediaWithInfo(file: File): Promise<MediaUploadInfo> {
+  const preparedFile = await resizeImageForUpload(file);
   const form = new FormData();
-  form.append("file", file);
+  form.append("file", preparedFile);
   const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
   const res = await fetch(`${API_BASE}/media`, {
     method: "POST",

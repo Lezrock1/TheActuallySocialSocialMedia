@@ -14,6 +14,7 @@ import StoriesBar from "../components/StoriesBar.js";
 import PostCard from "../components/PostCard.js";
 import Avatar from "../components/Avatar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
+import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 
 const MAX_VIDEO_UPLOAD_BYTES = 50 * 1024 * 1024;
 
@@ -65,6 +66,7 @@ export default function FeedPage() {
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["", ""]);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [postSendError, setPostSendError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const postSuccessTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
@@ -116,8 +118,7 @@ export default function FeedPage() {
     return () => observer.disconnect();
   }, [lastPage?.nextCursor, loadMore, loadMoreError, loadingMore]);
 
-  async function onPost(e: FormEvent) {
-    e.preventDefault();
+  async function submitPostDraft() {
     if (!text.trim() && !imageKey && !pollEnabled) return;
     const normalizedOptions = pollOptions.map((option) => option.trim()).filter(Boolean);
     if (pollEnabled && (!pollQuestion.trim() || normalizedOptions.length < 2)) {
@@ -129,6 +130,7 @@ export default function FeedPage() {
       return;
     }
     setComposerError(null);
+    setPostSendError(null);
     if (postSuccessTimeoutRef.current !== null) {
       window.clearTimeout(postSuccessTimeoutRef.current);
       postSuccessTimeoutRef.current = null;
@@ -159,11 +161,21 @@ export default function FeedPage() {
       setPollEnabled(false);
       setPollQuestion("");
       setPollOptions(["", ""]);
+      setPostSendError(null);
       setPages([]);
       await queryClient.invalidateQueries({ queryKey: ["feed", "first"] });
+    } catch (error) {
+      setPostSendError(error instanceof Error
+        ? `${error.message} · Try again.`
+        : "Could not send your post. Try again.");
     } finally {
       setPosting(false);
     }
+  }
+
+  async function onPost(e: FormEvent) {
+    e.preventDefault();
+    await submitPostDraft();
   }
 
   async function onSelectImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -345,7 +357,26 @@ export default function FeedPage() {
         </div>
       </form>
 
-      {firstPageQuery.isLoading && <p className="text-sm text-gray-500">Loading...</p>}
+      {postSendError && (
+        <div role="alert" className="mb-4 flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <span className="min-w-0 flex-1">{postSendError}</span>
+          <button
+            type="button"
+            onClick={() => void submitPostDraft()}
+            disabled={posting || mediaUploading}
+            className="shrink-0 rounded-lg border border-red-300 bg-white px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {firstPageQuery.isLoading && <CardListSkeleton rows={3} />}
+      {firstPageQuery.isError && (
+        <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          Could not load the feed. Pull to refresh or try again.
+        </p>
+      )}
 
       <div className="flex flex-col gap-3">
         {allPages.map((page) =>

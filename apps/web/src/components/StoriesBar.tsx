@@ -25,6 +25,8 @@ export default function StoriesBar() {
   const [replySending, setReplySending] = useState(false);
   const [reactionError, setReactionError] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<PostVisibility>("public");
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [retryFile, setRetryFile] = useState<File | null>(null);
 
   const { data: groups = [] } = useQuery({
     queryKey: ["stories"],
@@ -128,21 +130,32 @@ export default function StoriesBar() {
     }
   }
 
-  async function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  async function uploadStory(file: File) {
     setUploading(true);
+    setUploadError(null);
     try {
       const imageKey = await uploadMedia(file);
       await apiFetch("/stories", {
         method: "POST",
         body: JSON.stringify({ imageKey, visibility }),
       });
+      setRetryFile(null);
       await queryClient.invalidateQueries({ queryKey: ["stories"] });
+    } catch (error) {
+      setUploadError(error instanceof Error
+        ? `${error.message} · Story not sent.`
+        : "Story upload failed.");
+      setRetryFile(file);
     } finally {
       setUploading(false);
     }
+  }
+
+  async function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    await uploadStory(file);
   }
 
   return (
@@ -159,6 +172,21 @@ export default function StoriesBar() {
         </select>
       </div>
       <LiveRoomsBar compact />
+      {uploadError && (
+        <div role="alert" className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          <span className="min-w-0 flex-1">{uploadError}</span>
+          {retryFile && (
+            <button
+              type="button"
+              onClick={() => void uploadStory(retryFile)}
+              disabled={uploading}
+              className="rounded-md border border-red-300 bg-white px-2 py-1 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
       <div className="flex gap-4 overflow-x-auto pb-2">
         <button
           onClick={() => fileInputRef.current?.click()}

@@ -9,6 +9,7 @@ import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import BackgroundSettings from "../components/BackgroundSettings.js";
 import TranslationLanguageSettings from "../components/TranslationLanguageSettings.js";
+import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 import { btnPrimary, card, input } from "../lib/ui.js";
 
 interface AccountDetails {
@@ -207,7 +208,7 @@ export default function AccountSettingsPage() {
       <BackgroundSettings />
       <TranslationLanguageSettings />
 
-      {accountQuery.isLoading && <p className="py-6 text-center text-sm text-gray-500">Loading account…</p>}
+      {accountQuery.isLoading && <CardListSkeleton rows={2} />}
       {accountQuery.isError && <p role="alert" className="mb-4 text-sm text-red-600">Could not load account settings.</p>}
 
       {accountQuery.data && (

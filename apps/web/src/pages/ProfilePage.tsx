@@ -10,6 +10,9 @@ import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import PostCard from "../components/PostCard.js";
 import Avatar from "../components/Avatar.js";
+import AppDialog from "../components/AppDialog.js";
+import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import { InlineSkeletonText } from "../components/LoadingSkeleton.js";
 import { card, input, btnPrimary, btnSecondary } from "../lib/ui.js";
 
 async function fetchProfile(username: string): Promise<UserProfile> {
@@ -41,6 +44,13 @@ export default function ProfilePage() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [postsLoaded, setPostsLoaded] = useState(false);
   const [connectionList, setConnectionList] = useState<"followers" | "following" | null>(null);
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false);
+  const [blockPending, setBlockPending] = useState(false);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [reportPending, setReportPending] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportStatus, setReportStatus] = useState<string | null>(null);
+  const [profileActionError, setProfileActionError] = useState<string | null>(null);
 
   const profileQuery = useQuery({
     queryKey: ["profile", username],
@@ -136,25 +146,42 @@ export default function ProfilePage() {
   }
 
   async function toggleBlock() {
-    if (!confirm(isBlocked ? "Unblock this user?" : "Block this user?")) return;
+    setBlockPending(true);
+    setProfileActionError(null);
     const method = isBlocked ? "DELETE" : "POST";
-    await apiFetch(`/users/${username}/block`, { method });
-    setIsBlocked(!isBlocked);
-    await queryClient.invalidateQueries({ queryKey: ["profile", username] });
+    try {
+      await apiFetch(`/users/${username}/block`, { method });
+      setIsBlocked(!isBlocked);
+      setBlockDialogOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["profile", username] });
+    } catch (error) {
+      setProfileActionError(error instanceof Error ? error.message : "Could not update the block status.");
+    } finally {
+      setBlockPending(false);
+    }
   }
 
   async function submitReport() {
-    const reason = prompt("Why are you reporting this profile?");
-    if (!reason) return;
-    await apiFetch("/reports", {
-      method: "POST",
-      body: JSON.stringify({
-        targetType: "user",
-        targetId: profileQuery.data?.id,
-        reason,
-      }),
-    });
-    alert("Report submitted. Thank you.");
+    if (!reportReason.trim()) return;
+    setReportPending(true);
+    setProfileActionError(null);
+    try {
+      await apiFetch("/reports", {
+        method: "POST",
+        body: JSON.stringify({
+          targetType: "user",
+          targetId: profileQuery.data?.id,
+          reason: reportReason.trim(),
+        }),
+      });
+      setReportDialogOpen(false);
+      setReportReason("");
+      setReportStatus("Report submitted. Thank you.");
+    } catch (error) {
+      setProfileActionError(error instanceof Error ? error.message : "Could not submit this report.");
+    } finally {
+      setReportPending(false);
+    }
   }
 
   function onPostDeleted(postId: string) {
@@ -164,10 +191,10 @@ export default function ProfilePage() {
   const profile = profileQuery.data;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
+    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="Profile" />
       <NavBar />
-      {profileQuery.isLoading && <p className="text-sm text-gray-500">Loading...</p>}
+      {profileQuery.isLoading && <CardListSkeleton rows={3} />}
       {profile && (
         <>
           <div className={`${card} mb-6 flex items-start gap-4`}>
@@ -251,16 +278,19 @@ export default function ProfilePage() {
               </div>
               {!profile.isMe && (
                 <div className="mt-2 flex gap-3 text-xs text-gray-400">
-                  <button onClick={() => void toggleBlock()} className="hover:underline">
+                  <button onClick={() => setBlockDialogOpen(true)} className="hover:underline">
                     {isBlocked ? "Unblock" : "Block"}
                   </button>
-                  <button onClick={() => void submitReport()} className="hover:underline">
+                  <button onClick={() => setReportDialogOpen(true)} className="hover:underline">
                     Report
                   </button>
                 </div>
               )}
             </div>
           </div>
+
+          {reportStatus && <p role="status" className="mb-3 text-sm text-green-700">{reportStatus}</p>}
+          {profileActionError && <p role="alert" className="mb-3 text-sm text-red-600">{profileActionError}</p>}
 
           {editing && (
             <div className={`${card} mb-6 flex flex-col gap-2`}>
@@ -340,7 +370,11 @@ export default function ProfilePage() {
             </div>
             <div className="max-h-[60vh] overflow-y-auto px-4">
               {connectionQuery.isLoading ? (
-                <p className="py-5 text-sm text-gray-500">Loading people...</p>
+                <div aria-hidden="true" className="space-y-2 py-5">
+                  <InlineSkeletonText width="w-28" />
+                  <InlineSkeletonText width="w-40" />
+                  <InlineSkeletonText width="w-32" />
+                </div>
               ) : connectionQuery.isError ? (
                 <p role="alert" className="py-5 text-sm text-red-600">Could not load this list.</p>
               ) : connectionQuery.data?.users.length ? (
@@ -367,6 +401,36 @@ export default function ProfilePage() {
           </section>
         </div>
       )}
+
+      <AppDialog
+        open={blockDialogOpen}
+        title={isBlocked ? "Unblock this user?" : "Block this user?"}
+        description={isBlocked ? "You will be able to interact again." : "You and this user will no longer interact with each other."}
+        confirmLabel={isBlocked ? "Unblock" : "Block"}
+        danger={!isBlocked}
+        pending={blockPending}
+        onClose={() => setBlockDialogOpen(false)}
+        onConfirm={() => void toggleBlock()}
+      />
+
+      <AppDialog
+        open={reportDialogOpen}
+        title="Report this profile"
+        description="Tell us briefly what happened."
+        confirmLabel="Send report"
+        pending={reportPending}
+        onClose={() => setReportDialogOpen(false)}
+        onConfirm={() => void submitReport()}
+      >
+        <textarea
+          value={reportReason}
+          onChange={(event) => setReportReason(event.target.value)}
+          rows={4}
+          maxLength={2000}
+          placeholder="Reason for this report"
+          className={input}
+        />
+      </AppDialog>
     </div>
   );
 }

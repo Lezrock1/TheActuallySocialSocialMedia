@@ -8,6 +8,7 @@ import type {
 } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
 import AiMarkdown from "./AiMarkdown.js";
+import { InlineSkeletonText } from "./LoadingSkeleton.js";
 
 async function fetchProviders(): Promise<AiProviderConfigPublic[]> {
   const res = await apiFetch<{ providers: AiProviderConfigPublic[] }>(
@@ -197,7 +198,9 @@ export default function AiChatPanel({ postId }: { postId: string }) {
       </div>
 
       {expanded && providersLoading && (
-        <p className="mt-2 text-right text-xs text-gray-500">Loading AI tools...</p>
+        <div className="mt-2 flex justify-end" aria-hidden="true">
+          <InlineSkeletonText width="w-24" />
+        </div>
       )}
       {expanded && providersError && (
         <p className="mt-2 text-right text-xs text-red-600">Could not load AI providers.</p>

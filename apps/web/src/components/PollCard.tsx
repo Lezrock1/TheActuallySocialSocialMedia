@@ -29,6 +29,22 @@ export default function PollCard({ pollId }: { pollId: string }) {
     if (!selectedOptionId || !poll) return;
     setVoting(true);
     setError(null);
+    const previous = queryClient.getQueryData<PollSummary>(["poll", pollId]);
+    if (previous) {
+      queryClient.setQueryData<PollSummary>(["poll", pollId], {
+        ...previous,
+        myVoteOptionId: selectedOptionId,
+        options: previous.options.map((option) => {
+          const wasMine = option.id === previous.myVoteOptionId;
+          const isMine = option.id === selectedOptionId;
+          if (!wasMine && !isMine) return option;
+          return {
+            ...option,
+            voteCount: Math.max(0, option.voteCount + (isMine ? 1 : 0) - (wasMine ? 1 : 0)),
+          };
+        }),
+      });
+    }
     try {
       const result = await apiFetch<{ poll: PollSummary }>(`/polls/${pollId}/vote`, {
         method: "POST",
@@ -36,6 +52,7 @@ export default function PollCard({ pollId }: { pollId: string }) {
       });
       queryClient.setQueryData(["poll", pollId], result.poll);
     } catch {
+      if (previous) queryClient.setQueryData(["poll", pollId], previous);
       setError("Could not submit your vote. Please try again.");
     } finally {
       setVoting(false);

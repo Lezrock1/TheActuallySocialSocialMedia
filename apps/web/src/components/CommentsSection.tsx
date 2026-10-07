@@ -6,6 +6,7 @@ import type { Comment } from "@app/shared";
 import { ApiError, apiFetch } from "../lib/api.js";
 import Avatar from "./Avatar.js";
 import LinkedMentions from "./LinkedMentions.js";
+import { InlineSkeletonText } from "./LoadingSkeleton.js";
 
 async function fetchComments(postId: string): Promise<Comment[]> {
   const res = await apiFetch<{ comments: Comment[] }>(`/posts/${postId}/comments`);
@@ -179,7 +180,12 @@ export default function CommentsSection({
       </div>
       <div className="flex flex-col gap-3">
           <div id={`comments-${postId}`} className="flex max-h-72 flex-col gap-3 overflow-y-auto">
-            {isLoading && <p className="text-sm text-gray-400">Loading comments...</p>}
+            {isLoading && (
+              <div aria-hidden="true" className="space-y-2 py-1">
+                <InlineSkeletonText width="w-40" />
+                <InlineSkeletonText width="w-52" />
+              </div>
+            )}
             {rootComments.filter((comment) => previewIds.has(comment.id)).map((comment) => renderCommentTree(comment))}
           </div>
           <form

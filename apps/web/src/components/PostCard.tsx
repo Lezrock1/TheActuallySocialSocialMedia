@@ -14,6 +14,7 @@ import PollCard from "./PollCard.js";
 import LinkedMentions from "./LinkedMentions.js";
 import { detectPostLanguage } from "../lib/translationLanguage.js";
 import type { TranslationLanguage } from "@app/shared";
+import AppDialog from "./AppDialog.js";
 
 const languageCodes: Record<string, string> = {
   de: "deu",
@@ -42,6 +43,9 @@ export default function PostCard({
   const [translationVisible, setTranslationVisible] = useState(false);
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const { data: translationPreferences } = useQuery({
     queryKey: ["user-preferences"],
     queryFn: () => apiFetch<{ translationLanguage: TranslationLanguage }>("/users/me/preferences"),
@@ -69,9 +73,17 @@ export default function PostCard({
   }, [post.text]);
 
   async function onDelete() {
-    if (!confirm("Permanently delete this post?")) return;
-    await apiFetch(`/posts/${post.id}`, { method: "DELETE" });
-    onDeleted?.(post.id);
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await apiFetch(`/posts/${post.id}`, { method: "DELETE" });
+      setDeleteDialogOpen(false);
+      onDeleted?.(post.id);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Could not delete this post.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function onTranslate() {
@@ -110,7 +122,7 @@ export default function PostCard({
           )}
         </div>
         {isOwn && (
-          <button onClick={() => void onDelete()} className={btnDanger}>
+          <button onClick={() => setDeleteDialogOpen(true)} className={btnDanger}>
             Delete
           </button>
         )}
@@ -177,6 +189,16 @@ export default function PostCard({
         onCommentAdded={() => setCommentCount((count) => count + 1)}
       />
       <FactCheckTransparency postId={post.id} />
+      <AppDialog
+        open={deleteDialogOpen}
+        title="Delete this post?"
+        description={deleteError ?? "This cannot be undone."}
+        confirmLabel="Delete"
+        danger
+        pending={deleting}
+        onClose={() => setDeleteDialogOpen(false)}
+        onConfirm={() => void onDelete()}
+      />
     </article>
   );
 }

@@ -5,7 +5,7 @@ import { useAuth, ApiError } from "../auth/AuthContext.js";
 import { card, input, btnPrimary } from "../lib/ui.js";
 
 export default function RegisterPage() {
-  const { register } = useAuth();
+  const { register, bootError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
@@ -38,6 +38,11 @@ export default function RegisterPage() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className={`${card} w-full max-w-sm`}>
         <h1 className="mb-6 text-xl font-semibold">Sign up</h1>
+        {bootError && (
+          <p role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            Server connection issue detected. You can still try signing up, or retry shortly.
+          </p>
+        )}
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <input
             type="email"

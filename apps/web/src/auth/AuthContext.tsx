@@ -7,6 +7,7 @@ import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
 interface AuthContextValue {
   user: PublicUser | null;
   loading: boolean;
+  bootError: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (
     email: string,
@@ -16,6 +17,7 @@ interface AuthContextValue {
   ) => Promise<void>;
   updateUser: (user: PublicUser | null) => void;
   logout: () => Promise<void>;
+  retryBootstrap: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -23,12 +25,26 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<PublicUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [bootError, setBootError] = useState<string | null>(null);
+
+  async function bootstrapSession(): Promise<void> {
+    setLoading(true);
+    setBootError(null);
+    try {
+      const res = await apiFetch<{ user: PublicUser }>("/auth/me");
+      setUser(res.user);
+    } catch (error) {
+      setUser(null);
+      if (!(error instanceof ApiError && error.status === 401)) {
+        setBootError("InTouch cannot reach the server right now.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    apiFetch<{ user: PublicUser }>("/auth/me")
-      .then((res) => setUser(res.user))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+    void bootstrapSession();
   }, []);
 
   useEffect(() => {
@@ -64,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, updateUser: setUser, logout }}>
+    <AuthContext.Provider value={{ user, loading, bootError, login, register, updateUser: setUser, logout, retryBootstrap: bootstrapSession }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 import LoginPage from "./pages/LoginPage.js";
@@ -13,20 +14,48 @@ import NotificationsPage from "./pages/NotificationsPage.js";
 import PeopleSearchPage from "./pages/PeopleSearchPage.js";
 import NotificationSettingsPage from "./pages/NotificationSettingsPage.js";
 import AccountSettingsPage from "./pages/AccountSettingsPage.js";
+import SecuritySettingsPage from "./pages/SecuritySettingsPage.js";
+import NotFoundPage from "./pages/NotFoundPage.js";
+import ApiUnavailablePage from "./pages/ApiUnavailablePage.js";
 import { MobileNav } from "./components/NavBar.js";
 import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
+import { AppBootSkeleton } from "./components/LoadingSkeleton.js";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
-  const { user, loading } = useAuth();
-  if (loading) return <p className="p-8">Loading...</p>;
+  const { user, loading, bootError, retryBootstrap } = useAuth();
+  if (loading) return <AppBootSkeleton />;
+  if (!user && bootError) {
+    return <ApiUnavailablePage onRetry={() => void retryBootstrap()} />;
+  }
   if (!user) return <Navigate to="/login" replace />;
   return <div className="pb-20 sm:pb-0">{children}</div>;
+}
+
+function titleForPath(pathname: string): string {
+  if (pathname === "/") return "Feed";
+  if (pathname.startsWith("/dms")) return "Messages";
+  if (pathname.startsWith("/snaps")) return "Snaps";
+  if (pathname.startsWith("/notifications")) return "Notifications";
+  if (pathname.startsWith("/people")) return "Find People";
+  if (pathname.startsWith("/settings/ai")) return "AI Tools";
+  if (pathname.startsWith("/settings/notifications")) return "Notification Settings";
+  if (pathname.startsWith("/settings/account")) return "Account Settings";
+  if (pathname.startsWith("/settings/security")) return "Security";
+  if (pathname.startsWith("/invitations")) return "Invitations";
+  if (pathname.startsWith("/post/")) return "Post";
+  if (pathname.startsWith("/u/")) return "Profile";
+  if (pathname.startsWith("/login")) return "Login";
+  if (pathname.startsWith("/register")) return "Register";
+  return "Not Found";
 }
 
 function AppRoutes() {
   const location = useLocation();
   const { user } = useAuth();
   usePageBackground(pageSurfaceForPath(location.pathname));
+  useEffect(() => {
+    document.title = `${titleForPath(location.pathname)} · InTouch`;
+  }, [location.pathname]);
   const showMobileNav = !!user && location.pathname !== "/login" && location.pathname !== "/register";
   return (
     <>
@@ -83,6 +112,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/settings/security"
+        element={
+          <RequireAuth>
+            <SecuritySettingsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/invitations"
         element={
           <RequireAuth>
@@ -122,6 +159,7 @@ function AppRoutes() {
           </RequireAuth>
         }
       />
+      <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </div>
     {showMobileNav && <MobileNav />}

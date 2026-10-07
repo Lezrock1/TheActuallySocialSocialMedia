@@ -6,6 +6,7 @@ import { apiFetch } from "../lib/api.js";
 import Avatar from "../components/Avatar.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 import { btnSecondary, input } from "../lib/ui.js";
 
 interface UserDirectoryPage {
@@ -79,7 +80,7 @@ export default function PeopleSearchPage() {
           {deferredQuery ? "Search results" : "Suggested for you"}
         </h2>
         {isLoading ? (
-          <p className="py-4 text-sm text-gray-500">Finding people...</p>
+          <CardListSkeleton rows={3} />
         ) : isError ? (
           <p role="alert" className="py-4 text-sm text-red-600">Could not load people. Try again.</p>
         ) : users.length === 0 ? (
@@ -122,7 +123,7 @@ export default function PeopleSearchPage() {
           disabled={searchQuery.isFetchingNextPage}
           className={`${btnSecondary} mt-4 w-full`}
         >
-          {searchQuery.isFetchingNextPage ? "Loading..." : "Load more"}
+          {searchQuery.isFetchingNextPage ? "Loading more people..." : "Load more"}
         </button>
       )}
     </div>

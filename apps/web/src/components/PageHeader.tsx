@@ -85,6 +85,14 @@ export default function PageHeader({
                 Notifications
               </Link>
               <Link
+                to="/settings/security"
+                role="menuitem"
+                onClick={() => setMenuOpen(false)}
+                className="block px-4 py-2.5 hover:bg-gray-50"
+              >
+                Security
+              </Link>
+              <Link
                 to="/settings/account"
                 role="menuitem"
                 onClick={() => setMenuOpen(false)}

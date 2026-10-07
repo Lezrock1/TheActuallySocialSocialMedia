@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../lib/api.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import { InlineSkeletonText } from "../components/LoadingSkeleton.js";
 import { card, input, btnPrimary } from "../lib/ui.js";
 
 interface InvitationStatus {
@@ -59,7 +60,7 @@ export default function InvitationsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
+    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="Invite friends" />
       <NavBar />
 
@@ -71,7 +72,7 @@ export default function InvitationsPage() {
         <p className="text-xs text-gray-500">
           {status
             ? `${status.remaining} of ${status.maxActive} active invitations available`
-            : "Loading invitations..."}
+            : <InlineSkeletonText width="w-52" />}
         </p>
         <button
           onClick={() => void createInvite()}
