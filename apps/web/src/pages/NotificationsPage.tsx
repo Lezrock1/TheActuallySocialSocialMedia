@@ -78,6 +78,7 @@ export default function NotificationsPage() {
   const rowVirtualizer = useWindowVirtualizer({
     count: notifications.length,
     estimateSize: () => 92,
+    getItemKey: (index) => notifications[index]?.id ?? index,
     overscan: 6,
     scrollMargin: virtualScrollMargin,
   });

@@ -87,6 +87,7 @@ export default function FeedPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const postSuccessTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const feedListRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
   const [virtualScrollMargin, setVirtualScrollMargin] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -146,20 +147,25 @@ export default function FeedPage() {
     function updateScrollMargin() {
       if (!feedListRef.current) return;
       const rect = feedListRef.current.getBoundingClientRect();
-      setVirtualScrollMargin(rect.top + window.scrollY);
+      setVirtualScrollMargin(Math.round(rect.top + window.scrollY));
     }
     updateScrollMargin();
     window.addEventListener("resize", updateScrollMargin);
     window.addEventListener("orientationchange", updateScrollMargin);
+    // Composer, banners and stories above the list change its offset.
+    const observer = new ResizeObserver(updateScrollMargin);
+    observer.observe(pageRef.current ?? document.body);
     return () => {
       window.removeEventListener("resize", updateScrollMargin);
       window.removeEventListener("orientationchange", updateScrollMargin);
+      observer.disconnect();
     };
   }, [feedRows.length]);
 
   const rowVirtualizer = useWindowVirtualizer({
     count: feedRows.length,
-    estimateSize: (index) => (feedRows[index]?.kind === "boundary" ? 44 : 360),
+    estimateSize: (index) => (feedRows[index]?.kind === "boundary" ? 44 : feedRows[index]?.kind === "follow" ? 56 : 360),
+    getItemKey: (index) => feedRows[index]?.key ?? index,
     overscan: 4,
     scrollMargin: virtualScrollMargin,
   });
@@ -285,7 +291,7 @@ export default function FeedPage() {
   }, [queryClient]);
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
+    <div ref={pageRef} className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PullToRefresh onRefresh={async () => {
         setPages([]);
         setLoadMoreError(false);
