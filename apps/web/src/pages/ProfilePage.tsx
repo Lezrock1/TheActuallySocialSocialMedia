@@ -13,6 +13,7 @@ import Avatar from "../components/Avatar.js";
 import AppDialog from "../components/AppDialog.js";
 import Sheet from "../components/Sheet.js";
 import SecurityCodeSheet from "../components/SecurityCodeSheet.js";
+import CloseFriendsSheet from "../components/CloseFriendsSheet.js";
 import { useCircles } from "../lib/circles.js";
 import type { PublicEncryptionKey } from "../lib/encryption.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
@@ -56,6 +57,7 @@ export default function ProfilePage() {
   const [reportStatus, setReportStatus] = useState<string | null>(null);
   const [profileActionError, setProfileActionError] = useState<string | null>(null);
   const [circlesOpen, setCirclesOpen] = useState(false);
+  const [ownCirclesOpen, setOwnCirclesOpen] = useState(false);
   const [securityOpen, setSecurityOpen] = useState(false);
   const circlesQuery = useCircles();
   const containingQuery = useQuery({
@@ -238,7 +240,8 @@ export default function ProfilePage() {
       {profileQuery.isLoading && <CardListSkeleton rows={3} />}
       {profile && (
         <>
-          <div className={`${card} mb-6 flex items-start gap-4`}>
+          <div className={`${card} mb-6`}>
+          <div className="flex items-start gap-4">
             <div className="shrink-0">
               {profile.isMe && editing ? (
                 <button
@@ -300,23 +303,19 @@ export default function ProfilePage() {
                 )}
               </div>
               {profile.bio && <p className="mt-1 text-sm">{profile.bio}</p>}
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
-                <span>{profile.postCount} Posts</span>
-                {profile.isMe ? (
-                  <button type="button" onClick={() => setConnectionList("followers")} className="hover:text-gray-900 hover:underline">
-                    {profile.followerCount} Followers
+              {profile.isMe && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOwnCirclesOpen(true)}
+                    className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="6" /><circle cx="15" cy="12" r="6" /></svg>
+                    Circles
                   </button>
-                ) : (
-                  <span>{profile.followerCount} Followers</span>
-                )}
-                {profile.isMe ? (
-                  <button type="button" onClick={() => setConnectionList("following")} className="hover:text-gray-900 hover:underline">
-                    {profile.followingCount} Following
-                  </button>
-                ) : (
-                  <span>{profile.followingCount} Following</span>
-                )}
-              </div>
+                </div>
+              )}
+
               {!profile.isMe && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
@@ -324,14 +323,16 @@ export default function ProfilePage() {
                     onClick={() => setCirclesOpen(true)}
                     className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50"
                   >
-                    <span aria-hidden="true">◯</span> Circles
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="6" /><circle cx="15" cy="12" r="6" /></svg>
+                    Circles
                   </button>
                   <button
                     type="button"
                     onClick={() => setSecurityOpen(true)}
                     className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50"
                   >
-                    <span aria-hidden="true">🛡️</span> Security code
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
+                    Security code
                   </button>
                 </div>
               )}
@@ -346,6 +347,30 @@ export default function ProfilePage() {
                 </div>
               )}
             </div>
+          </div>
+          <div className="mt-4 grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100 pt-3 text-center">
+            <div className="px-2">
+              <span className="block text-base font-semibold tabular-nums text-gray-900">{profile.postCount}</span>
+              <span className="block text-xs text-gray-500">Posts</span>
+            </div>
+            {(["followers", "following"] as const).map((kind) => {
+              const count = kind === "followers" ? profile.followerCount : profile.followingCount;
+              const label = kind === "followers" ? "Followers" : "Following";
+              const content = (
+                <>
+                  <span className="block text-base font-semibold tabular-nums text-gray-900">{count}</span>
+                  <span className="block text-xs text-gray-500">{label}</span>
+                </>
+              );
+              return profile.isMe ? (
+                <button key={kind} type="button" onClick={() => setConnectionList(kind)} className="rounded-lg px-2 transition-colors hover:bg-gray-50 active:bg-gray-100">
+                  {content}
+                </button>
+              ) : (
+                <div key={kind} className="px-2">{content}</div>
+              );
+            })}
+          </div>
           </div>
 
           {reportStatus && <p role="status" className="mb-3 text-sm text-green-700">{reportStatus}</p>}          {profileActionError && <p role="alert" className="mb-3 text-sm text-red-600">{profileActionError}</p>}
@@ -400,6 +425,9 @@ export default function ProfilePage() {
             </button>
           )}
         </>
+      )}
+      {profile && profile.isMe && (
+        <CloseFriendsSheet open={ownCirclesOpen} onClose={() => setOwnCirclesOpen(false)} />
       )}
       {profile && !profile.isMe && (
         <>

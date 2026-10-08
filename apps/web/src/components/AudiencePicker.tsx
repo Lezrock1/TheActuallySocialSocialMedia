@@ -10,6 +10,7 @@ export default function AudiencePicker({
   tone = "light",
   showManageLink = true,
   showHint = true,
+  stacked = false,
 }: {
   value: Audience;
   onChange: (audience: Audience) => void;
@@ -17,6 +18,7 @@ export default function AudiencePicker({
   tone?: "light" | "dark";
   showManageLink?: boolean;
   showHint?: boolean;
+  stacked?: boolean;
 }) {
   const { data } = useCircles();
   const [manageOpen, setManageOpen] = useState(false);
@@ -28,7 +30,7 @@ export default function AudiencePicker({
   const known = selected === "public" || selected === "close_friends" || circles.some((circle) => `circle:${circle.id}` === selected);
 
   return (
-    <div className={`flex min-w-0 flex-wrap items-center gap-2 ${className}`}>
+    <div className={`flex min-w-0 ${stacked ? "flex-col items-start gap-0.5" : "flex-wrap items-center gap-2"} ${className}`}>
       <label className="sr-only" htmlFor="audience-picker">Who can see this</label>
       <select
         id="audience-picker"
