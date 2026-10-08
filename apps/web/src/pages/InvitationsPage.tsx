@@ -10,6 +10,7 @@ interface InvitationStatus {
   activeCount: number;
   remaining: number;
   maxActive: number;
+  maxUsesPerInvitation?: number;
 }
 
 async function fetchInvitationStatus(): Promise<InvitationStatus> {
@@ -66,7 +67,7 @@ export default function InvitationsPage() {
 
       <section className={`${card} flex flex-col gap-3`}>
         <p className="text-sm text-gray-600">
-          Each invitation can be used once and expires after 14 days.
+          Each invitation link lets up to {status?.maxUsesPerInvitation ?? 5} friends join and expires after 14 days.
           Invited members can invite more friends themselves.
         </p>
         <p className="text-xs text-gray-500">
@@ -94,7 +95,7 @@ export default function InvitationsPage() {
               className={input}
             />
             <p className="text-xs text-gray-500">
-              Expires {expiresAt ? new Date(expiresAt).toLocaleString("en-US") : ""}. This code can only be used once; share the link only with the intended person.
+              Expires {expiresAt ? new Date(expiresAt).toLocaleString("en-US") : ""}. Up to {status?.maxUsesPerInvitation ?? 5} people can join with this link; share it only with people you trust.
             </p>
             <button onClick={() => void copyInvite()} className={btnPrimary}>
               {copied ? "Copied" : "Copy link"}
@@ -103,7 +104,7 @@ export default function InvitationsPage() {
         )}
         {status?.remaining === 0 && (
           <p className="text-xs text-gray-500">
-            Create more invitations after pending invitations have been redeemed or expired.
+            Create more invitations after pending links have been fully used or expired.
           </p>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}

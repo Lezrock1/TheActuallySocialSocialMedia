@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InboxSnap, PublicUser, SnapStreakSummary } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
-import { downloadMediaBlob, uploadMedia } from "../lib/upload.js";
+import { downloadMediaBlob, resizeImageForUpload, uploadMedia } from "../lib/upload.js";
 import {
   decryptSnap,
   encryptSnap,
@@ -332,11 +332,11 @@ export default function SnapsPage() {
           });
         } else {
           const { encryptedImage, payload } = await encryptSnap(
-            selectedImage,
+            await resizeImageForUpload(selectedImage),
             text,
             keyResponse.keys
           );
-          const imageKey = await uploadMedia(encryptedImage);
+          const imageKey = await uploadMedia(encryptedImage, { resize: false });
           await apiFetch("/snaps", {
             method: "POST",
             body: JSON.stringify({

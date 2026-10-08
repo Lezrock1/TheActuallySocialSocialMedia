@@ -1,3 +1,5 @@
+import { preloadAvatarsFromPayload } from "./mediaPreload.js";
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
 
 export class ApiError extends Error {
@@ -55,5 +57,7 @@ export async function apiFetch<T>(
   if (res.status === 204) {
     return undefined as T;
   }
-  return res.json() as Promise<T>;
+  const data = (await res.json()) as T;
+  preloadAvatarsFromPayload(data);
+  return data;
 }

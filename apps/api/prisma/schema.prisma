@@ -73,6 +73,8 @@ model Invitation {
   createdAt DateTime @default(now())
   expiresAt DateTime
   redeemedAt DateTime?
+  maxUses   Int      @default(1)
+  useCount  Int      @default(0)
 
   inviter User? @relation(fields: [inviterId], references: [id], onDelete: Cascade)
 

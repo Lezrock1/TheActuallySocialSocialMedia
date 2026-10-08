@@ -5,6 +5,7 @@ import {
   createInvitationCode,
   hashInvitationCode,
   INVITATION_LIFETIME_MS,
+  INVITATION_MAX_USES,
   MAX_ACTIVE_INVITATIONS,
 } from "../invitations.js";
 
@@ -21,6 +22,7 @@ export async function invitationRoutes(app: FastifyInstance): Promise<void> {
       activeCount,
       remaining: Math.max(0, MAX_ACTIVE_INVITATIONS - activeCount),
       maxActive: MAX_ACTIVE_INVITATIONS,
+      maxUsesPerInvitation: INVITATION_MAX_USES,
     });
   });
 
@@ -46,6 +48,7 @@ export async function invitationRoutes(app: FastifyInstance): Promise<void> {
               tokenHash: hashInvitationCode(token),
               inviterId: request.userId!,
               expiresAt,
+              maxUses: INVITATION_MAX_USES,
             },
           });
         },
@@ -66,6 +69,10 @@ export async function invitationRoutes(app: FastifyInstance): Promise<void> {
       throw error;
     }
 
-    return reply.code(201).send({ code: token, expiresAt: expiresAt.toISOString() });
+    return reply.code(201).send({
+      code: token,
+      expiresAt: expiresAt.toISOString(),
+      maxUses: INVITATION_MAX_USES,
+    });
   });
 }

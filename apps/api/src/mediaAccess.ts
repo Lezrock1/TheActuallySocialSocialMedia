@@ -1,6 +1,8 @@
 import { prisma } from "./db.js";
 import { getBlockedUserIds, getCloseFriendGrantedAuthorIds } from "./visibility.js";
 
+const AVATAR_MAX_AGE_SECONDS = 24 * 60 * 60;
+
 export interface MediaAccess {
   allowed: boolean;
   maxAgeSeconds: number;
@@ -78,6 +80,10 @@ export async function canReadMedia(
   const canReadAvatar = avatarOwners.some((avatar) => canSeeAuthor(avatar.id, "public"));
   const allowed = canReadPost || canReadStory || canReadSnap || canReadAvatar;
   if (!allowed || canReadSnap) return { allowed, maxAgeSeconds: 0 };
+
+  // Avatar keys are replaced on change, so avatar-only media can be cached for a day.
+  const onlyAvatar = avatarOwners.length > 0 && posts.length === 0 && stories.length === 0;
+  if (onlyAvatar) return { allowed: true, maxAgeSeconds: AVATAR_MAX_AGE_SECONDS };
 
   const activeStoryExpiries = stories
     .map((story) => story.expiresAt.getTime())

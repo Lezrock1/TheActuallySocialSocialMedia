@@ -58,9 +58,13 @@ self.addEventListener("fetch", (event) => {
   event.respondWith((async () => {
     const cache = await caches.open(targetCache);
     const cached = await cache.match(event.request);
+    // Media keys are immutable, so a cached copy is served without revalidation.
+    if (cached && isImage) return cached;
+
     const fetchPromise = fetch(event.request)
       .then(async (response) => {
-        if (response.ok || response.type === "opaque") {
+        // Opaque cross-origin responses could hide errors; the HTTP cache handles those.
+        if (response.ok) {
           await cache.put(event.request, response.clone());
         }
         return response;

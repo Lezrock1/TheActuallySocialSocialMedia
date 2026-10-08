@@ -128,7 +128,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       reply.header(
         "Cache-Control",
         access.maxAgeSeconds > 0
-          ? `private, max-age=${access.maxAgeSeconds}, must-revalidate`
+          ? `private, max-age=${access.maxAgeSeconds}${access.maxAgeSeconds >= 3600 ? ", immutable" : ", must-revalidate"}`
           : "private, no-store"
       );
       reply.header("Vary", "Cookie");

@@ -1,5 +1,7 @@
 import { apiFetch } from "./api.js";
 
+export { preloadMediaKeys, preloadMediaUrl } from "./mediaPreload.js";
+
 export interface MediaUploadInfo {
   key: string;
   compressed: boolean;
@@ -7,16 +9,19 @@ export interface MediaUploadInfo {
   storedSize: number;
 }
 
-const warmedMediaUrls = new Set<string>();
-const preloadedMediaHints = new Set<string>();
-const MAX_WARMED_MEDIA_URLS = 2000;
-const MAX_PRELOAD_HINTS = 120;
-
-async function resizeImageForUpload(file: File, maxDimension = 2048): Promise<File> {
+export async function resizeImageForUpload(file: File, maxDimension = 2048): Promise<File> {
   if (!file.type.startsWith("image/") || file.type === "image/gif" || file.type === "image/svg+xml") {
     return file;
   }
+  // Resizing is only an optimisation: undecodable formats (e.g. HEIC) upload unchanged.
+  try {
+    return await downscaleImage(file, maxDimension);
+  } catch {
+    return file;
+  }
+}
 
+async function downscaleImage(file: File, maxDimension: number): Promise<File> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
@@ -54,8 +59,11 @@ async function resizeImageForUpload(file: File, maxDimension = 2048): Promise<Fi
   return new File([blob], nextName, { type, lastModified: file.lastModified });
 }
 
-export async function uploadMediaWithInfo(file: File): Promise<MediaUploadInfo> {
-  const preparedFile = await resizeImageForUpload(file);
+export async function uploadMediaWithInfo(
+  file: File,
+  options: { resize?: boolean } = {}
+): Promise<MediaUploadInfo> {
+  const preparedFile = options.resize === false ? file : await resizeImageForUpload(file);
   const form = new FormData();
   form.append("file", preparedFile);
   const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
@@ -71,79 +79,13 @@ export async function uploadMediaWithInfo(file: File): Promise<MediaUploadInfo> 
   return (await res.json()) as MediaUploadInfo;
 }
 
-export async function uploadMedia(file: File): Promise<string> {
-  return (await uploadMediaWithInfo(file)).key;
+export async function uploadMedia(file: File, options: { resize?: boolean } = {}): Promise<string> {
+  return (await uploadMediaWithInfo(file, options)).key;
 }
 
 export function mediaUrl(key: string): string {
   const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
   return `${API_BASE}/media/${key}`;
-}
-
-interface PreloadMediaOptions {
-  priority?: "high" | "low";
-  addHint?: boolean;
-}
-
-function toMediaOrigin(url: string): string | null {
-  try {
-    return new URL(url, window.location.href).origin;
-  } catch {
-    return null;
-  }
-}
-
-function addPreloadHint(url: string): void {
-  if (typeof document === "undefined") return;
-  if (preloadedMediaHints.has(url) || preloadedMediaHints.size >= MAX_PRELOAD_HINTS) return;
-
-  const link = document.createElement("link");
-  link.rel = "preload";
-  link.as = "image";
-  link.href = url;
-
-  const targetOrigin = toMediaOrigin(url);
-  if (targetOrigin && targetOrigin !== window.location.origin) {
-    link.crossOrigin = "use-credentials";
-  }
-
-  document.head.append(link);
-  preloadedMediaHints.add(url);
-}
-
-export function preloadMediaUrl(url: string, options: PreloadMediaOptions = {}): void {
-  if (typeof window === "undefined") return;
-  if (!url || warmedMediaUrls.has(url)) return;
-
-  warmedMediaUrls.add(url);
-  if (warmedMediaUrls.size > MAX_WARMED_MEDIA_URLS) {
-    warmedMediaUrls.clear();
-  }
-
-  if (options.addHint !== false) {
-    addPreloadHint(url);
-  }
-
-  const image = new Image();
-  image.decoding = "async";
-  image.fetchPriority = options.priority === "high" ? "high" : "low";
-
-  const targetOrigin = toMediaOrigin(url);
-  if (targetOrigin && targetOrigin !== window.location.origin) {
-    image.crossOrigin = "use-credentials";
-  }
-
-  image.src = url;
-}
-
-export function preloadMediaKeys(
-  keys: Array<string | null | undefined>,
-  options: PreloadMediaOptions = {}
-): void {
-  keys.forEach((key) => {
-    if (!key) return;
-    preloadMediaUrl(mediaUrl(key), options);
-  });
 }
 
 export async function downloadMediaObjectUrl(key: string): Promise<string> {

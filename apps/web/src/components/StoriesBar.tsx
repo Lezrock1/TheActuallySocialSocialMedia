@@ -30,28 +30,27 @@ interface NetworkInformationLike extends EventTarget {
 }
 
 interface StoryLoadingPolicy {
-  previewCount: number;
   preloadCount: number;
 }
 
 function getStoryLoadingPolicy(): StoryLoadingPolicy {
   const connection = (navigator as Navigator & { connection?: NetworkInformationLike }).connection;
-  if (!connection) return { previewCount: 6, preloadCount: 2 };
+  if (!connection) return { preloadCount: 2 };
   if (
     connection.saveData
     || connection.effectiveType === "slow-2g"
     || connection.effectiveType === "2g"
     || (connection.downlink !== undefined && connection.downlink < 0.8)
   ) {
-    return { previewCount: 3, preloadCount: 1 };
+    return { preloadCount: 1 };
   }
   if (
     connection.effectiveType === "3g"
     || (connection.downlink !== undefined && connection.downlink <= 2)
   ) {
-    return { previewCount: 6, preloadCount: 2 };
+    return { preloadCount: 2 };
   }
-  return { previewCount: 12, preloadCount: 4 };
+  return { preloadCount: 4 };
 }
 
 export default function StoriesBar() {
@@ -99,8 +98,7 @@ export default function StoriesBar() {
   useEffect(() => {
     const keysToWarm: Array<string | null> = [];
     groups.slice(0, loadingPolicy.preloadCount).forEach((group) => {
-      const latestStory = group.stories[group.stories.length - 1];
-      keysToWarm.push(latestStory?.imageKey ?? null);
+      keysToWarm.push(group.stories[0]?.imageKey ?? null);
     });
 
     if (viewing) {
@@ -112,10 +110,7 @@ export default function StoriesBar() {
       );
     }
 
-    preloadMediaKeys(keysToWarm, {
-      priority: viewing ? "high" : "low",
-      addHint: !!viewing,
-    });
+    preloadMediaKeys(keysToWarm, { priority: viewing ? "high" : "low" });
   }, [groups, loadingPolicy.preloadCount, storyIndex, viewing]);
 
   function advanceStory(direction: -1 | 1) {
@@ -283,55 +278,13 @@ export default function StoriesBar() {
           >
             <span className="rounded-full bg-gradient-to-br from-gray-700 to-gray-900 p-0.5">
               <span className="block rounded-full border-2 border-white">
-                <Avatar avatarKey={group.author.avatarKey} username={group.author.username} size={52} priority="low" />
+                <Avatar avatarKey={group.stories[0].imageKey} username={group.author.username} size={52} />
               </span>
             </span>
             <span className="max-w-[60px] truncate text-[11px] text-gray-600">@{group.author.username}</span>
           </button>
         ))}
       </div>
-
-      {groups.length > 0 && (
-        <div className="mt-2 flex gap-2 overflow-x-auto pb-1" aria-label="Story previews">
-          {groups.slice(0, loadingPolicy.previewCount).map((group, index) => {
-            const latestStory = group.stories[group.stories.length - 1];
-            if (!latestStory) return null;
-            return (
-              <button
-                key={`preview-${group.author.id}`}
-                type="button"
-                onClick={() => openStoryGroup(group)}
-                className="relative h-40 w-28 shrink-0 overflow-hidden rounded-2xl border border-black/10 bg-black text-left shadow-sm"
-              >
-                <img
-                  src={mediaUrl(latestStory.imageKey)}
-                  alt={`Story preview from @${group.author.username}`}
-                  loading={index < loadingPolicy.preloadCount ? "eager" : "lazy"}
-                  decoding="async"
-                  fetchPriority={index === 0 ? "high" : "auto"}
-                  className="h-full w-full object-cover"
-                />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                <div className="absolute inset-x-2 bottom-2 text-white">
-                  <div className="mb-1 flex items-center gap-1.5">
-                    <Avatar
-                      avatarKey={group.author.avatarKey}
-                      username={group.author.username}
-                      size={20}
-                      priority={index === 0 ? "high" : "low"}
-                    />
-                    <span className="min-w-0 truncate text-[11px] font-semibold">@{group.author.username}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-white/90">
-                    <span>{group.stories.length} {group.stories.length === 1 ? "story" : "stories"}</span>
-                    <span>{formatRemainingTime(latestStory.expiresAt)}</span>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {viewing && (
         <div

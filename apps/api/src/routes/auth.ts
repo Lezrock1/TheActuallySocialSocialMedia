@@ -73,15 +73,16 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     let user;
     try {
       user = await prisma.$transaction(async (tx) => {
-        const claim = await tx.invitation.updateMany({
-          where: {
-            tokenHash: hashInvitationCode(inviteCode),
-            redeemedAt: null,
-            expiresAt: { gt: new Date() },
-          },
-          data: { redeemedAt: new Date() },
-        });
-        if (claim.count !== 1) {
+        // Atomic claim: a link is closed once its last use is taken.
+        const claim = await tx.$executeRaw`
+          UPDATE "Invitation"
+          SET "useCount" = "useCount" + 1,
+              "redeemedAt" = CASE WHEN "useCount" + 1 >= "maxUses" THEN NOW() ELSE NULL END
+          WHERE "tokenHash" = ${hashInvitationCode(inviteCode)}
+            AND "redeemedAt" IS NULL
+            AND "useCount" < "maxUses"
+            AND "expiresAt" > NOW()`;
+        if (claim !== 1) {
           throw new InvalidInvitationError();
         }
         return tx.user.create({ data: { email, username, usernameCanonical, passwordHash } });

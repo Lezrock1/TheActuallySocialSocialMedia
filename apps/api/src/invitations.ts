@@ -4,6 +4,7 @@ import { env } from "./env.js";
 
 export const INVITATION_LIFETIME_MS = 14 * 24 * 60 * 60 * 1000;
 export const MAX_ACTIVE_INVITATIONS = 100;
+export const INVITATION_MAX_USES = 5;
 
 export function hashInvitationCode(code: string): string {
   return createHash("sha256").update(code).digest("hex");
