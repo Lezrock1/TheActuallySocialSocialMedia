@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { PublicUser } from "@app/shared";
 import type { ActiveCall, CallType, IncomingCall } from "../lib/useWebRtcCall.js";
 import Avatar from "./Avatar.js";
@@ -96,7 +97,7 @@ export default function CallOverlay({
   const remoteUserIds = callUsers.filter((id) => id !== currentUserId);
   const remoteTileIds = [...new Set([...remoteUserIds, ...Object.keys(remoteStreams)])];
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 px-4 py-6">
       {incomingCall && !activeCall ? (
         <section role="dialog" aria-modal="true" aria-label="Incoming call" className="w-full max-w-sm rounded-xl bg-white p-5 text-center shadow-2xl">
@@ -167,6 +168,7 @@ export default function CallOverlay({
           <button type="button" onClick={onClearError} className="mt-4 min-h-10 w-full rounded-lg bg-black px-3 text-sm font-semibold text-white">Close</button>
         </section>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
