@@ -128,6 +128,9 @@ export default function CameraCapture({
   const [flashKey, setFlashKey] = useState(0);
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number; key: number } | null>(null);
   const [flipTurns, setFlipTurns] = useState(0);
+  const [useUltraWide, setUseUltraWide] = useState(false);
+  const [ultraWideAvailable, setUltraWideAvailable] = useState(false);
+  const ultraWideIdRef = useRef<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordMs, setRecordMs] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -168,12 +171,29 @@ export default function CameraCapture({
       }
       try {
         const next = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          video: {
+            ...(facing === "environment" && useUltraWide && ultraWideIdRef.current
+              ? { deviceId: { exact: ultraWideIdRef.current } }
+              : { facingMode: { ideal: facing } }),
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
           audio: false,
         });
         if (cancelled) {
           next.getTracks().forEach((track) => track.stop());
           return;
+        }
+        // Device labels are only readable after permission was granted.
+        if (facing === "environment") {
+          const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+          const wide = devices.find((device) =>
+            device.kind === "videoinput" &&
+            /ultra[\s-]?wide|wide[\s-]?angle|0\.5/i.test(device.label) &&
+            !/front|user|selfie|facetime/i.test(device.label)
+          );
+          ultraWideIdRef.current = wide?.deviceId || null;
+          setUltraWideAvailable(!!wide?.deviceId);
         }
         stream = next;
         const track = next.getVideoTracks()[0];
@@ -216,7 +236,7 @@ export default function CameraCapture({
       document.removeEventListener("visibilitychange", onVisibility);
       stop();
     };
-  }, [facing, nonce]);
+  }, [facing, nonce, useUltraWide]);
 
   const applyAdvanced = useCallback(async (constraint: Record<string, unknown>) => {
     try {
@@ -294,6 +314,7 @@ export default function CameraCapture({
   function flipCamera() {
     navigator.vibrate?.(10);
     setFlipTurns((turns) => turns + 1);
+    setUseUltraWide(false);
     setFacing((mode) => (mode === "environment" ? "user" : "environment"));
   }
 
@@ -529,6 +550,25 @@ export default function CameraCapture({
   const canZoom = zoomRange.max > zoomRange.min;
   const twoX = Math.min(2, zoomRange.max);
   const digitalZoom = !capabilities.zoom;
+  // 0.5x comes from a separate ultra-wide lens or, on some Android phones, from zoom values below 1.
+  const hardwareWide = !!capabilities.zoom && capabilities.zoom.min < 0.95;
+  const wideAvailable = facing === "environment" && (ultraWideAvailable || hardwareWide);
+  const onWideLens = useUltraWide || (hardwareWide && zoom < 0.75);
+
+  function selectLens(value: number) {
+    if (value < 1) {
+      if (hardwareWide && !useUltraWide) void setZoomLevel(Math.max(capabilities.zoom!.min, value));
+      else setUseUltraWide(true);
+      return;
+    }
+    // Leaving the ultra-wide lens restarts the main camera at 1x.
+    if (useUltraWide) {
+      setUseUltraWide(false);
+      return;
+    }
+    void setZoomLevel(value);
+  }
+  const lensChips = [...(wideAvailable ? [0.5] : []), 1, twoX].filter((value, index, list) => list.indexOf(value) === index);
 
   return (
     <div className="absolute inset-0 flex flex-col bg-black">
@@ -606,16 +646,19 @@ export default function CameraCapture({
         {canZoom && ready && (
           <div className="absolute inset-x-0 bottom-4 flex justify-center">
             <div className="flex items-center gap-1 rounded-full bg-black/40 p-1 backdrop-blur-md">
-              {[1, twoX].filter((value, index, list) => list.indexOf(value) === index).map((value) => {
-                const selected = Math.abs(zoom - value) < 0.15;
+              {lensChips.map((value) => {
+                const selected = value < 1
+                  ? onWideLens
+                  : !onWideLens && Math.abs(zoom - value) < 0.15;
                 return (
                   <button
                     key={value}
                     type="button"
-                    onClick={() => void setZoomLevel(value)}
+                    onClick={() => selectLens(value)}
+                    aria-label={value < 1 ? "Ultra-wide" : `${value}x zoom`}
                     className={`h-8 min-w-8 rounded-full px-2 text-xs font-semibold transition-colors ${selected ? "bg-white text-black" : "text-white"}`}
                   >
-                    {selected ? `${zoom.toFixed(1)}x` : `${value}x`}
+                    {selected && value >= 1 ? `${zoom.toFixed(1)}x` : value < 1 && hardwareWide && selected ? `${zoom.toFixed(1)}x` : `${value}x`}
                   </button>
                 );
               })}
