@@ -62,6 +62,17 @@ export default function AudioPlayer({
     audio.currentTime = ((event.clientX - rect.left) / rect.width) * audio.duration;
   }
 
+  function seekByKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration)) return;
+    if (event.key === "ArrowRight" || event.key === "ArrowUp") audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
+    else if (event.key === "ArrowLeft" || event.key === "ArrowDown") audio.currentTime = Math.max(0, audio.currentTime - 5);
+    else if (event.key === "Home") audio.currentTime = 0;
+    else if (event.key === "End") audio.currentTime = audio.duration;
+    else return;
+    event.preventDefault();
+  }
+
   function cycleSpeed() {
     const next = (speedIndex + 1) % SPEEDS.length;
     setSpeedIndex(next);
@@ -93,7 +104,18 @@ export default function AudioPlayer({
         )}
       </button>
       <div className="min-w-0 flex-1">
-        <div className="flex h-7 cursor-pointer items-center gap-[2px]" onClick={seek} role="presentation">
+        <div
+          className="flex h-7 cursor-pointer items-center gap-[2px] rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          onClick={seek}
+          onKeyDown={seekByKeyboard}
+          role="slider"
+          tabIndex={src ? 0 : -1}
+          aria-label="Audio position"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(progress * 100)}
+          aria-valuetext={`${formatDuration(durationMs * progress)} of ${formatDuration(durationMs)}`}
+        >
           {bars.map((peak, index) => (
             <span
               key={index}

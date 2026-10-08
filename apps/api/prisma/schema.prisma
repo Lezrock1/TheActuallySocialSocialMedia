@@ -203,6 +203,7 @@ model NotificationPreference {
   postsFromCircles     Boolean  @default(true)
   circles              Boolean  @default(true)
   meetupResponses      Boolean  @default(true)
+  meetupUpdates        Boolean  @default(true)
   quietHoursEnabled    Boolean  @default(false)
   // minutes after local midnight
   quietStartMinute     Int      @default(1320)
@@ -270,6 +271,8 @@ model Meetup {
   startsAt  DateTime
   place     String
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cancelledAt DateTime?
 
   story     Story            @relation(fields: [storyId], references: [id], onDelete: Cascade)
   author    User             @relation(fields: [authorId], references: [id], onDelete: Cascade)

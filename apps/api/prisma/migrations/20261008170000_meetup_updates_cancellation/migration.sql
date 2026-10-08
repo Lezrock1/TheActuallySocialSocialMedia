@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "NotificationPreference"
+  ADD COLUMN "meetupUpdates" BOOLEAN NOT NULL DEFAULT true;
+
+ALTER TABLE "Meetup"
+  ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN "cancelledAt" TIMESTAMP(3);

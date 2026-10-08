@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { createStoryReactionSchema, createStorySchema } from "@app/shared";
+import { createStoryReactionSchema, createStorySchema, updateStoryMeetupSchema } from "@app/shared";
 import type { PostVisibility, Story, StoryGroup } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
@@ -58,6 +58,7 @@ function toStoryDto(story: NonNullable<StoryRow>, viewerId: string): Story {
             .slice(0, MAX_LISTED_ATTENDEES)
             .map((response) => toPublicUser(response.user)),
           isGoing: story.meetup.responses.some((response) => response.userId === viewerId),
+          isCancelled: story.meetup.cancelledAt !== null,
         }
       : null,
     reactionCounts: Array.from(
@@ -276,6 +277,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
       if (!meetup || !(await canInteractWithStory(request.userId!, meetup.story))) {
         return reply.code(404).send({ error: "Meetup not found" });
       }
+      if (meetup.cancelledAt) return reply.code(409).send({ error: "This meetup was cancelled" });
 
       const existing = await prisma.meetupResponse.findUnique({
         where: { meetupId_userId: { meetupId: meetup.id, userId: request.userId! } },
@@ -296,6 +298,65 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
 
       const story = await loadStory(meetup.story.id);
       return reply.send({ meetup: story ? toStoryDto(story, request.userId!).meetup : null });
+    }
+  );
+
+  app.patch<{ Params: { id: string } }>(
+    "/meetups/:id",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const parsed = updateStoryMeetupSchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+      const meetup = await prisma.meetup.findUnique({
+        where: { id: request.params.id },
+        include: { story: { select: { authorId: true, expiresAt: true } }, responses: { select: { userId: true } } },
+      });
+      if (!meetup || meetup.authorId !== request.userId || meetup.story.expiresAt <= new Date()) {
+        return reply.code(404).send({ error: "Meetup not found" });
+      }
+      if (meetup.cancelledAt) return reply.code(409).send({ error: "This meetup was cancelled" });
+      const startsAt = new Date(parsed.data.startsAt);
+      const lead = startsAt.getTime() - Date.now();
+      if (lead < 0 || lead > MAX_MEETUP_LEAD_MS) {
+        return reply.code(400).send({ error: "Pick a meetup time in the future (within a year)" });
+      }
+      const updated = await prisma.meetup.update({
+        where: { id: meetup.id },
+        data: { title: parsed.data.title || null, startsAt, place: parsed.data.place },
+        include: storyInclude.meetup.include,
+      });
+      await Promise.all(meetup.responses.map(({ userId }) => createUserNotification({
+        recipientId: userId,
+        actorId: request.userId!,
+        type: "meetup_update",
+        dedupeKey: `meetup-update:${meetup.id}:${updated.updatedAt.toISOString()}:${userId}`,
+      }).catch((error) => request.log.error(error, "Meetup update notification failed"))));
+      const story = await loadStory(meetup.storyId);
+      return reply.send({ meetup: story ? toStoryDto(story, request.userId!).meetup : null });
+    }
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/meetups/:id/cancel",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const meetup = await prisma.meetup.findUnique({
+        where: { id: request.params.id },
+        include: { story: { select: { authorId: true, expiresAt: true } }, responses: { select: { userId: true } } },
+      });
+      if (!meetup || meetup.authorId !== request.userId || meetup.story.expiresAt <= new Date()) {
+        return reply.code(404).send({ error: "Meetup not found" });
+      }
+      if (meetup.cancelledAt) return reply.code(204).send();
+      const cancelledAt = new Date();
+      await prisma.meetup.update({ where: { id: meetup.id }, data: { cancelledAt } });
+      await Promise.all(meetup.responses.map(({ userId }) => createUserNotification({
+        recipientId: userId,
+        actorId: request.userId!,
+        type: "meetup_cancelled",
+        dedupeKey: `meetup-cancelled:${meetup.id}:${cancelledAt.toISOString()}:${userId}`,
+      }).catch((error) => request.log.error(error, "Meetup cancellation notification failed"))));
+      return reply.code(204).send();
     }
   );
 

@@ -26,7 +26,8 @@ export interface MeetupContent {
 export type ParsedMessage =
   | { kind: "text"; text: string; storyReply?: StoryReplyContext }
   | { kind: "voice"; voice: VoiceContent }
-  | { kind: "meetup"; meetup: MeetupContent }
+  | { kind: "meetup"; meetup: MeetupContent; event: "created" | "updated" }
+  | { kind: "meetup_cancel"; meetupId: string }
   | { kind: "rsvp"; meetupId: string; going: boolean };
 
 function isString(value: unknown): value is string {
@@ -70,11 +71,12 @@ export function parseMessageContent(content: string): ParsedMessage {
         };
       }
     }
-    if (value.type === "meetup") {
+    if (value.type === "meetup" || value.type === "meetup_update") {
       const meetup = value.meetup as Partial<MeetupContent> | undefined;
       if (isString(meetup?.id) && isString(meetup.startsAt) && isString(meetup.place)) {
         return {
           kind: "meetup",
+          event: value.type === "meetup_update" ? "updated" : "created",
           meetup: {
             id: meetup.id,
             title: isString(meetup.title) ? meetup.title : "",
@@ -84,6 +86,9 @@ export function parseMessageContent(content: string): ParsedMessage {
           },
         };
       }
+    }
+    if (value.type === "meetup_cancel" && isString(value.meetupId)) {
+      return { kind: "meetup_cancel", meetupId: value.meetupId };
     }
     if (value.type === "meetup_rsvp" && isString(value.meetupId) && typeof value.going === "boolean") {
       return { kind: "rsvp", meetupId: value.meetupId, going: value.going };
@@ -96,8 +101,46 @@ export function parseMessageContent(content: string): ParsedMessage {
 
 export const buildVoiceContent = (voice: VoiceContent) => JSON.stringify({ type: "voice", voice });
 export const buildMeetupContent = (meetup: MeetupContent) => JSON.stringify({ type: "meetup", meetup });
+export const buildMeetupUpdateContent = (meetup: MeetupContent) => JSON.stringify({ type: "meetup_update", meetup });
+export const buildMeetupCancelContent = (meetupId: string) => JSON.stringify({ type: "meetup_cancel", meetupId });
 export const buildRsvpContent = (meetupId: string, going: boolean) =>
   JSON.stringify({ type: "meetup_rsvp", meetupId, going });
+
+export interface MeetupState {
+  meetup: MeetupContent;
+  status: "active" | "cancelled";
+  proposerId: string;
+  updated: boolean;
+  sourceMessageId: string;
+}
+
+export function computeMeetupStates(
+  entries: { id: string; senderId: string; parsed: ParsedMessage }[]
+): Map<string, MeetupState> {
+  const states = new Map<string, MeetupState>();
+  for (const { id, senderId, parsed } of entries) {
+    if (parsed.kind === "meetup") {
+      const existing = states.get(parsed.meetup.id);
+      if (!existing) {
+        states.set(parsed.meetup.id, {
+          meetup: parsed.meetup,
+          status: "active",
+          proposerId: senderId,
+          updated: parsed.event === "updated",
+          sourceMessageId: id,
+        });
+      } else if (parsed.event === "updated" && existing.proposerId === senderId && existing.status === "active") {
+        states.set(parsed.meetup.id, { ...existing, meetup: parsed.meetup, updated: true });
+      }
+    } else if (parsed.kind === "meetup_cancel") {
+      const existing = states.get(parsed.meetupId);
+      if (existing?.proposerId === senderId && existing.status !== "cancelled") {
+        states.set(parsed.meetupId, { ...existing, status: "cancelled" });
+      }
+    }
+  }
+  return states;
+}
 
 export interface MeetupAttendance {
   // sender ids that are currently "I'm in"

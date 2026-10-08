@@ -18,6 +18,7 @@ const enabledPreferences: NotificationPreferences = {
   postsFromCircles: true,
   circles: true,
   meetupResponses: true,
+  meetupUpdates: true,
   quietHoursEnabled: false,
   quietStartMinute: 1320,
   quietEndMinute: 420,
@@ -46,6 +47,8 @@ describe("isNotificationEnabled", () => {
       "circle_post",
       "circle_added",
       "meetup_response",
+      "meetup_update",
+      "meetup_cancelled",
     ];
     for (const type of notificationTypes) {
       expect(isNotificationEnabled(type, enabledPreferences)).toBe(true);

@@ -276,6 +276,8 @@ export const NOTIFICATION_TYPES = [
   "circle_post",
   "circle_added",
   "meetup_response",
+  "meetup_update",
+  "meetup_cancelled",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -295,6 +297,7 @@ export interface NotificationPreferences {
   postsFromCircles: boolean;
   circles: boolean;
   meetupResponses: boolean;
+  meetupUpdates: boolean;
   quietHoursEnabled: boolean;
   // minutes after local midnight
   quietStartMinute: number;
@@ -331,6 +334,9 @@ export const storyMeetupSchema = z.object({
 });
 export type StoryMeetupInput = z.infer<typeof storyMeetupSchema>;
 
+export const updateStoryMeetupSchema = storyMeetupSchema;
+export type UpdateStoryMeetupInput = z.infer<typeof updateStoryMeetupSchema>;
+
 export const createStorySchema = z.object({
   imageKey: z.string().min(1),
   audioKey: z.string().min(1).optional(),
@@ -356,6 +362,7 @@ export interface StoryMeetup {
   attendeeCount: number;
   attendees: PublicUser[];
   isGoing: boolean;
+  isCancelled: boolean;
 }
 
 export interface Story {

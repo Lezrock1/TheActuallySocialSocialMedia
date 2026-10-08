@@ -232,6 +232,11 @@ export default function StoryComposer({
           <p className="col-span-2 text-center text-xs leading-5 text-gray-500">
             Stories disappear after 24 hours. Voice stories can be up to {MAX_STORY_AUDIO_MS / 1000} seconds.
           </p>
+          <p className="col-span-2 text-center text-[11px] leading-4 text-gray-400">
+            {isAudioRecordingSupported()
+              ? "Microphone is used only while recording. Audio stories follow your audience settings but are not end-to-end encrypted; chat voice messages are."
+              : "This browser cannot record audio. Choose a photo instead. Audio stories are not end-to-end encrypted."}
+          </p>
         </div>
       )}
 
@@ -336,7 +341,16 @@ export default function StoryComposer({
           </div>
         </div>
       )}
-      {recorder.error && <p role="alert" className="mt-2 text-xs text-red-600">{recorder.error}</p>}
+      {recorder.error && (
+        <div role="alert" className="mt-3 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <p className="min-w-0 flex-1">{recorder.error}</p>
+          {isAudioRecordingSupported() && (
+            <button type="button" onClick={() => void recorder.start()} className="shrink-0 font-semibold underline">
+              Try again
+            </button>
+          )}
+        </div>
+      )}
     </Sheet>
   );
 }

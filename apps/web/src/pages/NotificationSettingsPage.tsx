@@ -44,6 +44,7 @@ const sections: {
       { key: "closeFriends", label: "Close Friends updates", description: "When someone adds you to their close-friends list." },
       { key: "circles", label: "Circle invites", description: "When someone adds you to one of their circles." },
       { key: "meetupResponses", label: "Meetup answers", description: "When someone says \"I'm in\" to your story meetup." },
+      { key: "meetupUpdates", label: "Meetup changes", description: "When a story meetup you joined changes or is cancelled." },
     ],
   },
 ];

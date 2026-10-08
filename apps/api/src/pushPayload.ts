@@ -25,6 +25,8 @@ const activityText: Record<NotificationType, string> = {
   circle_post: "shared a new post with a circle you're in",
   circle_added: "added you to a circle",
   meetup_response: "is going to your meetup",
+  meetup_update: "updated a meetup you joined",
+  meetup_cancelled: "cancelled a meetup you joined",
 };
 
 export function createPushPayload(input: PushPayloadInput) {

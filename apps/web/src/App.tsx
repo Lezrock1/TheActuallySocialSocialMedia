@@ -20,6 +20,7 @@ const NotFoundPage = lazy(() => import("./pages/NotFoundPage.js"));
 const ApiUnavailablePage = lazy(() => import("./pages/ApiUnavailablePage.js"));
 import { MobileNav } from "./components/NavBar.js";
 import { CameraProvider } from "./components/camera/CameraProvider.js";
+import LocalMeetupReminderProvider from "./components/LocalMeetupReminderProvider.js";
 import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
 import { AppBootSkeleton } from "./components/LoadingSkeleton.js";
 
@@ -183,9 +184,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <CameraProvider>
-        <AppRoutes />
-      </CameraProvider>
+      <LocalMeetupReminderProvider>
+        <CameraProvider>
+          <AppRoutes />
+        </CameraProvider>
+      </LocalMeetupReminderProvider>
     </AuthProvider>
   );
 }

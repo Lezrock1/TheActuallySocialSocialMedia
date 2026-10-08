@@ -50,6 +50,10 @@ function notificationText(notification: UserNotification): string {
       return "added you to a circle";
     case "meetup_response":
       return "is going to your meetup";
+    case "meetup_update":
+      return "updated a meetup you joined";
+    case "meetup_cancelled":
+      return "cancelled a meetup you joined";
   }
 }
 

@@ -1,6 +1,7 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
 import { audienceToValue, useCircles, valueToAudience } from "../lib/circles.js";
 import type { Audience } from "../lib/circles.js";
+import CircleMemberManagerSheet from "./CircleMemberManagerSheet.js";
 
 export default function AudiencePicker({
   value,
@@ -16,12 +17,16 @@ export default function AudiencePicker({
   showManageLink?: boolean;
 }) {
   const { data } = useCircles();
+  const [manageOpen, setManageOpen] = useState(false);
   const circles = data?.circles ?? [];
   const selected = audienceToValue(value);
+  const selectedCircle = value.visibility === "circle"
+    ? circles.find((circle) => circle.id === value.circleId)
+    : undefined;
   const known = selected === "public" || selected === "close_friends" || circles.some((circle) => `circle:${circle.id}` === selected);
 
   return (
-    <div className={`flex min-w-0 items-center gap-2 ${className}`}>
+    <div className={`flex min-w-0 flex-wrap items-center gap-2 ${className}`}>
       <label className="sr-only" htmlFor="audience-picker">Who can see this</label>
       <select
         id="audience-picker"
@@ -46,13 +51,22 @@ export default function AudiencePicker({
         )}
       </select>
       {showManageLink && (
-        <Link
-          to="/circles"
-          className={`shrink-0 text-xs font-medium hover:underline ${tone === "dark" ? "text-white/80" : "text-blue-600"}`}
-        >
-          {circles.length ? "Circles" : "New circle"}
-        </Link>
+          <button
+            type="button"
+            onClick={() => setManageOpen(true)}
+            className={`shrink-0 text-xs font-medium hover:underline ${tone === "dark" ? "text-white/80" : "text-blue-600"}`}
+          >
+            Manage
+          </button>
       )}
+        <CircleMemberManagerSheet open={manageOpen} onClose={() => setManageOpen(false)} />
+        <span className={`w-full text-[10px] leading-4 ${tone === "dark" ? "text-white/55" : "text-gray-500"}`} aria-live="polite">
+          {selectedCircle
+            ? `${selectedCircle.memberCount} members + you can see this.`
+            : value.visibility === "close_friends"
+              ? "Only your Close Friends can see this share."
+              : "Anyone can see this share."}
+        </span>
     </div>
   );
 }

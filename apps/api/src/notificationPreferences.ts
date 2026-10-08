@@ -20,6 +20,8 @@ const preferenceByType: Record<NotificationType, BooleanPreferenceKey> = {
   circle_post: "postsFromCircles",
   circle_added: "circles",
   meetup_response: "meetupResponses",
+  meetup_update: "meetupUpdates",
+  meetup_cancelled: "meetupUpdates",
 };
 
 export const notificationPreferenceSelect = {
@@ -38,6 +40,7 @@ export const notificationPreferenceSelect = {
   postsFromCircles: true,
   circles: true,
   meetupResponses: true,
+  meetupUpdates: true,
   quietHoursEnabled: true,
   quietStartMinute: true,
   quietEndMinute: true,

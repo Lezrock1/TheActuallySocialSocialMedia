@@ -107,8 +107,12 @@ export function useAudioRecorder({
       teardown();
       setError(
         caught instanceof DOMException && caught.name === "NotAllowedError"
-          ? "Microphone access is blocked. Allow it in your browser settings."
-          : "Could not start recording."
+          ? "Microphone access is blocked. Allow it for InTouch in your browser or device settings, then try again."
+          : caught instanceof DOMException && caught.name === "NotFoundError"
+            ? "No microphone was found. You can still send a photo or text."
+            : caught instanceof DOMException && caught.name === "NotReadableError"
+              ? "The microphone is busy in another app. Close it and try again."
+              : "Could not start recording. You can still send a photo or text."
       );
     }
   }, [teardown]);

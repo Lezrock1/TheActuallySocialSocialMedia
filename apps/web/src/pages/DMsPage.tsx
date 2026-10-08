@@ -43,20 +43,25 @@ import {
 import { InlineSkeletonText } from "../components/LoadingSkeleton.js";
 import MeetupCard from "../components/chat/MeetupCard.js";
 import VoiceMessage from "../components/chat/VoiceMessage.js";
-import MeetupSheet from "../components/MeetupFields.js";
+import MeetupSheet, { meetupToDraft } from "../components/MeetupFields.js";
 import type { MeetupDraft } from "../components/MeetupFields.js";
+import AppDialog from "../components/AppDialog.js";
 import SecurityCodeSheet from "../components/SecurityCodeSheet.js";
 import { overallStatus, usePeerSafety } from "../lib/safety.js";
 import {
+  buildMeetupCancelContent,
   buildMeetupContent,
+  buildMeetupUpdateContent,
   buildRsvpContent,
   buildVoiceContent,
   computeMeetupAttendance,
+  computeMeetupStates,
   parseMessageContent,
 } from "../lib/messageContent.js";
-import type { StoryReplyContext } from "../lib/messageContent.js";
+import type { MeetupContent, StoryReplyContext } from "../lib/messageContent.js";
+import { clearLocalMeetupReminder, getLocalMeetupReminderMinutes, setLocalMeetupReminder, syncLocalChatMeetupReminders } from "../lib/localMeetupReminders.js";
 import { computePeaks, encryptAudioBlob } from "../lib/voice.js";
-import { formatDuration, useAudioRecorder } from "../lib/useAudioRecorder.js";
+import { formatDuration, isAudioRecordingSupported, useAudioRecorder } from "../lib/useAudioRecorder.js";
 import type { AudioRecording } from "../lib/useAudioRecorder.js";
 import { MAX_VOICE_MESSAGE_MS } from "@app/shared";
 
@@ -130,6 +135,8 @@ export default function DMsPage() {
   const [decryptedMessages, setDecryptedMessages] = useState<Record<string, string>>({});
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [meetupOpen, setMeetupOpen] = useState(false);
+  const [editingMeetup, setEditingMeetup] = useState<MeetupContent | null>(null);
+  const [cancelMeetupId, setCancelMeetupId] = useState<string | null>(null);
   const [securityOpen, setSecurityOpen] = useState(false);
   const [safetyVersion, setSafetyVersion] = useState(0);
   const [voiceBusy, setVoiceBusy] = useState(false);
@@ -268,6 +275,20 @@ export default function DMsPage() {
   const attendance = computeMeetupAttendance(
     parsedMessages.map(({ message, parsed }) => ({ senderId: message.senderId, parsed }))
   );
+  const meetupStates = computeMeetupStates(
+    parsedMessages.map(({ message, parsed }) => ({ id: message.id, senderId: message.senderId, parsed }))
+  );
+  const [reminderVersion, setReminderVersion] = useState(0);
+  useEffect(() => {
+    if (!user || !activeId || !messagesLoaded) return;
+    const reminderStates = new Map([...meetupStates].map(([id, state]) => [
+      id,
+      { startsAt: state.meetup.startsAt, status: state.status },
+    ]));
+    if (syncLocalChatMeetupReminders(user.id, activeId, reminderStates)) {
+      setReminderVersion((version) => version + 1);
+    }
+  }, [activeId, decryptedMessages, messagesLoaded, newestMessageId, user]);
   const peers = (activeConversation?.members ?? []).filter((member) => member.id !== user?.id);
   const peerSafety = usePeerSafety(user?.id, peers.map((peer) => peer.id), encryptionKeys, safetyVersion);
   const securityStatus = overallStatus(peers.map((peer) => peerSafety[peer.id] ?? { safetyNumber: null, status: "unavailable" }));
@@ -494,6 +515,49 @@ export default function DMsPage() {
       place: draft.place.trim(),
       note: draft.note.trim(),
     }));
+  }
+
+  async function updateMeetup(draft: MeetupDraft) {
+    if (!editingMeetup) return;
+    await sendEncrypted(buildMeetupUpdateContent({
+      id: editingMeetup.id,
+      title: draft.title.trim(),
+      startsAt: new Date(draft.when).toISOString(),
+      place: draft.place.trim(),
+      note: draft.note.trim(),
+    }));
+    setEditingMeetup(null);
+  }
+
+  async function cancelMeetup(meetupId: string) {
+    try {
+      await sendEncrypted(buildMeetupCancelContent(meetupId));
+      if (user) clearLocalMeetupReminder(user.id, meetupId);
+      setReminderVersion((version) => version + 1);
+      setMessageError(null);
+      return true;
+    } catch (error) {
+      setMessageError(error instanceof Error ? error.message : "Could not cancel this meetup.");
+      return false;
+    }
+  }
+
+  async function setMeetupReminder(meetupId: string, startsAt: string, minutes: number | null) {
+    if (!user || !activeId) return;
+    const error = await setLocalMeetupReminder(
+      user.id,
+      meetupId,
+      startsAt,
+      minutes,
+      `/dms?conversation=${encodeURIComponent(activeId)}`,
+      undefined,
+      activeId
+    );
+    if (error) setMessageError(error);
+    else {
+      setMessageError(null);
+      setReminderVersion((version) => version + 1);
+    }
   }
 
   async function toggleRsvp(meetupId: string, going: boolean) {
@@ -806,29 +870,46 @@ export default function DMsPage() {
                 </div>
               )}
               {parsedMessages.map(({ message, parsed, decrypting }) => {
-                if (parsed.kind === "rsvp") return null;
+                if (parsed.kind === "rsvp" || parsed.kind === "meetup_cancel") return null;
                 const mine = message.senderId === user?.id;
                 const sender = activeConversation?.members.find((member) => member.id === message.senderId);
 
                 if (parsed.kind === "meetup") {
+                  const state = meetupStates.get(parsed.meetup.id);
+                  if (parsed.event === "updated" && state?.sourceMessageId !== message.id) return null;
+                  if (state && state.sourceMessageId !== message.id) return null;
+                  const meetup = state?.meetup ?? parsed.meetup;
                   const goingIds = attendance.get(parsed.meetup.id)?.goingUserIds ?? [];
                   const goingMembers = (activeConversation?.members ?? []).filter((member) => goingIds.includes(member.id));
                   const isGoing = !!user && goingIds.includes(user.id);
+                  const isCancelled = state?.status === "cancelled";
+                  const canManage = state?.proposerId === user?.id;
                   return (
                     <div key={message.id} className={`flex max-w-[92%] flex-col gap-1 ${mine ? "self-end items-end" : "self-start items-start"}`}>
                       <span className="px-1 text-[11px] text-gray-500">
-                        {mine ? "You" : `@${sender?.username ?? "someone"}`} proposed a meetup
+                        {isCancelled
+                          ? "Meetup cancelled"
+                          : state?.updated
+                            ? "Meetup updated"
+                            : `${mine ? "You" : `@${sender?.username ?? "someone"}`} proposed a meetup`}
                       </span>
                       <MeetupCard
-                        title={parsed.meetup.title}
-                        startsAt={parsed.meetup.startsAt}
-                        place={parsed.meetup.place}
-                        note={parsed.meetup.note}
+                        title={meetup.title}
+                        startsAt={meetup.startsAt}
+                        place={meetup.place}
+                        note={meetup.note}
                         attendees={goingMembers}
                         attendeeCount={goingMembers.length}
                         isGoing={isGoing}
+                        isCancelled={isCancelled}
                         busy={rsvpBusy === parsed.meetup.id}
                         onToggle={() => void toggleRsvp(parsed.meetup.id, !isGoing)}
+                        canManage={canManage}
+                        onEdit={() => setEditingMeetup(meetup)}
+                        onCancel={() => setCancelMeetupId(parsed.meetup.id)}
+                        reminderMinutes={user ? getLocalMeetupReminderMinutes(user.id, parsed.meetup.id) : null}
+                        onReminderChange={(minutes) => void setMeetupReminder(parsed.meetup.id, meetup.startsAt, minutes)}
+                        key={`${message.id}:${reminderVersion}`}
                       />
                     </div>
                   );
@@ -1000,12 +1081,49 @@ export default function DMsPage() {
                   )}
                 </form>
               )}
-              {recorder.error && <p role="alert" className="mt-1 text-xs text-red-600">{recorder.error}</p>}
+              {recorder.error && (
+                <div role="alert" className="mt-1 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <span className="min-w-0 flex-1">{recorder.error}</span>
+                  <button type="button" onClick={() => void recorder.start()} className="shrink-0 font-semibold underline">Try again</button>
+                </div>
+              )}
+              {!isAudioRecordingSupported() && (
+                <p className="mt-1 text-[11px] leading-4 text-gray-500">
+                  Voice recording is unavailable in this browser; encrypted text messages still work.
+                </p>
+              )}
             </div>
           </section>
         )}
       </div>
       <MeetupSheet open={meetupOpen} onClose={() => setMeetupOpen(false)} onSubmit={sendMeetup} />
+      <MeetupSheet
+        open={!!editingMeetup}
+        onClose={() => setEditingMeetup(null)}
+        onSubmit={updateMeetup}
+        initialDraft={editingMeetup ? {
+          ...meetupToDraft(editingMeetup),
+        } : undefined}
+        mode="edit"
+      />
+      <AppDialog
+        open={!!cancelMeetupId}
+        title="Cancel this meetup?"
+        description="This cancellation is shared as an end-to-end encrypted message. Everyone in the chat will see it."
+        confirmLabel="Cancel meetup"
+        cancelLabel="Keep meetup"
+        danger
+        pending={!!cancelMeetupId && rsvpBusy === cancelMeetupId}
+        onClose={() => setCancelMeetupId(null)}
+        onConfirm={() => {
+          if (!cancelMeetupId) return;
+          const meetupId = cancelMeetupId;
+          setRsvpBusy(meetupId);
+          void cancelMeetup(meetupId)
+            .then((cancelled) => { if (cancelled) setCancelMeetupId(null); })
+            .finally(() => setRsvpBusy(null));
+        }}
+      />
       {user && peers.length > 0 && (
         <SecurityCodeSheet
           open={securityOpen}

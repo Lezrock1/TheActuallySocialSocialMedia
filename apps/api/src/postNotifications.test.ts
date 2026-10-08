@@ -18,6 +18,7 @@ const allEnabled: NotificationPreferences = {
   postsFromCircles: true,
   circles: true,
   meetupResponses: true,
+  meetupUpdates: true,
   quietHoursEnabled: false,
   quietStartMinute: 1320,
   quietEndMinute: 420,

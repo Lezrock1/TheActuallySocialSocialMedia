@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { input, btnPrimary } from "../lib/ui.js";
 import Sheet from "./Sheet.js";
 
@@ -20,6 +20,21 @@ export function defaultMeetupDraft(): MeetupDraft {
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(18, 0, 0, 0);
   return { title: "", when: toLocalInputValue(tomorrow), place: "", note: "" };
+}
+
+export function meetupToDraft(meetup: {
+  title: string;
+  startsAt: string;
+  place: string;
+  note: string;
+}): MeetupDraft {
+  const start = new Date(meetup.startsAt);
+  return {
+    title: meetup.title,
+    when: Number.isNaN(start.getTime()) ? defaultMeetupDraft().when : toLocalInputValue(start),
+    place: meetup.place,
+    note: meetup.note,
+  };
 }
 
 // Returns an error message or null when the draft is valid.
@@ -92,14 +107,30 @@ export default function MeetupSheet({
   open,
   onClose,
   onSubmit,
+  initialDraft,
+  mode = "create",
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (draft: MeetupDraft) => Promise<void>;
+  initialDraft?: MeetupDraft;
+  mode?: "create" | "edit";
 }) {
-  const [draft, setDraft] = useState(defaultMeetupDraft);
+  const [draft, setDraft] = useState(() => initialDraft ?? defaultMeetupDraft());
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const initialTitle = initialDraft?.title;
+  const initialWhen = initialDraft?.when;
+  const initialPlace = initialDraft?.place;
+  const initialNote = initialDraft?.note;
+
+  useEffect(() => {
+    if (!open) return;
+    setDraft(initialTitle !== undefined && initialWhen !== undefined && initialPlace !== undefined && initialNote !== undefined
+      ? { title: initialTitle, when: initialWhen, place: initialPlace, note: initialNote }
+      : defaultMeetupDraft());
+    setError(null);
+  }, [initialTitle, initialWhen, initialPlace, initialNote, open]);
 
   async function submit() {
     const problem = validateMeetupDraft(draft);
@@ -123,13 +154,13 @@ export default function MeetupSheet({
   return (
     <Sheet
       open={open}
-      title="Propose a meetup"
+      title={mode === "edit" ? "Edit meetup" : "Propose a meetup"}
       onClose={onClose}
       footer={
         <>
           {error && <p role="alert" className="mb-2 text-xs text-red-600">{error}</p>}
           <button type="button" onClick={() => void submit()} disabled={sending} className={`${btnPrimary} w-full`}>
-            {sending ? "Sending…" : "Send proposal"}
+            {sending ? "Saving…" : mode === "edit" ? "Save changes" : "Send proposal"}
           </button>
         </>
       }

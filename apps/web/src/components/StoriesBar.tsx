@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import type { FormEvent } from "react";
 import { STORY_REACTIONS } from "@app/shared";
 import type { StoryGroup, StoryMeetup } from "@app/shared";
@@ -11,6 +12,11 @@ import LiveRoomsBar from "./LiveRoomsBar.js";
 import StoryComposer from "./StoryComposer.js";
 import AudioPlayer from "./AudioPlayer.js";
 import MeetupCard from "./chat/MeetupCard.js";
+import MeetupSheet, { meetupToDraft } from "./MeetupFields.js";
+import type { MeetupDraft } from "./MeetupFields.js";
+import AppDialog from "./AppDialog.js";
+import { useAuth } from "../auth/AuthContext.js";
+import { clearLocalMeetupReminder, getLocalMeetupReminderMinutes, setLocalMeetupReminder } from "../lib/localMeetupReminders.js";
 
 async function fetchStoryGroups(): Promise<StoryGroup[]> {
   const res = await apiFetch<{ groups: StoryGroup[] }>("/stories");
@@ -50,8 +56,13 @@ function getStoryLoadingPolicy(): StoryLoadingPolicy {
 export default function StoriesBar() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuth();
   const [composerOpen, setComposerOpen] = useState(false);
   const [meetupBusy, setMeetupBusy] = useState(false);
+  const [editingMeetup, setEditingMeetup] = useState<{ id: string; draft: MeetupDraft } | null>(null);
+  const [cancelMeetupId, setCancelMeetupId] = useState<string | null>(null);
+  const [reminderVersion, setReminderVersion] = useState(0);
   const [viewing, setViewing] = useState<StoryGroup | null>(null);
   const [storyIndex, setStoryIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
@@ -63,6 +74,17 @@ export default function StoriesBar() {
     queryKey: ["stories"],
     queryFn: fetchStoryGroups,
   });
+
+  const requestedStoryId = searchParams.get("story");
+  useEffect(() => {
+    if (!requestedStoryId) return;
+    const group = groups.find((candidate) => candidate.stories.some((story) => story.id === requestedStoryId));
+    if (!group) return;
+    const index = group.stories.findIndex((story) => story.id === requestedStoryId);
+    setViewing(group);
+    setStoryIndex(index);
+    setSearchParams({}, { replace: true });
+  }, [groups, requestedStoryId, setSearchParams]);
 
   useEffect(() => {
     const connection = (navigator as Navigator & { connection?: NetworkInformationLike }).connection;
@@ -208,6 +230,78 @@ export default function StoriesBar() {
     }
   }
 
+  async function updateStoryMeetup(draft: MeetupDraft) {
+    if (!editingMeetup) return;
+    const result = await apiFetch<{ meetup: StoryMeetup | null }>(`/meetups/${editingMeetup.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...(draft.title.trim() ? { title: draft.title.trim() } : {}),
+        startsAt: new Date(draft.when).toISOString(),
+        place: draft.place.trim(),
+      }),
+    });
+    setViewing((current) => current ? {
+      ...current,
+      stories: current.stories.map((story, index) => index === storyIndex ? { ...story, meetup: result.meetup } : story),
+    } : current);
+    if (user && result.meetup) {
+      const minutes = getLocalMeetupReminderMinutes(user.id, result.meetup.id);
+      if (minutes !== null) {
+        await setLocalMeetupReminder(
+          user.id,
+          result.meetup.id,
+          result.meetup.startsAt,
+          minutes,
+          `/?story=${encodeURIComponent(viewing?.stories[storyIndex]?.id ?? "")}`,
+          viewing?.stories[storyIndex]?.id
+        );
+        setReminderVersion((version) => version + 1);
+      }
+    }
+    await queryClient.invalidateQueries({ queryKey: ["stories"] });
+    setEditingMeetup(null);
+  }
+
+  async function cancelStoryMeetup() {
+    if (!cancelMeetupId) return;
+    setMeetupBusy(true);
+    setReactionError(null);
+    try {
+      await apiFetch(`/meetups/${cancelMeetupId}/cancel`, { method: "POST" });
+      setViewing((current) => current ? {
+        ...current,
+        stories: current.stories.map((story, index) => index === storyIndex && story.meetup
+          ? { ...story, meetup: { ...story.meetup, isCancelled: true } }
+          : story),
+      } : current);
+      if (user) clearLocalMeetupReminder(user.id, cancelMeetupId);
+      setReminderVersion((version) => version + 1);
+      setCancelMeetupId(null);
+      await queryClient.invalidateQueries({ queryKey: ["stories"] });
+    } catch {
+      setReactionError("Could not cancel this meetup.");
+    } finally {
+      setMeetupBusy(false);
+    }
+  }
+
+  async function setStoryReminder(meetupId: string, startsAt: string, minutes: number | null) {
+    if (!user || !viewing) return;
+    const error = await setLocalMeetupReminder(
+      user.id,
+      meetupId,
+      startsAt,
+      minutes,
+      `/?story=${encodeURIComponent(viewing.stories[storyIndex].id)}`,
+      viewing.stories[storyIndex].id
+    );
+    if (error) setReactionError(error);
+    else {
+      setReactionError(null);
+      setReminderVersion((version) => version + 1);
+    }
+  }
+
   return (
     <div className="min-w-0">
       <LiveRoomsBar compact />
@@ -319,8 +413,23 @@ export default function StoriesBar() {
                       attendees={viewing.stories[storyIndex].meetup!.attendees}
                       attendeeCount={viewing.stories[storyIndex].meetup!.attendeeCount}
                       isGoing={viewing.stories[storyIndex].meetup!.isGoing}
+                      isCancelled={viewing.stories[storyIndex].meetup!.isCancelled}
                       busy={meetupBusy}
                       onToggle={() => void toggleMeetup(viewing.stories[storyIndex].meetup!.id)}
+                      canManage={viewing.author.id === user?.id}
+                      onEdit={() => setEditingMeetup({
+                        id: viewing.stories[storyIndex].meetup!.id,
+                        draft: meetupToDraft({
+                          title: viewing.stories[storyIndex].meetup!.title ?? "",
+                          startsAt: viewing.stories[storyIndex].meetup!.startsAt,
+                          place: viewing.stories[storyIndex].meetup!.place,
+                          note: "",
+                        }),
+                      })}
+                      onCancel={() => setCancelMeetupId(viewing.stories[storyIndex].meetup!.id)}
+                      reminderMinutes={user ? getLocalMeetupReminderMinutes(user.id, viewing.stories[storyIndex].meetup!.id) : null}
+                      onReminderChange={(minutes) => void setStoryReminder(viewing.stories[storyIndex].meetup!.id, viewing.stories[storyIndex].meetup!.startsAt, minutes)}
+                      key={`${viewing.stories[storyIndex].meetup!.id}:${reminderVersion}`}
                     />
                   </div>
                 )}
@@ -376,6 +485,24 @@ export default function StoriesBar() {
         </div>
       )}
       <StoryComposer open={composerOpen} onClose={() => setComposerOpen(false)} />
+      <MeetupSheet
+        open={!!editingMeetup}
+        onClose={() => setEditingMeetup(null)}
+        onSubmit={updateStoryMeetup}
+        initialDraft={editingMeetup?.draft}
+        mode="edit"
+      />
+      <AppDialog
+        open={!!cancelMeetupId}
+        title="Cancel this meetup?"
+        description="Everyone who said they’re going will be notified. The meetup will remain visible as cancelled until the story expires."
+        confirmLabel="Cancel meetup"
+        cancelLabel="Keep meetup"
+        danger
+        pending={meetupBusy}
+        onClose={() => setCancelMeetupId(null)}
+        onConfirm={() => void cancelStoryMeetup()}
+      />
     </div>
   );
 }
