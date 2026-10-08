@@ -38,6 +38,7 @@ export default function SnapsPage() {
   const [viewing, setViewing] = useState<InboxSnap | null>(null);
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
   const [viewingText, setViewingText] = useState("");
+  const [viewingIsVideo, setViewingIsVideo] = useState(false);
   const [snapError, setSnapError] = useState<string | null>(null);
 
   const { data: snaps = [] } = useQuery({
@@ -75,13 +76,13 @@ export default function SnapsPage() {
   }, [viewingImageUrl]);
 
   useEffect(() => {
-    if (!viewing) return;
+    if (!viewing || viewingIsVideo) return;
     const timeout = window.setTimeout(() => {
       setViewing(null);
       setViewingImageUrl(null);
     }, 10_000);
     return () => window.clearTimeout(timeout);
-  }, [viewing]);
+  }, [viewing, viewingIsVideo]);
 
   async function openSnap(snap: InboxSnap) {
     setSnapError(null);
@@ -99,6 +100,7 @@ export default function SnapsPage() {
       }
       await apiFetch(`/snaps/${snap.id}/view`, { method: "POST" });
       setViewingImageUrl(URL.createObjectURL(image));
+      setViewingIsVideo(image.type.startsWith("video/"));
       setViewingText(caption);
       setViewing(snap);
       await Promise.all([
@@ -114,6 +116,7 @@ export default function SnapsPage() {
     if (viewingImageUrl) URL.revokeObjectURL(viewingImageUrl);
     setViewingImageUrl(null);
     setViewingText("");
+    setViewingIsVideo(false);
     setViewing(null);
   }
 
@@ -234,12 +237,24 @@ export default function SnapsPage() {
               ×
             </button>
           </div>
+          {viewingIsVideo ? (
+            <video
+              src={viewingImageUrl ?? undefined}
+              autoPlay
+              playsInline
+              controls
+              loop
+              onClick={(event) => event.stopPropagation()}
+              className="max-h-screen max-w-full object-contain"
+            />
+          ) : (
           <img
             src={viewingImageUrl ?? undefined}
             alt=""
             onClick={(event) => event.stopPropagation()}
             className="max-h-screen max-w-full object-contain"
           />
+          )}
           {viewing.isEncrypted && (
             <div className="absolute left-4 top-16 rounded bg-black/70 px-2 py-1">
               <EncryptionNotice encrypted />

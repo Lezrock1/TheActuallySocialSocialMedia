@@ -11,6 +11,7 @@ import { audienceBody, PUBLIC_AUDIENCE } from "../../lib/circles.js";
 import type { Audience } from "../../lib/circles.js";
 import { resizeImageForUpload, uploadMedia } from "../../lib/upload.js";
 import { btnPrimary, input } from "../../lib/ui.js";
+import { captureVideoPoster } from "../../lib/video.js";
 import AudiencePicker from "../AudiencePicker.js";
 import CameraCapture from "./CameraCapture.js";
 import Avatar from "../Avatar.js";
@@ -61,6 +62,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
   const [missingKeys, setMissingKeys] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isVideo = !!file?.type.startsWith("video/");
 
   const { data: friends = [] } = useQuery({
     queryKey: ["camera-following", user?.username],
@@ -107,7 +109,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
     setError(null);
     setMissingKeys([]);
     try {
-      const resized = await resizeImageForUpload(file);
+      const resized = isVideo ? file : await resizeImageForUpload(file);
       if (target === "snap") {
         if (!user) throw new Error("Sign in to send a Snap.");
         await registerDeviceEncryptionKey(user.id);
@@ -127,7 +129,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
           return;
         }
         if (allowUnencrypted) {
-          const imageKey = await uploadMedia(resized);
+          const imageKey = await uploadMedia(resized, { resize: false });
           await apiFetch("/snaps", {
             method: "POST",
             body: JSON.stringify({ imageKey, text: caption.trim() || undefined, recipientUsernames: recipients }),
@@ -141,13 +143,22 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
           });
         }
       } else {
-        const imageKey = await uploadMedia(resized);
         if (target === "post") {
+          const imageKey = await uploadMedia(resized, { resize: false });
           await apiFetch("/posts", {
             method: "POST",
-            body: JSON.stringify({ imageKey, text: caption.trim() || undefined, ...audienceBody(audience) }),
+            body: JSON.stringify({ imageKey, mediaType: isVideo ? "video" : "image", text: caption.trim() || undefined, ...audienceBody(audience) }),
+          });
+        } else if (isVideo) {
+          const poster = await captureVideoPoster(file);
+          const imageKey = await uploadMedia(poster, { resize: false });
+          const videoKey = await uploadMedia(file, { resize: false });
+          await apiFetch("/stories", {
+            method: "POST",
+            body: JSON.stringify({ imageKey, videoKey, text: caption.trim() || undefined, ...audienceBody(audience) }),
           });
         } else {
+          const imageKey = await uploadMedia(resized);
           await apiFetch("/stories", {
             method: "POST",
             body: JSON.stringify({ imageKey, text: caption.trim() || undefined, ...audienceBody(audience) }),
@@ -168,7 +179,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
       setError(null);
       onClose();
     } catch (caught) {
-      setError(caught instanceof Error ? `${caught.message} · Try again.` : "Could not share this photo.");
+      setError(caught instanceof Error ? `${caught.message} · Try again.` : "Could not share this photo or video.");
     } finally {
       setSending(false);
     }
@@ -181,7 +192,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
         <input
           id="camera-file-picker"
           type="file"
-          accept="image/*"
+          accept="image/*,video/*"
           className="hidden"
           onChange={(event) => {
             const selected = event.target.files?.[0];
@@ -196,7 +207,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
   return (
     <div className={`fixed inset-0 z-[60] flex flex-col ${dark ? "bg-[#0b0b0e] text-white" : "bg-[#f7f7f8] text-gray-900"}`}>
       <header className={`flex min-h-14 items-center justify-between border-b px-4 pt-[env(safe-area-inset-top)] ${dark ? "border-white/10" : "border-gray-200 bg-white"}`}>
-        <button type="button" onClick={() => setFile(null)} disabled={sending} className={`flex h-10 w-10 items-center justify-center rounded-full text-xl disabled:opacity-40 ${dark ? "text-white/75 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"}`} aria-label="Retake photo">
+        <button type="button" onClick={() => setFile(null)} disabled={sending} className={`flex h-10 w-10 items-center justify-center rounded-full text-xl disabled:opacity-40 ${dark ? "text-white/75 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"}`} aria-label="Retake">
           ‹
         </button>
         <h2 className="text-sm font-semibold">Share your moment</h2>
@@ -207,7 +218,9 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
 
       <main className={`min-h-0 flex-1 px-4 pb-3 pt-3 ${target === "snap" ? "snap-share-enter flex flex-col overflow-y-auto" : "overflow-y-auto"}`}>
         <div className={`relative mx-auto flex w-full shrink-0 items-center justify-center overflow-hidden rounded-3xl ${dark ? "bg-black" : "bg-gray-200"} ${target === "snap" ? "aspect-[4/3] max-h-[18vh] max-w-xl" : "aspect-[4/5] max-h-[44vh] max-w-sm"}`}>
-          {previewUrl && <img src={previewUrl} alt="Photo preview" className="h-full w-full object-contain" />}
+          {previewUrl && (isVideo
+            ? <video src={previewUrl} autoPlay loop muted playsInline controls className="h-full w-full object-contain" />
+            : <img src={previewUrl} alt="Photo preview" className="h-full w-full object-contain" />)}
           <span className={`pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t ${dark ? "from-black/50" : "from-black/25"} to-transparent`} />
         </div>
 
@@ -325,7 +338,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
               <path d="m5 12 4.5 4.5L19 7" />
             </svg>
           )}
-          {sending ? "Sharing…" : target === "post" ? "Post photo" : target === "story" ? "Share story" : "Send Snap"}
+          {sending ? "Sharing…" : target === "post" ? (isVideo ? "Post video" : "Post photo") : target === "story" ? "Share story" : "Send Snap"}
         </button>
       </footer>
     </div>

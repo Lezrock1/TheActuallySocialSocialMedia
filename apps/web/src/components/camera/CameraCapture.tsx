@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import {
+  isVideoRecordingSupported,
+  MAX_CAMERA_VIDEO_MS,
+  MIN_CAMERA_VIDEO_MS,
+  pickVideoMimeType,
+  videoFileExtension,
+} from "../../lib/video.js";
+import { formatDuration } from "../../lib/useAudioRecorder.js";
 
 type CameraFailure = "denied" | "unavailable" | "unsupported" | "error";
 type FacingMode = "environment" | "user";
@@ -118,6 +126,15 @@ export default function CameraCapture({
   const [flashKey, setFlashKey] = useState(0);
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number; key: number } | null>(null);
   const [flipTurns, setFlipTurns] = useState(0);
+  const [recording, setRecording] = useState(false);
+  const [recordMs, setRecordMs] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const holdTimerRef = useRef<number | null>(null);
+  const holdActiveRef = useRef(false);
+  const releasedRef = useRef(false);
+  const recordStartRef = useRef(0);
 
   // Start (and restart) the camera stream; stop it whenever the tab is hidden.
   useEffect(() => {
@@ -291,6 +308,127 @@ export default function CameraCapture({
     else takePhoto();
   }
 
+  const stopRecording = useCallback(() => {
+    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+  }, []);
+
+  async function startRecording() {
+    const stream = videoRef.current?.srcObject as MediaStream | null;
+    const mimeType = pickVideoMimeType();
+    setNotice(null);
+    if (!stream || !isVideoRecordingSupported() || !mimeType) {
+      setNotice("Video recording isn't supported in this browser.");
+      return;
+    }
+    // The microphone is only requested once the user actually starts a video.
+    let audio: MediaStream | null = null;
+    try {
+      audio = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setNotice("Recording without sound – microphone access is off.");
+    }
+    audioStreamRef.current = audio;
+    const combined = new MediaStream([...stream.getVideoTracks(), ...(audio?.getAudioTracks() ?? [])]);
+    const chunks: Blob[] = [];
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(combined, { mimeType, videoBitsPerSecond: 2_500_000 });
+    } catch {
+      audio?.getTracks().forEach((track) => track.stop());
+      setNotice("Could not start video recording.");
+      return;
+    }
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data);
+    };
+    recorder.onstop = () => {
+      audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+      audioStreamRef.current = null;
+      recorderRef.current = null;
+      setRecording(false);
+      const duration = Date.now() - recordStartRef.current;
+      if (duration < MIN_CAMERA_VIDEO_MS || chunks.length === 0) {
+        setNotice("Hold the button a bit longer to record a video.");
+        return;
+      }
+      onCaptured(new File(chunks, `camera-video.${videoFileExtension(mimeType)}`, { type: mimeType.split(";")[0] }));
+    };
+    recorderRef.current = recorder;
+    recordStartRef.current = Date.now();
+    setRecordMs(0);
+    recorder.start(250);
+    setRecording(true);
+    navigator.vibrate?.(20);
+    // Finger was lifted while the microphone prompt was open.
+    if (releasedRef.current) recorder.stop();
+  }
+
+  function clearHoldTimer() {
+    if (holdTimerRef.current !== null) {
+      window.clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  }
+
+  function onShutterPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!ready || countdown !== null) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    releasedRef.current = false;
+    holdActiveRef.current = false;
+    clearHoldTimer();
+    holdTimerRef.current = window.setTimeout(() => {
+      holdTimerRef.current = null;
+      holdActiveRef.current = true;
+      void startRecording();
+    }, 350);
+  }
+
+  function onShutterPointerUp() {
+    clearHoldTimer();
+    releasedRef.current = true;
+    if (holdActiveRef.current) {
+      holdActiveRef.current = false;
+      stopRecording();
+      return;
+    }
+    onShutter();
+  }
+
+  function onShutterPointerCancel() {
+    clearHoldTimer();
+    releasedRef.current = true;
+    if (holdActiveRef.current) {
+      holdActiveRef.current = false;
+      stopRecording();
+    }
+  }
+
+  useEffect(() => {
+    if (!recording) return;
+    const interval = window.setInterval(() => {
+      const elapsed = Date.now() - recordStartRef.current;
+      setRecordMs(Math.min(elapsed, MAX_CAMERA_VIDEO_MS));
+      if (elapsed >= MAX_CAMERA_VIDEO_MS) stopRecording();
+    }, 100);
+    return () => window.clearInterval(interval);
+  }, [recording, stopRecording]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  useEffect(() => () => {
+    clearHoldTimer();
+    const recorder = recorderRef.current;
+    if (recorder) {
+      recorder.onstop = null;
+      if (recorder.state === "recording") recorder.stop();
+    }
+    audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
+
   const zoomRange = capabilities.zoom;
   const canZoom = !!zoomRange && zoomRange.max > zoomRange.min;
   const twoX = canZoom ? Math.min(2, zoomRange!.max) : 1;
@@ -326,6 +464,19 @@ export default function CameraCapture({
           />
         )}
         {flashKey > 0 && <div key={flashKey} className="shutter-flash pointer-events-none absolute inset-0 bg-white" />}
+        {recording && (
+          <div className="pointer-events-none absolute inset-x-0 top-[max(1rem,env(safe-area-inset-top))] flex justify-center">
+            <span className="flex items-center gap-2 rounded-full bg-red-600 px-3.5 py-1.5 text-sm font-semibold tabular-nums text-white shadow-lg">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+              {formatDuration(recordMs)}
+            </span>
+          </div>
+        )}
+        {notice && (
+          <p role="status" className="pointer-events-none absolute inset-x-6 bottom-20 rounded-2xl bg-black/65 px-4 py-2.5 text-center text-xs leading-5 text-white backdrop-blur-md">
+            {notice}
+          </p>
+        )}
         {countdown !== null && countdown > 0 && (
           <div key={countdown} className="countdown-pop pointer-events-none absolute inset-0 flex items-center justify-center text-[8rem] font-bold text-white drop-shadow-lg">
             {countdown}
@@ -333,10 +484,10 @@ export default function CameraCapture({
         )}
 
         <div className="absolute inset-x-0 top-0 flex items-start justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))]">
-          <IconButton label="Close camera" onClick={onClose}>
+          <IconButton label="Close camera" onClick={onClose} disabled={recording}>
             <svg {...iconProps}><path d="M6 6l12 12M18 6 6 18" /></svg>
           </IconButton>
-          <div className="flex flex-col items-center gap-2">
+          <div className={`flex flex-col items-center gap-2 ${recording ? "invisible" : ""}`}>
             {capabilities.torch && (
               <IconButton label={torchOn ? "Turn flash off" : "Turn flash on"} onClick={() => void toggleTorch()} active={torchOn}>
                 <svg {...iconProps}><path d="M13 3 5 13h6l-1 8 8-10h-6l1-8Z" /></svg>
@@ -375,39 +526,73 @@ export default function CameraCapture({
         )}
       </div>
 
-      <footer className="flex items-center justify-between px-8 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5">
-        <button
-          type="button"
-          onClick={onPickFile}
-          aria-label="Choose from photo library"
-          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/30 bg-white/10 text-white transition-transform active:scale-90"
-        >
-          <svg {...iconProps}><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><circle cx="9" cy="10" r="1.6" /><path d="m4 17 5-4.5 3.5 3L15.5 13 20 17" /></svg>
-        </button>
-        <button
-          type="button"
-          onClick={onShutter}
-          disabled={!ready}
-          aria-label={countdown !== null ? "Cancel timer" : "Take photo"}
-          className="group flex h-[5rem] w-[5rem] items-center justify-center rounded-full border-4 border-white transition-transform active:scale-95 disabled:opacity-40"
-        >
-          <span className={`flex h-[3.7rem] w-[3.7rem] items-center justify-center rounded-full bg-white transition-all duration-150 group-active:h-[3.2rem] group-active:w-[3.2rem] ${countdown !== null ? "bg-fuchsia-500 text-white" : ""}`}>
-            {countdown !== null && <span className="text-xl font-bold">✕</span>}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setFlipTurns((turns) => turns + 1);
-            setFacing((mode) => (mode === "environment" ? "user" : "environment"));
-          }}
-          aria-label={`Switch to ${facing === "environment" ? "front" : "rear"} camera`}
-          className="flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white transition-transform active:scale-90"
-        >
-          <svg {...iconProps} style={{ transform: `rotate(${flipTurns * 180}deg)`, transition: "transform 350ms ease" }}>
-            <path d="M20 8a8 8 0 0 0-14-2L4 8M4 4v4h4M4 16a8 8 0 0 0 14 2l2-2M20 20v-4h-4" />
-          </svg>
-        </button>
+      <footer className="px-8 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3">
+        <p className="mb-3 text-center text-[11px] font-medium tracking-wide text-white/60" aria-live="polite">
+          {recording ? "Release to finish" : isVideoRecordingSupported() ? "Tap for photo · Hold for video" : "Tap for photo"}
+        </p>
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onPickFile}
+            disabled={recording}
+            aria-label="Choose from photo library"
+            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/30 bg-white/10 text-white transition-[transform,opacity] active:scale-90 disabled:opacity-30"
+          >
+            <svg {...iconProps}><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><circle cx="9" cy="10" r="1.6" /><path d="m4 17 5-4.5 3.5 3L15.5 13 20 17" /></svg>
+          </button>
+          <button
+            type="button"
+            onPointerDown={onShutterPointerDown}
+            onPointerUp={onShutterPointerUp}
+            onPointerCancel={onShutterPointerCancel}
+            onContextMenu={(event) => event.preventDefault()}
+            onClick={(event) => { if (event.detail === 0) onShutter(); }}
+            disabled={!ready}
+            aria-label={countdown !== null ? "Cancel timer" : recording ? "Recording video" : "Take photo, or hold to record video"}
+            style={{ WebkitTouchCallout: "none" }}
+            className={`group relative flex h-[5rem] w-[5rem] touch-none select-none items-center justify-center rounded-full border-4 transition-transform disabled:opacity-40 ${recording ? "scale-110 border-transparent" : "border-white active:scale-95"}`}
+          >
+            {recording && (
+              <svg aria-hidden="true" viewBox="0 0 100 100" className="pointer-events-none absolute -inset-1 h-[calc(100%+8px)] w-[calc(100%+8px)] -rotate-90">
+                <circle cx="50" cy="50" r="46" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="6" />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="46"
+                  fill="none"
+                  stroke="#ef4444"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                  strokeDasharray={2 * Math.PI * 46}
+                  strokeDashoffset={2 * Math.PI * 46 * (1 - recordMs / MAX_CAMERA_VIDEO_MS)}
+                />
+              </svg>
+            )}
+            <span
+              className={`flex items-center justify-center transition-all duration-150 ${
+                recording
+                  ? "h-7 w-7 rounded-lg bg-red-500"
+                  : `h-[3.7rem] w-[3.7rem] rounded-full group-active:h-[3.2rem] group-active:w-[3.2rem] ${countdown !== null ? "bg-fuchsia-500 text-white" : "bg-white"}`
+              }`}
+            >
+              {countdown !== null && <span className="text-xl font-bold">✕</span>}
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={recording}
+            onClick={() => {
+              setFlipTurns((turns) => turns + 1);
+              setFacing((mode) => (mode === "environment" ? "user" : "environment"));
+            }}
+            aria-label={`Switch to ${facing === "environment" ? "front" : "rear"} camera`}
+            className="flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white transition-[transform,opacity] active:scale-90 disabled:opacity-30"
+          >
+            <svg {...iconProps} style={{ transform: `rotate(${flipTurns * 180}deg)`, transition: "transform 350ms ease" }}>
+              <path d="M20 8a8 8 0 0 0-14-2L4 8M4 4v4h4M4 16a8 8 0 0 0 14 2l2-2M20 20v-4h-4" />
+            </svg>
+          </button>
+        </div>
       </footer>
     </div>
   );

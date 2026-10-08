@@ -31,7 +31,7 @@ export async function canReadMedia(
       select: { authorId: true, visibility: true, circleId: true },
     }),
     prisma.story.findMany({
-      where: { OR: [{ imageKey: key }, { audioKey: key }] },
+      where: { OR: [{ imageKey: key }, { audioKey: key }, { videoKey: key }] },
       select: { authorId: true, visibility: true, circleId: true, expiresAt: true },
     }),
     prisma.snap.findMany({

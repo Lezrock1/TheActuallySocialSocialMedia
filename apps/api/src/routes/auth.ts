@@ -251,7 +251,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const [assets, posts, stories, sentSnaps, receivedSnaps, conversations, sharedFactChecks] = await Promise.all([
       prisma.mediaAsset.findMany({ where: { ownerId: user.id }, select: { key: true } }),
       prisma.post.findMany({ where: { authorId: user.id }, select: { imageKey: true } }),
-      prisma.story.findMany({ where: { authorId: user.id }, select: { imageKey: true, audioKey: true } }),
+      prisma.story.findMany({ where: { authorId: user.id }, select: { imageKey: true, audioKey: true, videoKey: true } }),
       prisma.snap.findMany({ where: { senderId: user.id }, select: { imageKey: true } }),
       prisma.snapRecipient.findMany({
         where: { userId: user.id },
@@ -292,7 +292,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       user.avatarKey,
       ...assets.map((asset) => asset.key),
       ...posts.map((post) => post.imageKey),
-      ...stories.flatMap((story) => [story.imageKey, story.audioKey]),
+      ...stories.flatMap((story) => [story.imageKey, story.audioKey, story.videoKey]),
       ...sentSnaps.map((snap) => snap.imageKey),
       ...exclusivelyReceivedSnaps.map((snap) => snap.imageKey),
       ...voiceMessages.map((message) => message.mediaKey),

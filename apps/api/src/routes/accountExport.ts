@@ -111,7 +111,7 @@ async function collectExport(userId: string) {
     "comments.json": { written: comments, liked: commentLikes },
     "stories.json": {
       active: stories.map((story) => ({
-        id: story.id, imageKey: story.imageKey, audioKey: story.audioKey, text: story.text,
+        id: story.id, imageKey: story.imageKey, audioKey: story.audioKey, videoKey: story.videoKey, text: story.text,
         visibility: story.visibility, circle: story.circle?.name ?? null,
         createdAt: iso(story.createdAt), expiresAt: iso(story.expiresAt),
         meetup: story.meetup

@@ -341,6 +341,7 @@ export const createStorySchema = z.object({
   imageKey: z.string().min(1),
   audioKey: z.string().min(1).optional(),
   audioDurationMs: z.number().int().min(500).max(MAX_STORY_AUDIO_MS).optional(),
+  videoKey: z.string().min(1).optional(),
   text: z.string().max(500).optional(),
   visibility: z.enum(POST_VISIBILITY).optional(),
   circleId: z.string().min(1).optional(),
@@ -351,6 +352,9 @@ export const createStorySchema = z.object({
 }).refine((story) => !story.audioKey || story.audioDurationMs !== undefined, {
   message: "Audio needs a duration",
   path: ["audioDurationMs"],
+}).refine((story) => !(story.audioKey && story.videoKey), {
+  message: "A story can have a voice track or a video, not both",
+  path: ["videoKey"],
 });
 export type CreateStoryInput = z.infer<typeof createStorySchema>;
 
@@ -370,6 +374,7 @@ export interface Story {
   imageKey: string;
   audioKey: string | null;
   audioDurationMs: number | null;
+  videoKey: string | null;
   text: string | null;
   createdAt: string;
   expiresAt: string;

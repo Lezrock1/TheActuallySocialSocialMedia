@@ -221,6 +221,8 @@ model Story {
   // optional voice track; imageKey then holds a generated cover card
   audioKey   String?
   audioDurationMs Int?
+  // optional video; imageKey then holds its poster frame
+  videoKey   String?
   text       String?
   createdAt  DateTime @default(now())
   expiresAt  DateTime

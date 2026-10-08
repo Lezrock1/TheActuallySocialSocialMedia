@@ -42,6 +42,7 @@ function toStoryDto(story: NonNullable<StoryRow>, viewerId: string): Story {
     imageKey: story.imageKey,
     audioKey: story.audioKey,
     audioDurationMs: story.audioDurationMs,
+    videoKey: story.videoKey,
     text: story.text,
     createdAt: story.createdAt.toISOString(),
     expiresAt: story.expiresAt.toISOString(),
@@ -113,6 +114,9 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
     if (input.audioKey && !(await ownsMedia(request.userId!, input.audioKey))) {
       return reply.code(403).send({ error: "You can only attach your own uploads" });
     }
+    if (input.videoKey && !(await ownsMedia(request.userId!, input.videoKey))) {
+      return reply.code(403).send({ error: "You can only attach your own uploads" });
+    }
     const visibility = input.visibility ?? "public";
     if (visibility === "circle") {
       const circle = await prisma.circle.findFirst({
@@ -136,6 +140,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
         imageKey: input.imageKey,
         audioKey: input.audioKey,
         audioDurationMs: input.audioKey ? input.audioDurationMs : null,
+        videoKey: input.videoKey,
         text: input.text,
         visibility,
         circleId: visibility === "circle" ? input.circleId : null,
@@ -373,6 +378,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
       await prisma.story.delete({ where: { id: story.id } });
       await deleteMediaIfUnreferenced(story.imageKey);
       if (story.audioKey) await deleteMediaIfUnreferenced(story.audioKey);
+      if (story.videoKey) await deleteMediaIfUnreferenced(story.videoKey);
       return reply.code(204).send();
     }
   );

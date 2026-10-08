@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import type { FormEvent } from "react";
 import { STORY_REACTIONS } from "@app/shared";
@@ -51,6 +51,49 @@ function getStoryLoadingPolicy(): StoryLoadingPolicy {
     return { preloadCount: 2 };
   }
   return { preloadCount: 4 };
+}
+
+function StoryVideo({ src, poster }: { src: string; poster: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [muted, setMuted] = useState(false);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    // Browsers may refuse autoplay with sound; fall back to muted playback.
+    video.play().catch(() => {
+      video.muted = true;
+      setMuted(true);
+      void video.play().catch(() => undefined);
+    });
+  }, [src]);
+
+  return (
+    <>
+      <video
+        ref={ref}
+        src={src}
+        poster={poster}
+        autoPlay
+        loop
+        playsInline
+        muted={muted}
+        preload="auto"
+        className="h-full w-full object-contain"
+      />
+      <button
+        type="button"
+        onClick={() => setMuted((value) => !value)}
+        aria-label={muted ? "Turn sound on" : "Turn sound off"}
+        className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-md transition-transform active:scale-90"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4Z" />
+          {muted ? <path d="m16 9.5 5 5m0-5-5 5" /> : <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />}
+        </svg>
+      </button>
+    </>
+  );
 }
 
 export default function StoriesBar() {
@@ -353,10 +396,16 @@ export default function StoriesBar() {
               ))}
             </div>
             <div className="flex items-center justify-between px-3 py-3 text-sm font-medium text-white">
-              <span className="flex items-center gap-2">
+              <Link
+                to={`/u/${viewing.author.username}`}
+                onClick={() => setViewing(null)}
+                aria-label={`Open profile of @${viewing.author.username}`}
+                className="-ml-1 flex min-w-0 items-center gap-2 rounded-full py-0.5 pl-1 pr-3 transition-colors hover:bg-white/10 active:bg-white/15"
+              >
                 <Avatar avatarKey={viewing.author.avatarKey} username={viewing.author.username} size={30} />
-                @{viewing.author.username}
-              </span>
+                <span className="truncate">@{viewing.author.username}</span>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0 text-white/55" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 6 6 6-6 6" /></svg>
+              </Link>
               <button
                 type="button"
                 onClick={() => setViewing(null)}
@@ -367,6 +416,13 @@ export default function StoriesBar() {
               </button>
             </div>
             <div className="relative flex aspect-[9/16] max-h-[75vh] w-full items-center justify-center bg-gray-950">
+              {viewing.stories[storyIndex].videoKey ? (
+                <StoryVideo
+                  key={viewing.stories[storyIndex].id}
+                  src={mediaUrl(viewing.stories[storyIndex].videoKey!)}
+                  poster={mediaUrl(viewing.stories[storyIndex].imageKey)}
+                />
+              ) : (
               <img
                 src={mediaUrl(viewing.stories[storyIndex].imageKey)}
                 alt={`Story ${storyIndex + 1} from @${viewing.author.username}`}
@@ -375,6 +431,7 @@ export default function StoriesBar() {
                 fetchPriority="high"
                 className="h-full w-full object-contain"
               />
+              )}
               <button
                 type="button"
                 onClick={() => advanceStory(-1)}
