@@ -112,6 +112,7 @@ export default function DMsPage() {
   const messageScrollRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLInputElement>(null);
   const scrolledConversationRef = useRef<string | null>(null);
+  const wasAtBottomRef = useRef(true);
   const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const lastVisibleMessageIdRef = useRef<string | null>(null);
   const location = useLocation();
@@ -232,6 +233,7 @@ export default function DMsPage() {
 
     if (scrolledConversationRef.current !== activeId) {
       container.scrollTop = container.scrollHeight;
+      wasAtBottomRef.current = true;
       scrolledConversationRef.current = activeId;
       lastVisibleMessageIdRef.current = newestMessageId;
       return;
@@ -241,19 +243,27 @@ export default function DMsPage() {
       const { scrollHeight, scrollTop } = prependScrollAnchorRef.current;
       const delta = container.scrollHeight - scrollHeight;
       container.scrollTop = scrollTop + delta;
+      wasAtBottomRef.current = container.scrollHeight - (container.scrollTop + container.clientHeight) <= 120;
       prependScrollAnchorRef.current = null;
       lastVisibleMessageIdRef.current = newestMessageId;
       return;
     }
 
     if (newestMessageId && newestMessageId !== lastVisibleMessageIdRef.current) {
-      const nearBottom = container.scrollHeight - (container.scrollTop + container.clientHeight) <= 120;
-      if (nearBottom) {
+      if (wasAtBottomRef.current) {
         container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
       }
       lastVisibleMessageIdRef.current = newestMessageId;
+    } else if (wasAtBottomRef.current) {
+      container.scrollTop = container.scrollHeight;
     }
-  }, [activeId, messagesLoaded, newestMessageId]);
+  }, [activeId, decryptedMessages, messages.length, messagesLoaded, newestMessageId]);
+
+  function trackMessageScroll() {
+    const container = messageScrollRef.current;
+    if (!container) return;
+    wasAtBottomRef.current = container.scrollHeight - (container.scrollTop + container.clientHeight) <= 120;
+  }
   const { data: encryptionKeys = [], isError: encryptionKeysError } = useQuery({
     queryKey: ["conversation-encryption-keys", activeId],
     queryFn: () => fetchEncryptionKeys(activeId!),
@@ -856,7 +866,7 @@ export default function DMsPage() {
             {encryptionKeysError && (
               <p role="alert" className="mb-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
-            <div ref={messageScrollRef} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[55vh] min-h-40 flex-col gap-2 overflow-y-auto`}>
+            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[55vh] min-h-40 flex-col gap-2 overflow-y-auto`}>
               {messagesQuery.hasNextPage && (
                 <div className="self-center pb-1 pt-0.5">
                   <button

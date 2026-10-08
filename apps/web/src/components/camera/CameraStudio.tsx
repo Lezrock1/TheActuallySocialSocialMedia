@@ -29,7 +29,7 @@ function ShareTargetButton({
   const icons = {
     post: <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h16v14H4zM8 9h8M8 13h5" /></svg>,
     story: <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="6" /></svg>,
-    snap: <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 20c1-1 2.2-1.5 4-1.5s3 .5 4 1.5M6 17c1.5-.5 2.5-1.5 3-3V8a3 3 0 0 1 6 0v6c.5 1.5 1.5 2.5 3 3" /><path d="M4 15c1.5 0 2.5-.5 3-1.5M20 15c-1.5 0-2.5-.5-3-1.5" /></svg>,
+    snap: <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13.2 4.2c2.1-1.3 5.2-1.4 6.4-1.4 0 1.2-.1 4.3-1.4 6.4L12 15.4l-3.4-3.4 4.6-7.8Z" /><circle cx="15.3" cy="7.6" r="1.4" /><path d="m8.6 12-3.1.5-2.2 2.2 5.2.7m3.1-3.1-.5 3.1-2.2 2.2-.7-5.2M5.3 18.7c-.7.7-.7 1.8-.7 1.8s1.1 0 1.8-.7" /></svg>,
   };
   return (
     <button
@@ -201,12 +201,12 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-3">
-        <div className="relative mx-auto flex aspect-[4/5] max-h-[44vh] w-full max-w-sm items-center justify-center overflow-hidden rounded-3xl bg-black">
+        <div className={`relative mx-auto flex w-full items-center justify-center overflow-hidden rounded-3xl bg-black ${target === "snap" ? "aspect-[4/3] max-h-[27vh] max-w-xl" : "aspect-[4/5] max-h-[44vh] max-w-sm"}`}>
           {previewUrl && <img src={previewUrl} alt="Photo preview" className="h-full w-full object-contain" />}
           <span className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/50 to-transparent" />
         </div>
 
-        <div className="mx-auto mt-4 w-full max-w-sm">
+        <div className={`mx-auto mt-4 w-full ${target === "snap" ? "max-w-xl" : "max-w-sm"}`}>
           <div className="rounded-2xl bg-white/10 p-1">
             <div role="tablist" aria-label="Share to" className="flex gap-1">
               {(["post", "story", "snap"] as const).map((option) => (
@@ -221,8 +221,11 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
               <AudiencePicker value={audience} onChange={setAudience} tone="dark" />
             </div>
           ) : (
-            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-              <label htmlFor="camera-friend-search" className="mb-2 block text-xs font-semibold text-white/80">Send to</label>
+            <div className="mt-3 flex min-h-0 flex-col rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <label htmlFor="camera-friend-search" className="text-xs font-semibold text-white/80">Send to</label>
+                <span className="text-[11px] tabular-nums text-white/55">{recipients.length} selected</span>
+              </div>
               <input
                 id="camera-friend-search"
                 value={friendSearch}
@@ -230,26 +233,37 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
                 placeholder="Search friends"
                 className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-white/40 focus:border-fuchsia-400 focus:outline-none"
               />
-              <div className="mt-2 flex max-h-32 flex-wrap content-start gap-2 overflow-y-auto">
+              <div aria-label="Friends" role="listbox" aria-multiselectable="true" className="mt-2 max-h-[min(36vh,340px)] divide-y divide-white/10 overflow-y-auto rounded-xl border border-white/10 bg-black/20">
                 {matchingFriends.map((friend) => {
                   const selected = recipients.includes(friend.username);
                   return (
                     <button
                       key={friend.id}
                       type="button"
+                      role="option"
                       onClick={() => setRecipients((current) => current.includes(friend.username)
                         ? current.filter((name) => name !== friend.username)
                         : [...current, friend.username])}
                       aria-pressed={selected}
-                      className={`flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs transition-colors ${selected ? "border-fuchsia-300 bg-fuchsia-500/20 text-white" : "border-white/15 text-white/75 hover:bg-white/10"}`}
+                      aria-selected={selected}
+                      className={`flex min-h-[58px] w-full items-center gap-3 px-3 text-left transition-colors ${selected ? "bg-fuchsia-500/15" : "hover:bg-white/5"}`}
                     >
-                      <Avatar avatarKey={friend.avatarKey} username={friend.username} size={20} />
-                      @{friend.username}
+                      <Avatar avatarKey={friend.avatarKey} username={friend.username} size={38} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-white">{friend.displayName || `@${friend.username}`}</span>
+                        <span className="block truncate text-xs text-white/50">@{friend.username}</span>
+                      </span>
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] transition-colors ${selected ? "border-fuchsia-300 bg-fuchsia-500 text-white" : "border-white/35 text-transparent"}`}>✓</span>
                     </button>
                   );
                 })}
+                {matchingFriends.length === 0 && (
+                  <p className="px-3 py-4 text-center text-xs text-white/55">
+                    {friends.length === 0 ? "Follow someone first to send a Snap." : "No friends match that search."}
+                  </p>
+                )}
               </div>
-              {recipients.length > 0 && <p className="mt-2 text-[11px] text-white/50">{recipients.length} selected · content stays end-to-end encrypted when all devices have keys</p>}
+              <p className="mt-2 text-[10px] leading-4 text-white/45">Encrypted on this device when every recipient has registered a key.</p>
             </div>
           )}
 
