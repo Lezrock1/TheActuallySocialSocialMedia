@@ -34,6 +34,9 @@ async function fetchUserPosts(
   return apiFetch(`/users/${username}/posts?${params.toString()}`);
 }
 
+const profileButton =
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm transition-[background-color,transform] hover:bg-gray-50 active:scale-[0.98]";
+
 export default function ProfilePage() {
   const { username = "" } = useParams();
   const { user: currentUser } = useAuth();
@@ -240,137 +243,117 @@ export default function ProfilePage() {
       {profileQuery.isLoading && <CardListSkeleton rows={3} />}
       {profile && (
         <>
-          <div className={`${card} mb-6`}>
-          <div className="flex items-start gap-4">
-            <div className="shrink-0">
-              {profile.isMe && editing ? (
-                <button
-                  type="button"
-                  aria-label="Change profile picture"
-                  title="Change profile picture"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="group relative block rounded-full focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
-                >
-                  <Avatar avatarKey={profile.avatarKey} username={profile.username} size={72} />
-                  <span className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-black text-sm text-white shadow">
-                    📷
-                  </span>
-                </button>
-              ) : (
-                <Avatar avatarKey={profile.avatarKey} username={profile.username} size={72} />
-              )}
-              {profile.isMe && (
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => void onAvatarSelected(e)}
-                />
-              )}
-            </div>
-            <div className="flex-1">
-              <div className="flex min-w-0 flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-                <h1 className="min-w-0 break-words text-lg font-semibold">
-                  @{profile.username}
-                  {profile.displayName && (
-                    <span className="ml-2 text-sm font-normal text-gray-500">
-                      {profile.displayName}
+          <div className={`${card} mb-6 !p-5`}>
+            <div className="flex items-center gap-4">
+              <div className="shrink-0">
+                {profile.isMe && editing ? (
+                  <button
+                    type="button"
+                    aria-label="Change profile picture"
+                    title="Change profile picture"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="group relative block rounded-full focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
+                  >
+                    <Avatar avatarKey={profile.avatarKey} username={profile.username} size={80} />
+                    <span className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-black text-sm text-white shadow">
+                      📷
                     </span>
-                  )}
-                </h1>
-                {profile.isMe ? (
-                  <button onClick={startEditing} className={`${btnSecondary} self-start sm:self-auto`}>
-                    Edit profile
                   </button>
                 ) : (
-                  <div className="flex w-full gap-2 sm:w-auto">
-                    <button
-                      onClick={() => void toggleFollow()}
-                      className={`${btnSecondary} min-h-9 min-w-0 flex-1 px-2 py-1.5 text-center text-xs sm:min-h-10 sm:flex-none sm:px-3 sm:text-sm`}
-                    >
-                      {profile.isFollowedByMe ? "Unfollow" : "Follow"}
-                    </button>
-                    <button
-                      onClick={() => void toggleCloseFriend()}
-                      aria-label={isCloseFriend ? "Remove from close friends" : "Add to close friends"}
-                      className={`${btnSecondary} min-h-9 min-w-0 flex-1 px-2 py-1.5 text-center text-xs sm:min-h-10 sm:flex-none sm:px-3 sm:text-sm ${isCloseFriend ? "bg-green-50 border-green-300 text-green-800" : ""}`}
-                    >
-                      <span className="sm:hidden">{isCloseFriend ? "Close friend" : "+ Close"}</span>
-                      <span className="hidden sm:inline">{isCloseFriend ? "Close friend" : "+ Close friend"}</span>
-                    </button>
-                  </div>
+                  <Avatar avatarKey={profile.avatarKey} username={profile.username} size={80} />
+                )}
+                {profile.isMe && (
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => void onAvatarSelected(e)}
+                  />
                 )}
               </div>
-              {profile.bio && <p className="mt-1 text-sm">{profile.bio}</p>}
-              {profile.isMe && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setOwnCirclesOpen(true)}
-                    className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="6" /><circle cx="15" cy="12" r="6" /></svg>
-                    Circles
-                  </button>
-                </div>
-              )}
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-xl font-semibold leading-tight">@{profile.username}</h1>
+                {profile.displayName && <p className="mt-0.5 truncate text-sm text-gray-500">{profile.displayName}</p>}
+                {profile.bio && <p className="mt-1.5 break-words text-sm leading-5 text-gray-700">{profile.bio}</p>}
+              </div>
+            </div>
 
-              {!profile.isMe && (
-                <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {profile.isMe ? (
+                <>
+                  <button type="button" onClick={startEditing} className={profileButton}>
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4ZM13.5 6.5l4 4" /></svg>
+                    Edit profile
+                  </button>
+                  <button type="button" onClick={() => setOwnCirclesOpen(true)} className={profileButton}>
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="6" /><circle cx="15" cy="12" r="6" /></svg>
+                    Circles
+                  </button>
+                </>
+              ) : (
+                <>
                   <button
                     type="button"
-                    onClick={() => setCirclesOpen(true)}
-                    className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    onClick={() => void toggleFollow()}
+                    className={`${profileButton} ${profile.isFollowedByMe ? "" : "!border-black !bg-black !text-white hover:!bg-gray-800"}`}
                   >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="6" /><circle cx="15" cy="12" r="6" /></svg>
-                    Circles
+                    {profile.isFollowedByMe ? "Unfollow" : "Follow"}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSecurityOpen(true)}
-                    className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    onClick={() => void toggleCloseFriend()}
+                    aria-pressed={isCloseFriend}
+                    aria-label={isCloseFriend ? "Remove from close friends" : "Add to close friends"}
+                    className={`${profileButton} ${isCloseFriend ? "!border-green-300 !bg-green-50 !text-green-800" : ""}`}
                   >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
+                    {isCloseFriend ? "\u2713 Close friend" : "+ Close friend"}
+                  </button>
+                  <button type="button" onClick={() => setCirclesOpen(true)} className={profileButton}>
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="6" /><circle cx="15" cy="12" r="6" /></svg>
+                    Circles
+                  </button>
+                  <button type="button" onClick={() => setSecurityOpen(true)} className={profileButton}>
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
                     Security code
                   </button>
-                </div>
-              )}
-              {!profile.isMe && (
-                <div className="mt-2 flex gap-3 text-xs text-gray-400">
-                  <button onClick={() => setBlockDialogOpen(true)} className="hover:underline">
-                    {isBlocked ? "Unblock" : "Block"}
-                  </button>
-                  <button onClick={() => setReportDialogOpen(true)} className="hover:underline">
-                    Report
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100 pt-3 text-center">
-            <div className="px-2">
-              <span className="block text-base font-semibold tabular-nums text-gray-900">{profile.postCount}</span>
-              <span className="block text-xs text-gray-500">Posts</span>
-            </div>
-            {(["followers", "following"] as const).map((kind) => {
-              const count = kind === "followers" ? profile.followerCount : profile.followingCount;
-              const label = kind === "followers" ? "Followers" : "Following";
-              const content = (
-                <>
-                  <span className="block text-base font-semibold tabular-nums text-gray-900">{count}</span>
-                  <span className="block text-xs text-gray-500">{label}</span>
                 </>
-              );
-              return profile.isMe ? (
-                <button key={kind} type="button" onClick={() => setConnectionList(kind)} className="rounded-lg px-2 transition-colors hover:bg-gray-50 active:bg-gray-100">
-                  {content}
+              )}
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 rounded-xl bg-gray-50 py-3 text-center">
+              <div className="px-2">
+                <span className="block text-lg font-semibold leading-6 tabular-nums text-gray-900">{profile.postCount}</span>
+                <span className="block text-xs text-gray-500">Posts</span>
+              </div>
+              {(["followers", "following"] as const).map((kind) => {
+                const count = kind === "followers" ? profile.followerCount : profile.followingCount;
+                const content = (
+                  <>
+                    <span className="block text-lg font-semibold leading-6 tabular-nums text-gray-900">{count}</span>
+                    <span className="block text-xs text-gray-500">{kind === "followers" ? "Followers" : "Following"}</span>
+                  </>
+                );
+                return profile.isMe ? (
+                  <button key={kind} type="button" onClick={() => setConnectionList(kind)} className="px-2 transition-opacity active:opacity-60">
+                    {content}
+                  </button>
+                ) : (
+                  <div key={kind} className="px-2">{content}</div>
+                );
+              })}
+            </div>
+
+            {!profile.isMe && (
+              <div className="mt-3 flex justify-center gap-5 text-xs text-gray-400">
+                <button type="button" onClick={() => setBlockDialogOpen(true)} className="hover:underline">
+                  {isBlocked ? "Unblock" : "Block"}
                 </button>
-              ) : (
-                <div key={kind} className="px-2">{content}</div>
-              );
-            })}
-          </div>
+                <button type="button" onClick={() => setReportDialogOpen(true)} className="hover:underline">
+                  Report
+                </button>
+              </div>
+            )}
           </div>
 
           {reportStatus && <p role="status" className="mb-3 text-sm text-green-700">{reportStatus}</p>}          {profileActionError && <p role="alert" className="mb-3 text-sm text-red-600">{profileActionError}</p>}
