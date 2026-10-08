@@ -166,7 +166,7 @@ function PostCard({
           controls
           playsInline
           preload="metadata"
-          className="mt-2 max-h-[32rem] w-full rounded-lg bg-black"
+          className="mx-auto mt-2 block h-auto max-h-[32rem] w-auto max-w-full rounded-lg"
         />
       ) : post.imageKey && (
         <ProgressiveImage mediaKey={post.imageKey} className="mt-2 rounded-lg" />
