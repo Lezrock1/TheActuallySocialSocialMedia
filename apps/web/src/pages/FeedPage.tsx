@@ -417,7 +417,7 @@ export default function FeedPage() {
           aria-hidden={!composerOpen}
         >
           <div className="min-h-0 overflow-hidden">
-            <div className="flex items-center gap-1.5 border-t border-gray-100 pt-2.5">
+            <div className="flex items-center gap-1.5 border-t border-gray-100 pb-5 pt-2.5">
               <AudiencePicker value={audience} onChange={setAudience} showHint={false} stacked className="min-w-0" />
               <button
                 type="button"

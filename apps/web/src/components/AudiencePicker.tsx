@@ -30,7 +30,7 @@ export default function AudiencePicker({
   const known = selected === "public" || selected === "close_friends" || circles.some((circle) => `circle:${circle.id}` === selected);
 
   return (
-    <div className={`flex min-w-0 ${stacked ? "flex-col items-start gap-0.5" : "flex-wrap items-center gap-2"} ${className}`}>
+    <div className={`flex min-w-0 ${stacked ? "relative flex-col items-start" : "flex-wrap items-center gap-2"} ${className}`}>
       <label className="sr-only" htmlFor="audience-picker">Who can see this</label>
       <select
         id="audience-picker"
@@ -58,7 +58,7 @@ export default function AudiencePicker({
           <button
             type="button"
             onClick={() => setManageOpen(true)}
-            className={`shrink-0 text-xs font-medium hover:underline ${tone === "dark" ? "text-white/80" : "text-blue-600"}`}
+            className={`shrink-0 text-xs font-medium hover:underline ${stacked ? "absolute left-1 top-full mt-1 leading-4" : ""} ${tone === "dark" ? "text-white/80" : "text-blue-600"}`}
           >
             Manage
           </button>
