@@ -48,16 +48,23 @@ export async function putMedia(
   );
 }
 
-export async function getMedia(
-  key: string
-): Promise<{ body: NodeJS.ReadableStream; contentType: string } | null> {
+export interface StoredMedia {
+  body: NodeJS.ReadableStream;
+  contentType: string;
+  contentLength?: number;
+  contentRange?: string;
+}
+
+export async function getMedia(key: string, range?: string): Promise<StoredMedia | null> {
   try {
     const res = await s3.send(
-      new GetObjectCommand({ Bucket: env.s3Bucket, Key: key })
+      new GetObjectCommand({ Bucket: env.s3Bucket, Key: key, Range: range })
     );
     return {
       body: res.Body as NodeJS.ReadableStream,
       contentType: res.ContentType ?? "application/octet-stream",
+      contentLength: res.ContentLength,
+      contentRange: res.ContentRange,
     };
   } catch {
     return null;

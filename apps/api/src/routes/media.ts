@@ -120,10 +120,17 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       if (!access.allowed) {
         return reply.code(404).send({ error: "Not found" });
       }
-      const media = await getMedia(key);
+      const rangeHeader = request.headers.range;
+      const range = typeof rangeHeader === "string" && /^bytes=\d*-\d*$/.test(rangeHeader)
+        ? rangeHeader
+        : undefined;
+      const media = await getMedia(key, range);
       if (!media) {
-        return reply.code(404).send({ error: "Not found" });
+        return reply.code(range ? 416 : 404).send({ error: range ? "Range not satisfiable" : "Not found" });
       }
+      if (media.contentRange) reply.code(206).header("Content-Range", media.contentRange);
+      if (media.contentLength !== undefined) reply.header("Content-Length", media.contentLength);
+      reply.header("Accept-Ranges", "bytes");
       reply.header("Content-Type", media.contentType);
       reply.header(
         "Cache-Control",
