@@ -14,6 +14,7 @@ import {
 import { prisma } from "../db.js";
 import { canReadMedia } from "../mediaAccess.js";
 import { compressVideoToFit } from "../videoCompression.js";
+import { getMediaDerivative } from "../mediaDerivatives.js";
 import { byUser, createRateLimiter, rateLimitBy } from "../rateLimit.js";
 
 const uploadLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 60 });
@@ -118,7 +119,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.get<{ Params: { key: string } }>(
+  app.get<{ Params: { key: string }; Querystring: { preview?: string; poster?: string } }>(
     "/media/:key",
     { preHandler: requireAuth },
     async (request, reply) => {
@@ -126,6 +127,19 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       const access = await canReadMedia(request.userId!, key);
       if (!access.allowed) {
         return reply.code(404).send({ error: "Not found" });
+      }
+      const cacheControl = access.maxAgeSeconds > 0
+        ? `private, max-age=${access.maxAgeSeconds}${access.maxAgeSeconds >= 3600 ? ", immutable" : ", must-revalidate"}`
+        : "private, no-store";
+      const derivativeKind = request.query.preview === "1" ? "preview" : request.query.poster === "1" ? "poster" : null;
+      if (derivativeKind) {
+        const image = await getMediaDerivative(key, derivativeKind);
+        if (!image) return reply.code(404).send({ error: "Not found" });
+        reply.header("Content-Type", "image/jpeg");
+        reply.header("Cache-Control", cacheControl);
+        reply.header("Vary", "Cookie");
+        reply.header("X-Content-Type-Options", "nosniff");
+        return reply.send(image);
       }
       const rangeHeader = request.headers.range;
       const range = typeof rangeHeader === "string" && /^bytes=\d*-\d*$/.test(rangeHeader)
@@ -141,9 +155,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       reply.header("Content-Type", media.contentType);
       reply.header(
         "Cache-Control",
-        access.maxAgeSeconds > 0
-          ? `private, max-age=${access.maxAgeSeconds}${access.maxAgeSeconds >= 3600 ? ", immutable" : ", must-revalidate"}`
-          : "private, no-store"
+        cacheControl
       );
       reply.header("Vary", "Cookie");
       reply.header("X-Content-Type-Options", "nosniff");

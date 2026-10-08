@@ -4,7 +4,8 @@ import { Link } from "react-router-dom";
 import { TRANSLATION_LANGUAGES } from "@app/shared";
 import type { FeedPost } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
-import { mediaUrl } from "../lib/upload.js";
+import { mediaPosterUrl, mediaUrl } from "../lib/upload.js";
+import ProgressiveImage from "./ProgressiveImage.js";
 import { card, btnDanger } from "../lib/ui.js";
 import Avatar from "./Avatar.js";
 import AiChatPanel from "./AiChatPanel.js";
@@ -160,20 +161,15 @@ function PostCard({
       {post.pollId && <PollCard pollId={post.pollId} />}
       {post.imageKey && post.mediaType === "video" ? (
         <video
-          src={mediaUrl(post.imageKey)}
+          src={`${mediaUrl(post.imageKey)}#t=0.1`}
+          poster={mediaPosterUrl(post.imageKey)}
           controls
           playsInline
           preload="metadata"
           className="mt-2 max-h-[32rem] w-full rounded-lg bg-black"
         />
       ) : post.imageKey && (
-        <img
-          src={mediaUrl(post.imageKey)}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          className="mt-2 max-h-96 w-full rounded-lg object-cover"
-        />
+        <ProgressiveImage mediaKey={post.imageKey} className="mt-2 rounded-lg" />
       )}
       <div className="mt-3 flex min-w-0 items-center justify-between gap-2">
         <time dateTime={post.createdAt} className="shrink-0 text-[11px] text-gray-400">

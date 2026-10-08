@@ -88,6 +88,16 @@ export function mediaUrl(key: string): string {
   return `${API_BASE}/media/${key}`;
 }
 
+// Tiny blurred stand-in that arrives long before the full image.
+export function mediaPreviewUrl(key: string): string {
+  return `${mediaUrl(key)}?preview=1`;
+}
+
+// First frame of a video.
+export function mediaPosterUrl(key: string): string {
+  return `${mediaUrl(key)}?poster=1`;
+}
+
 export async function downloadMediaObjectUrl(key: string): Promise<string> {
   return URL.createObjectURL(await downloadMediaBlob(key));
 }

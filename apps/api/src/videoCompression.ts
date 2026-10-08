@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { stat, rm } from "node:fs/promises";
 
-function run(command: string, args: string[], timeoutMs: number): Promise<string> {
+export function run(command: string, args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const process = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
