@@ -104,6 +104,8 @@ export default function FeedPage() {
   const [composerError, setComposerError] = useState<string | null>(null);
   const [postSendError, setPostSendError] = useState<string | null>(null);
   const [placeholder, setPlaceholder] = useState(pickComposerPlaceholder);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const postSuccessTimeoutRef = useRef<number | null>(null);
@@ -258,6 +260,17 @@ export default function FeedPage() {
   }
 
   const canPost = !!text.trim() || !!imageKey || pollEnabled;
+  const composerOpen = composerFocused || canPost || posting || postSuccess;
+
+  // Collapse only on an outside tap, so native pickers inside the form never dismiss it.
+  useEffect(() => {
+    if (!composerFocused) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!formRef.current?.contains(event.target as Node)) setComposerFocused(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [composerFocused]);
 
   useEffect(() => {
     if (!text && textareaRef.current) textareaRef.current.style.height = "";
@@ -333,7 +346,7 @@ export default function FeedPage() {
 
       <StoriesBar />
 
-      <form onSubmit={onPost} className={`${card} mb-4 flex flex-col gap-2.5 !p-3`}>
+      <form ref={formRef} onSubmit={onPost} className={`${card} mb-4 flex flex-col gap-2.5 !p-3`}>
         <div className="flex items-start gap-2.5">
           {user && <span className="mt-0.5 shrink-0"><Avatar avatarKey={user.avatarKey} username={user.username} size={36} /></span>}
           <textarea
@@ -344,6 +357,7 @@ export default function FeedPage() {
               e.target.style.height = "auto";
               e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
             }}
+            onFocus={() => setComposerFocused(true)}
             placeholder={placeholder}
             aria-label={placeholder}
             className="min-h-10 min-w-0 flex-1 resize-none rounded-2xl border border-transparent bg-gray-50 px-3.5 py-2 text-[15px] leading-6 text-gray-900 placeholder:text-gray-400 transition-colors focus:border-gray-300 focus:bg-white focus:outline-none"
@@ -398,58 +412,63 @@ export default function FeedPage() {
           </div>
         )}
         {composerError && <p role="alert" className="text-xs text-red-600">{composerError}</p>}
-        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 border-t border-gray-100 pt-2.5">
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                setPollEnabled((enabled) => !enabled);
-                setComposerError(null);
-              }}
-              aria-pressed={pollEnabled}
-              className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-[background-color,color,transform] active:scale-95 ${pollEnabled ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 20V10M12 20V4M19 20v-7" />
-              </svg>
-              {pollEnabled ? "Remove poll" : "Add poll"}
-            </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={mediaUploading}
-              aria-label={imageKey ? "Change photo or video" : "Add photo or video"}
-              title={imageKey ? "Change photo or video" : "Add photo or video"}
-              className={`flex h-9 w-9 items-center justify-center rounded-full border transition-[background-color,color,transform] active:scale-90 disabled:opacity-50 ${imageKey ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
-            >
-              {mediaUploading ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              ) : (
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3.5" y="4.5" width="17" height="15" rx="3.5" />
-                  <circle cx="9" cy="10" r="1.6" />
-                  <path d="m4 17 5-4.5 3.5 3L15.5 13 20 17" />
+        <div
+          className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${composerOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+          aria-hidden={!composerOpen}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="flex items-center gap-1.5 border-t border-gray-100 pt-2.5">
+              <AudiencePicker value={audience} onChange={setAudience} showHint={false} className="min-w-0 flex-nowrap" />
+              <button
+                type="button"
+                onClick={() => {
+                  setPollEnabled((enabled) => !enabled);
+                  setComposerError(null);
+                }}
+                aria-pressed={pollEnabled}
+                aria-label={pollEnabled ? "Remove poll" : "Add poll"}
+                title={pollEnabled ? "Remove poll" : "Add poll"}
+                className={`flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold transition-[background-color,color,transform] active:scale-95 ${pollEnabled ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 20V10M12 20V4M19 20v-7" />
                 </svg>
-              )}
-            </button>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <AudiencePicker value={audience} onChange={setAudience} showHint={false} className="flex-nowrap" />
-            <button
-              type="submit"
-              disabled={posting || mediaUploading || (!canPost && !postSuccess)}
-              aria-label={postSuccess ? "Post published" : "Post"}
-              className={`${btnPrimary} relative h-9 w-[4.25rem] shrink-0 overflow-hidden rounded-full px-0 text-sm font-semibold transition-[background-color,opacity] duration-300 ease-in-out focus-visible:ring-2 focus-visible:ring-offset-2 ${postSuccess ? "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600" : "bg-black hover:bg-gray-800 focus-visible:ring-black"} ${!canPost && !postSuccess ? "opacity-40" : ""}`}
-            >
-              <span aria-hidden="true" className={`absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-300 ease-out ${postSuccess ? "scale-90 opacity-0" : "scale-100 opacity-100"}`}>
-                Post
-              </span>
-              <span aria-hidden="true" className={`absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-300 ease-out ${postSuccess ? "scale-100 opacity-100" : "scale-75 opacity-0"}`}>
-                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m5 12 4.5 4.5L19 7" />
-                </svg>
-              </span>
-            </button>
+                <span className="hidden min-[420px]:inline">{pollEnabled ? "Remove poll" : "Add poll"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={mediaUploading}
+                aria-label={imageKey ? "Change photo or video" : "Add photo or video"}
+                title={imageKey ? "Change photo or video" : "Add photo or video"}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-[background-color,color,transform] active:scale-90 disabled:opacity-50 ${imageKey ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+              >
+                {mediaUploading ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                ) : (
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3.5" y="4.5" width="17" height="15" rx="3.5" />
+                    <circle cx="9" cy="10" r="1.6" />
+                    <path d="m4 17 5-4.5 3.5 3L15.5 13 20 17" />
+                  </svg>
+                )}
+              </button>
+              <button
+                type="submit"
+                disabled={posting || mediaUploading || (!canPost && !postSuccess)}
+                aria-label={postSuccess ? "Post published" : "Post"}
+                className={`${btnPrimary} relative ml-auto h-9 w-[4.25rem] shrink-0 overflow-hidden rounded-full px-0 text-sm font-semibold transition-[background-color,opacity] duration-300 ease-in-out focus-visible:ring-2 focus-visible:ring-offset-2 ${postSuccess ? "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600" : "bg-black hover:bg-gray-800 focus-visible:ring-black"} ${!canPost && !postSuccess ? "opacity-40" : ""}`}
+              >
+                <span aria-hidden="true" className={`absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-300 ease-out ${postSuccess ? "scale-90 opacity-0" : "scale-100 opacity-100"}`}>
+                  Post
+                </span>
+                <span aria-hidden="true" className={`absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-300 ease-out ${postSuccess ? "scale-100 opacity-100" : "scale-75 opacity-0"}`}>
+                  <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m5 12 4.5 4.5L19 7" />
+                  </svg>
+                </span>
+              </button>
+            </div>
           </div>
         </div>
         <input

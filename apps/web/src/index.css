@@ -325,3 +325,12 @@ html {
     animation: none;
   }
 }
+
+html[data-theme="dark"] [class~="hover:bg-gray-50"]:hover,
+html[data-theme="dark"] [class~="hover:bg-white"]:hover {
+  background-color: var(--surface-muted) !important;
+}
+
+html[data-theme="dark"] [class~="hover:bg-gray-100"]:hover {
+  background-color: var(--surface-strong) !important;
+}

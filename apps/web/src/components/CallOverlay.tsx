@@ -8,11 +8,13 @@ function MediaTile({
   stream,
   showVideo,
   muted,
+  micMuted,
 }: {
   user: PublicUser | null;
   stream: MediaStream | null;
   showVideo: boolean;
   muted: boolean;
+  micMuted: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -37,8 +39,16 @@ function MediaTile({
       ) : (
         <Avatar avatarKey={user?.avatarKey ?? null} username={user?.username ?? "Call"} size={64} />
       )}
-      <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 pb-2 pt-5 text-xs font-medium text-white">
-        {user?.displayName || (user ? `@${user.username}` : "You")}
+      <span className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-black/70 to-transparent px-3 pb-2 pt-5 text-xs font-medium text-white">
+        {micMuted && (
+          <span role="img" aria-label="Muted" title="Muted" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-3 w-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 9v2a3 3 0 0 0 5.1 2.1M15 9.3V6a3 3 0 0 0-5.9-.8M5 11a7 7 0 0 0 11.2 5.6M19 11a7 7 0 0 1-.6 2.8M12 18v3M3 3l18 18" />
+            </svg>
+          </span>
+        )}
+        <span className="min-w-0 truncate">{user?.displayName || (user ? `@${user.username}` : "You")}</span>
+        {micMuted && <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-red-300">Muted</span>}
       </span>
     </div>
   );
@@ -52,6 +62,7 @@ export default function CallOverlay({
   localStream,
   remoteStreams,
   microphoneMuted,
+  remoteMuted = {},
   cameraEnabled,
   error,
   onAccept,
@@ -68,6 +79,7 @@ export default function CallOverlay({
   localStream: MediaStream | null;
   remoteStreams: Record<string, MediaStream>;
   microphoneMuted: boolean;
+  remoteMuted?: Record<string, boolean>;
   cameraEnabled: boolean;
   error: string | null;
   onAccept: () => void;
@@ -118,6 +130,7 @@ export default function CallOverlay({
               stream={localStream}
               showVideo={callType === "video" && cameraEnabled}
               muted
+              micMuted={microphoneMuted}
             />
             {remoteTileIds.map((id) => (
               <MediaTile
@@ -126,6 +139,7 @@ export default function CallOverlay({
                 stream={remoteStreams[id] ?? null}
                 showVideo={callType === "video"}
                 muted={false}
+                micMuted={remoteMuted[id] === true}
               />
             ))}
           </div>

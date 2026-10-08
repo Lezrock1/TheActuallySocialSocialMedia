@@ -19,6 +19,8 @@ interface TrackCapabilities {
 }
 
 const TIMERS: TimerSeconds[] = [0, 3, 10];
+// Used when the camera has no hardware zoom (front cameras, iOS Safari).
+const DIGITAL_ZOOM_RANGE = { min: 1, max: 5 };
 
 function IconButton({
   label,
@@ -139,6 +141,11 @@ export default function CameraCapture({
   const facingRef = useRef<FacingMode>("environment");
   const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
   facingRef.current = facing;
+  const zoomRef = useRef(1);
+  const digitalZoomRef = useRef(true);
+  const shutterDragRef = useRef<{ y: number; zoom: number } | null>(null);
+  zoomRef.current = zoom;
+  digitalZoomRef.current = !capabilities.zoom;
 
   // Start (and restart) the camera stream; stop it whenever the tab is hidden.
   useEffect(() => {
@@ -226,9 +233,12 @@ export default function CameraCapture({
   }
 
   async function setZoomLevel(value: number) {
-    const range = capabilities.zoom;
-    if (!range) return;
+    const range = capabilities.zoom ?? DIGITAL_ZOOM_RANGE;
     const clamped = Math.min(range.max, Math.max(range.min, value));
+    if (!capabilities.zoom) {
+      setZoom(clamped);
+      return;
+    }
     if (await applyAdvanced({ zoom: clamped })) setZoom(clamped);
   }
 
@@ -237,6 +247,7 @@ export default function CameraCapture({
     pointerStartsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture(event.pointerId);
     if (pointersRef.current.size === 2) {
+      lastTapRef.current = null;
       const [a, b] = [...pointersRef.current.values()];
       pinchRef.current = { distance: Math.hypot(a.x - b.x, a.y - b.y), zoom };
     }
@@ -290,15 +301,29 @@ export default function CameraCapture({
     const video = videoRef.current;
     if (!video || video.videoWidth === 0) return;
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // Digital zoom crops the centre of the frame so the photo matches the preview.
+    const crop = digitalZoomRef.current ? Math.max(1, zoomRef.current) : 1;
+    const sourceWidth = video.videoWidth / crop;
+    const sourceHeight = video.videoHeight / crop;
+    canvas.width = Math.round(sourceWidth);
+    canvas.height = Math.round(sourceHeight);
     const context = canvas.getContext("2d");
     if (!context) return;
     if (facing === "user") {
       context.translate(canvas.width, 0);
       context.scale(-1, 1);
     }
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    context.drawImage(
+      video,
+      (video.videoWidth - sourceWidth) / 2,
+      (video.videoHeight - sourceHeight) / 2,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
     setFlashKey((key) => key + 1);
     navigator.vibrate?.(15);
     canvas.toBlob((blob) => {
@@ -363,7 +388,8 @@ export default function CameraCapture({
     const draw = () => {
       const source = videoRef.current;
       if (source && source.videoWidth > 0) {
-        const scale = Math.max(canvas.width / source.videoWidth, canvas.height / source.videoHeight);
+        const scale = Math.max(canvas.width / source.videoWidth, canvas.height / source.videoHeight)
+          * (digitalZoomRef.current ? Math.max(1, zoomRef.current) : 1);
         const width = source.videoWidth * scale;
         const height = source.videoHeight * scale;
         context.save();
@@ -429,8 +455,16 @@ export default function CameraCapture({
     }
   }
 
+  function onShutterPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = shutterDragRef.current;
+    if (!drag || !holdActiveRef.current) return;
+    // Sliding the finger up while recording zooms in, down zooms out.
+    void setZoomLevel(drag.zoom * Math.exp((drag.y - event.clientY) / 220));
+  }
+
   function onShutterPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
     if (!ready || countdown !== null) return;
+    shutterDragRef.current = { y: event.clientY, zoom: zoomRef.current };
     event.currentTarget.setPointerCapture(event.pointerId);
     releasedRef.current = false;
     holdActiveRef.current = false;
@@ -443,6 +477,7 @@ export default function CameraCapture({
   }
 
   function onShutterPointerUp() {
+    shutterDragRef.current = null;
     clearHoldTimer();
     releasedRef.current = true;
     if (holdActiveRef.current) {
@@ -454,6 +489,7 @@ export default function CameraCapture({
   }
 
   function onShutterPointerCancel() {
+    shutterDragRef.current = null;
     clearHoldTimer();
     releasedRef.current = true;
     if (holdActiveRef.current) {
@@ -489,9 +525,10 @@ export default function CameraCapture({
     stopDrawingRef.current?.();
   }, []);
 
-  const zoomRange = capabilities.zoom;
-  const canZoom = !!zoomRange && zoomRange.max > zoomRange.min;
-  const twoX = canZoom ? Math.min(2, zoomRange!.max) : 1;
+  const zoomRange = capabilities.zoom ?? DIGITAL_ZOOM_RANGE;
+  const canZoom = zoomRange.max > zoomRange.min;
+  const twoX = Math.min(2, zoomRange.max);
+  const digitalZoom = !capabilities.zoom;
 
   return (
     <div className="absolute inset-0 flex flex-col bg-black">
@@ -507,7 +544,8 @@ export default function CameraCapture({
           autoPlay
           muted
           playsInline
-          className={`h-full w-full object-cover transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"} ${facing === "user" ? "-scale-x-100" : ""}`}
+          className={`h-full w-full object-cover transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"}`}
+          style={{ transform: `${facing === "user" ? "scaleX(-1) " : ""}scale(${digitalZoom ? zoom : 1})` }}
         />
         {!ready && !failure && (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -588,7 +626,7 @@ export default function CameraCapture({
 
       <footer className="px-8 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3">
         <p className="mb-3 text-center text-[11px] font-medium tracking-wide text-white/60" aria-live="polite">
-          {recording ? "Release to finish · Double-tap to flip" : isVideoRecordingSupported() ? "Tap for photo · Hold for video · Double-tap to flip" : "Tap for photo · Double-tap to flip"}
+          {recording ? "Release to finish · Slide up to zoom" : isVideoRecordingSupported() ? "Tap for photo · Hold for video · Pinch to zoom" : "Tap for photo · Pinch to zoom"}
         </p>
         <div className="flex items-center justify-between">
           <button
@@ -605,6 +643,7 @@ export default function CameraCapture({
             onPointerDown={onShutterPointerDown}
             onPointerUp={onShutterPointerUp}
             onPointerCancel={onShutterPointerCancel}
+            onPointerMove={onShutterPointerMove}
             onContextMenu={(event) => event.preventDefault()}
             onClick={(event) => { if (event.detail === 0) onShutter(); }}
             disabled={!ready && !recording}

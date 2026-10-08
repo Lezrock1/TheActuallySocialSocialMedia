@@ -330,6 +330,17 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
       }).catch(() => undefined);
     });
 
+    socket.on("call:media-state", (payload: { callId: string; microphoneMuted: boolean }) => {
+      const userId = socket.data.userId as string;
+      const call = activeCalls.get(payload?.callId);
+      if (!call || !call.participantIds.has(userId) || typeof payload.microphoneMuted !== "boolean") return;
+      emitToUsers(io, [...call.participantIds].filter((id) => id !== userId), "call:media-state", {
+        callId: payload.callId,
+        userId,
+        microphoneMuted: payload.microphoneMuted,
+      });
+    });
+
     socket.on("call:leave", (payload: { callId: string }) => {
       leaveCall(socket.data.userId as string, payload.callId);
     });

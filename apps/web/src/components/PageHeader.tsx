@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.js";
+
+const menuItem = "flex items-center gap-3 rounded-xl px-3 py-2.5 font-medium text-gray-800 transition-colors hover:bg-gray-50 active:bg-gray-100";
+const subItem = "flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-gray-600 transition-colors hover:bg-white hover:text-gray-900";
 
 export default function PageHeader({
   title,
@@ -13,6 +16,28 @@ export default function PageHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [comingSoon, setComingSoon] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  function closeMenu() {
+    setMenuOpen(false);
+    setSettingsExpanded(false);
+  }
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) closeMenu();
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMenu();
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen]);
 
   const headerIconButton =
     "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-transparent text-gray-600 transition-[background-color,color,transform] duration-200 hover:bg-gray-100 hover:text-gray-900 active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#007AFF]/15 sm:h-9 sm:w-9 sm:border-gray-200";
@@ -42,7 +67,7 @@ export default function PageHeader({
             </svg>
           </Link>
         )}
-        <div className="relative">
+        <div ref={menuRef} className="relative">
           <button
             type="button"
             aria-label="Open settings menu"
@@ -62,101 +87,78 @@ export default function PageHeader({
           {menuOpen && (
             <div
               role="menu"
-              className="menu-enter absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white/95 py-1.5 text-sm shadow-xl backdrop-blur-xl"
+              className="menu-enter absolute right-0 top-full mt-2 w-60 origin-top-right overflow-hidden rounded-2xl border border-gray-200/80 bg-white/95 p-1.5 text-sm shadow-[0_18px_40px_-12px_rgba(15,23,42,0.28)] backdrop-blur-xl"
             >
-              <Link
-                to="/settings/ai"
-                role="menuitem"
-                onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
-                className="block px-4 py-2.5 font-medium hover:bg-gray-50"
-              >
-                AI Tools
-              </Link>
-              <Link
-                to="/invitations"
-                role="menuitem"
-                onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
-                className="block bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text px-4 py-2.5 font-semibold text-transparent hover:opacity-75"
-              >
-                Invites
-              </Link>
-              <Link
-                to="/circles"
-                role="menuitem"
-                onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
-                className="block px-4 py-2.5 hover:bg-gray-50"
-              >
-                Circles
-              </Link>
-              <div className="my-1 border-t border-gray-100" />
+                <Link to="/settings/ai" role="menuitem" onClick={closeMenu} className={menuItem}>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] shrink-0 text-gray-400" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8L12 3ZM18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8L18 15Z" /></svg>
+                  <span>AI Tools</span>
+                </Link>
+                <Link to="/invitations" role="menuitem" onClick={closeMenu} className={menuItem}>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] shrink-0 text-gray-400" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12v8H4v-8M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 1 1 0-5C11 2 12 7 12 7ZM12 7h4.5a2.5 2.5 0 1 0 0-5C13 2 12 7 12 7Z" /></svg>
+                  <span className="bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text font-semibold text-transparent">Invites</span>
+                </Link>
+                <Link to="/circles" role="menuitem" onClick={closeMenu} className={menuItem}>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] shrink-0 text-gray-400" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="6" /><circle cx="15" cy="12" r="6" /></svg>
+                  <span>Circles</span>
+                </Link>
               <button
                 type="button"
                 role="menuitem"
                 aria-haspopup="true"
                 aria-expanded={settingsExpanded}
                 onClick={() => setSettingsExpanded((expanded) => !expanded)}
-                className="flex w-full items-center justify-between px-4 py-2.5 text-left font-medium text-gray-800 hover:bg-gray-50"
+                className={`${menuItem} w-full justify-between text-left ${settingsExpanded ? "bg-gray-50" : ""}`}
               >
-                Settings
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className={`h-4 w-4 transition-transform ${settingsExpanded ? "rotate-180" : ""}`} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <span className="flex items-center gap-3">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] shrink-0 text-gray-400" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2" /><circle cx="8" cy="17" r="2" /></svg>
+                  Settings
+                </span>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${settingsExpanded ? "rotate-180" : ""}`} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="m6 9 6 6 6-6" />
                 </svg>
               </button>
-              {settingsExpanded && (
-                <div role="group" aria-label="Settings" className="mb-1 ml-3 border-l border-gray-200 pl-2">
-                  <Link
-                    to="/settings/appearance"
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
-                    className="block rounded-r-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  >
-                    Appearance
-                  </Link>
-                  <Link
-                    to="/settings/account"
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
-                    className="block rounded-r-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  >
-                    Account settings
-                  </Link>
-                  <Link
-                    to="/settings/notifications"
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
-                    className="block rounded-r-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  >
-                    Notifications
-                  </Link>
-                  <Link
-                    to="/settings/security"
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
-                    className="block rounded-r-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  >
-                    Security
-                  </Link>
+              <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${settingsExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+                <div className="min-h-0 overflow-hidden">
+                  <div role="group" aria-label="Settings" className="mx-1 mb-1 mt-0.5 flex flex-col gap-0.5 rounded-xl bg-gray-50 p-1">
+                    <Link to="/settings/appearance" role="menuitem" onClick={closeMenu} className={subItem}>
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] shrink-0 text-gray-400" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" /></svg>
+                      <span>Appearance</span>
+                    </Link>
+                    <Link to="/settings/account" role="menuitem" onClick={closeMenu} className={subItem}>
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] shrink-0 text-gray-400" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>
+                      <span>Account settings</span>
+                    </Link>
+                    <Link to="/settings/notifications" role="menuitem" onClick={closeMenu} className={subItem}>
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] shrink-0 text-gray-400" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16ZM10 20a2 2 0 0 0 4 0" /></svg>
+                      <span>Notifications</span>
+                    </Link>
+                    <Link to="/settings/security" role="menuitem" onClick={closeMenu} className={subItem}>
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] shrink-0 text-gray-400" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
+                      <span>Security</span>
+                    </Link>
+                  </div>
                 </div>
-              )}
+              </div>
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => {
-                  setMenuOpen(false);
-                  setSettingsExpanded(false);
+                  closeMenu();
                   setComingSoon("About us");
                 }}
-                className="block w-full px-4 py-2.5 text-left hover:bg-gray-50"
+                className={`${menuItem} w-full text-left`}
               >
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] shrink-0 text-gray-400" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>
                 About us
               </button>
-              <div className="my-1 border-t border-gray-100" />
+              <div className="mx-2 my-1 border-t border-gray-100" />
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => { setMenuOpen(false); setSettingsExpanded(false); void logout(); }}
-                className="block w-full px-4 py-2.5 text-left font-medium text-red-600 hover:bg-red-50"
+                onClick={() => { closeMenu(); void logout(); }}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left font-medium text-red-600 transition-colors hover:bg-red-50"
               >
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] shrink-0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9" /></svg>
                 Log out
               </button>
             </div>

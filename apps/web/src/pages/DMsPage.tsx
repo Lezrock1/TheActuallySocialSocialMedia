@@ -1152,6 +1152,7 @@ export default function DMsPage() {
         localStream={call.localStream}
         remoteStreams={call.remoteStreams}
         microphoneMuted={call.microphoneMuted}
+        remoteMuted={call.remoteMuted}
         cameraEnabled={call.cameraEnabled}
         error={call.callError}
         onAccept={() => void call.acceptCall()}

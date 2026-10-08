@@ -104,6 +104,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
       localStream={call.localStream}
       remoteStreams={call.remoteStreams}
       microphoneMuted={call.microphoneMuted}
+      remoteMuted={call.remoteMuted}
       cameraEnabled={call.cameraEnabled}
       error={call.callError}
       onAccept={call.acceptCall}
@@ -154,7 +155,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
 
   return (
     <>
-      <section aria-label="Live rooms" className="min-w-0">
+      <section aria-label="Live rooms" className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.05)]">
         <div className={compact ? "shrink-0" : "mb-2 flex items-center justify-between gap-2"}>
           <div className="min-w-0">
             <h2 className={`truncate font-semibold ${compact ? "text-xs text-red-600" : "text-base text-gray-900"}`}>{compact ? "Live now" : "Live rooms"}</h2>
@@ -213,7 +214,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
         </div>
 
         {!compact && createOpen && (
-          <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
+          <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
             <label className="mb-2 block text-xs font-medium text-gray-700">
               Room name
               <input
