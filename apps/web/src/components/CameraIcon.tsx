@@ -6,7 +6,7 @@ export default function CameraIcon() {
       fill="none"
       className="h-7 w-7"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
     >

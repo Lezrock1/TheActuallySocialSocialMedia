@@ -177,7 +177,7 @@ export function MobileNav() {
           type="button"
           onClick={camera.open}
           aria-label="Open camera"
-          className="absolute left-1/2 top-0 z-50 flex h-16 w-16 -translate-x-1/2 -translate-y-[30%] items-center justify-center rounded-full bg-fuchsia-600 text-white shadow-lg ring-4 ring-white transition hover:bg-fuchsia-700 active:scale-95"
+          className="absolute left-1/2 top-0 z-50 flex h-16 w-16 -translate-x-1/2 -translate-y-[30%] items-center justify-center rounded-full bg-gradient-to-br from-fuchsia-500 via-fuchsia-600 to-purple-600 text-white shadow-[0_8px_20px_-4px_rgba(192,38,211,0.55),inset_0_1px_0_rgba(255,255,255,0.3)] ring-[5px] ring-[var(--surface)] transition-[transform,box-shadow,filter] duration-200 hover:brightness-110 active:scale-90 active:brightness-95 focus-visible:outline-none focus-visible:ring-fuchsia-300"
         >
           <CameraIcon />
         </button>

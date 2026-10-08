@@ -95,11 +95,66 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
     }
   }
 
-  if (compact && (!rooms.length || roomsError)) return null;
+  const callOverlay = (
+    <CallOverlay
+      incomingCall={null}
+      activeCall={call.activeCall}
+      currentUserId={user?.id ?? ""}
+      users={callUsers}
+      localStream={call.localStream}
+      remoteStreams={call.remoteStreams}
+      microphoneMuted={call.microphoneMuted}
+      cameraEnabled={call.cameraEnabled}
+      error={call.callError}
+      onAccept={call.acceptCall}
+      onDecline={call.declineCall}
+      onEnd={call.endCall}
+      onToggleMicrophone={call.toggleMicrophone}
+      onToggleCamera={call.toggleCamera}
+      onClearError={call.clearCallError}
+    />
+  );
+
+  // Compact mode renders the live rooms as story-style bubbles inside the stories row.
+  if (compact) {
+    return (
+      <>
+        {!roomsError && rooms.map((room) => {
+          const host = room.members.find((member) => member.id === room.hostUserId) ?? room.members[0];
+          const alreadyInRoom = room.participantIds.includes(user?.id ?? "");
+          return (
+            <button
+              key={room.callId}
+              type="button"
+              onClick={() => {
+                setLocalRoomMembers(room.members);
+                void call.joinLiveRoom(room);
+              }}
+              disabled={alreadyInRoom || !!call.activeCall || !!call.incomingCall}
+              aria-label={`${alreadyInRoom ? "Already in" : "Join"} live room with @${host?.username ?? "friend"}`}
+              title={room.title}
+              className="flex shrink-0 flex-col items-center gap-1 transition-transform active:scale-95 disabled:cursor-default"
+            >
+              <span className="live-ring relative block rounded-full bg-gradient-to-br from-red-500 via-[#FF5A5F] to-orange-400 p-0.5">
+                <span className="block rounded-full border-2 border-white">
+                  <Avatar avatarKey={host?.avatarKey ?? null} username={host?.username ?? "room"} size={52} />
+                </span>
+                <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-[#FF5A5F] px-1.5 text-[9px] font-bold uppercase leading-4 tracking-wider text-white ring-2 ring-white">
+                  Live
+                </span>
+              </span>
+              <span className="max-w-[60px] truncate text-[11px] font-semibold text-red-600">@{host?.username ?? "friend"}</span>
+            </button>
+          );
+        })}
+        {callOverlay}
+      </>
+    );
+  }
 
   return (
     <>
-      <section aria-label="Live rooms" className={compact ? "flex min-w-0 items-center gap-3 border-b border-gray-100 py-2" : "min-w-0"}>
+      <section aria-label="Live rooms" className="min-w-0">
         <div className={compact ? "shrink-0" : "mb-2 flex items-center justify-between gap-2"}>
           <div className="min-w-0">
             <h2 className={`truncate font-semibold ${compact ? "text-xs text-red-600" : "text-base text-gray-900"}`}>{compact ? "Live now" : "Live rooms"}</h2>
@@ -224,27 +279,11 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
           </div>
         )}
         {!compact && <p className="mt-2 border-t border-gray-100 pt-2 text-[10px] leading-4 text-gray-400">
-          Rooms stay live while the host remains on this page. Always-on livestreams need dedicated streaming infrastructure.
+          A room stays live until the last person leaves, even if the host steps out.
         </p>}
       </section>
 
-      <CallOverlay
-        incomingCall={null}
-        activeCall={call.activeCall}
-        currentUserId={user?.id ?? ""}
-        users={callUsers}
-        localStream={call.localStream}
-        remoteStreams={call.remoteStreams}
-        microphoneMuted={call.microphoneMuted}
-        cameraEnabled={call.cameraEnabled}
-        error={call.callError}
-        onAccept={call.acceptCall}
-        onDecline={call.declineCall}
-        onEnd={call.endCall}
-        onToggleMicrophone={call.toggleMicrophone}
-        onToggleCamera={call.toggleCamera}
-        onClearError={call.clearCallError}
-      />
+      {callOverlay}
     </>
   );
 }

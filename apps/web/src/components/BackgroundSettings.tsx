@@ -148,7 +148,7 @@ export default function BackgroundSettings() {
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-base font-semibold text-gray-900">Page backgrounds</h2>
-          <p className="mt-1 text-xs text-gray-500">Choose one background for the whole app or customize individual areas.</p>
+          <p className="mt-1 text-xs text-gray-500">Choose one background for the whole app or customize individual areas. Colors are fine-tuned automatically so text always stays easy to read.</p>
         </div>
         <button
           type="button"

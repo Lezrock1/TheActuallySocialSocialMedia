@@ -347,7 +347,6 @@ export default function StoriesBar() {
 
   return (
     <div className="min-w-0">
-      <LiveRoomsBar compact />
       <div className="flex gap-4 overflow-x-auto pb-2">
         <button
           type="button"
@@ -360,6 +359,7 @@ export default function StoriesBar() {
           </span>
           <span className="text-[11px] text-gray-500">Story</span>
         </button>
+        <LiveRoomsBar compact />
         {groups.map((group) => (
           <button
             key={group.author.id}

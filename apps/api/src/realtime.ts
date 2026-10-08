@@ -253,7 +253,7 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
             callId,
             conversationId: call.conversationId,
             title: conversation.name ?? "Live room",
-            hostUserId: call.hostUserId,
+            hostUserId: call.participantIds.has(call.hostUserId) ? call.hostUserId : [...call.participantIds][0],
             audience: call.audience,
             participantIds: [...call.participantIds],
             members: [...call.participantIds].flatMap((participantId) => {
@@ -344,18 +344,19 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
       if (!call || !call.participantIds.has(userId)) return;
       call.participantIds.delete(userId);
       const otherParticipants = [...call.participantIds];
-      if (userId === call.hostUserId) {
+      if (userId === call.hostUserId && !call.isRoom) {
         activeCalls.delete(callId);
         emitToUsers(io, otherParticipants, "call:ended", { callId });
-        if (call.isRoom) void notifyLiveRoomAudienceChanged(io, call).catch(() => undefined);
-        if (call.isRoom && call.memberIds.length === 1) {
-          void prisma.conversation.delete({ where: { id: call.conversationId } }).catch(() => undefined);
-        }
         return;
       }
       emitToUsers(io, otherParticipants, "call:participant-left", { callId, userId });
       if (call.isRoom) void notifyLiveRoomAudienceChanged(io, call).catch(() => undefined);
-      if (otherParticipants.length === 0) activeCalls.delete(callId);
+      if (otherParticipants.length === 0) {
+        activeCalls.delete(callId);
+        if (call.isRoom && call.memberIds.length === 1) {
+          void prisma.conversation.delete({ where: { id: call.conversationId } }).catch(() => undefined);
+        }
+      }
     }
   });
 

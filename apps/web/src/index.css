@@ -310,3 +310,18 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
+
+@keyframes live-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(255 90 95 / 55%); }
+  50% { box-shadow: 0 0 0 6px rgb(255 90 95 / 0%); }
+}
+
+.live-ring {
+  animation: live-ring 1.6s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-ring {
+    animation: none;
+  }
+}
