@@ -11,6 +11,7 @@ export default function PageHeader({
 }) {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [comingSoon, setComingSoon] = useState<string | null>(null);
 
   const headerIconButton =
@@ -47,7 +48,10 @@ export default function PageHeader({
             aria-label="Open settings menu"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
+            onClick={() => {
+              if (menuOpen) setSettingsExpanded(false);
+              setMenuOpen(!menuOpen);
+            }}
             className={headerIconButton}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-6 w-6 sm:h-[18px] sm:w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -58,61 +62,80 @@ export default function PageHeader({
           {menuOpen && (
             <div
               role="menu"
-              className="menu-enter absolute right-0 top-full mt-2 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white/95 py-1 text-sm shadow-xl backdrop-blur-xl"
+              className="menu-enter absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white/95 py-1.5 text-sm shadow-xl backdrop-blur-xl"
             >
               <Link
                 to="/settings/ai"
                 role="menuitem"
-                onClick={() => setMenuOpen(false)}
-                className="block px-4 py-2.5 hover:bg-gray-50"
+                onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
+                className="block px-4 py-2.5 font-medium hover:bg-gray-50"
               >
                 AI Tools
               </Link>
               <Link
-                to="/circles"
-                role="menuitem"
-                onClick={() => setMenuOpen(false)}
-                className="block px-4 py-2.5 hover:bg-gray-50"
-              >
-                Circles
-              </Link>
-              <Link
                 to="/invitations"
                 role="menuitem"
-                onClick={() => setMenuOpen(false)}
+                onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
                 className="block bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text px-4 py-2.5 font-semibold text-transparent hover:opacity-75"
               >
                 Invites
               </Link>
               <Link
-                to="/settings/notifications"
+                to="/circles"
                 role="menuitem"
-                onClick={() => setMenuOpen(false)}
+                onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
                 className="block px-4 py-2.5 hover:bg-gray-50"
               >
-                Notifications
+                Circles
               </Link>
-              <Link
-                to="/settings/security"
+              <div className="my-1 border-t border-gray-100" />
+              <button
+                type="button"
                 role="menuitem"
-                onClick={() => setMenuOpen(false)}
-                className="block px-4 py-2.5 hover:bg-gray-50"
-              >
-                Security
-              </Link>
-              <Link
-                to="/settings/account"
-                role="menuitem"
-                onClick={() => setMenuOpen(false)}
-                className="block px-4 py-2.5 hover:bg-gray-50"
+                aria-haspopup="true"
+                aria-expanded={settingsExpanded}
+                onClick={() => setSettingsExpanded((expanded) => !expanded)}
+                className="flex w-full items-center justify-between px-4 py-2.5 text-left font-medium text-gray-800 hover:bg-gray-50"
               >
                 Settings
-              </Link>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className={`h-4 w-4 transition-transform ${settingsExpanded ? "rotate-180" : ""}`} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              {settingsExpanded && (
+                <div role="group" aria-label="Settings" className="mb-1 ml-3 border-l border-gray-200 pl-2">
+                  <Link
+                    to="/settings/account"
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
+                    className="block rounded-r-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  >
+                    Account settings
+                  </Link>
+                  <Link
+                    to="/settings/notifications"
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
+                    className="block rounded-r-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  >
+                    Notifications
+                  </Link>
+                  <Link
+                    to="/settings/security"
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
+                    className="block rounded-r-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  >
+                    Security
+                  </Link>
+                </div>
+              )}
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => {
                   setMenuOpen(false);
+                  setSettingsExpanded(false);
                   setComingSoon("About us");
                 }}
                 className="block w-full px-4 py-2.5 text-left hover:bg-gray-50"
@@ -123,7 +146,7 @@ export default function PageHeader({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => void logout()}
+                onClick={() => { setMenuOpen(false); setSettingsExpanded(false); void logout(); }}
                 className="block w-full px-4 py-2.5 text-left font-medium text-red-600 hover:bg-red-50"
               >
                 Log out
