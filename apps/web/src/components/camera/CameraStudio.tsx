@@ -205,13 +205,13 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
         </button>
       </header>
 
-      <main className={`min-h-0 flex-1 px-4 pb-3 pt-3 ${target === "snap" ? "flex flex-col overflow-hidden" : "overflow-y-auto"}`}>
-        <div className={`relative mx-auto flex w-full shrink-0 items-center justify-center overflow-hidden rounded-3xl ${dark ? "bg-black" : "bg-gray-200"} ${target === "snap" ? "aspect-[4/3] max-h-[23vh] max-w-xl" : "aspect-[4/5] max-h-[44vh] max-w-sm"}`}>
+      <main className={`min-h-0 flex-1 px-4 pb-3 pt-3 ${target === "snap" ? "snap-share-enter flex flex-col overflow-y-auto" : "overflow-y-auto"}`}>
+        <div className={`relative mx-auto flex w-full shrink-0 items-center justify-center overflow-hidden rounded-3xl ${dark ? "bg-black" : "bg-gray-200"} ${target === "snap" ? "aspect-[4/3] max-h-[18vh] max-w-xl" : "aspect-[4/5] max-h-[44vh] max-w-sm"}`}>
           {previewUrl && <img src={previewUrl} alt="Photo preview" className="h-full w-full object-contain" />}
           <span className={`pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t ${dark ? "from-black/50" : "from-black/25"} to-transparent`} />
         </div>
 
-        <div className={`mx-auto mt-4 w-full ${target === "snap" ? "flex min-h-0 max-w-2xl flex-1 flex-col" : "max-w-sm"}`}>
+        <div className={`mx-auto mt-4 w-full ${target === "snap" ? "max-w-2xl" : "max-w-sm"}`}>
           <div className={`shrink-0 rounded-2xl p-1 ${dark ? "bg-white/10" : "bg-gray-200"}`}>
             <div role="tablist" aria-label="Share to" className="flex gap-1">
               {(["post", "story", "snap"] as const).map((option) => (
@@ -226,7 +226,19 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
               <AudiencePicker value={audience} onChange={setAudience} tone="dark" />
             </div>
           ) : (
-            <div className={`mt-3 flex min-h-0 flex-1 flex-col rounded-2xl border p-3 ${dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white shadow-sm"}`}>
+            <>
+              <label className={`mt-3 flex flex-col gap-1 text-xs font-medium ${dark ? "text-white/65" : "text-gray-600"}`}>
+                Caption
+                <textarea
+                  value={caption}
+                  onChange={(event) => setCaption(event.target.value)}
+                  maxLength={500}
+                  rows={2}
+                  placeholder="Add a caption…"
+                  className={`resize-none rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-4 ${dark ? "border-white/15 bg-white/5 text-white placeholder:text-white/35 focus:border-fuchsia-400 focus:ring-fuchsia-400/15" : "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-fuchsia-500 focus:ring-fuchsia-500/10"}`}
+                />
+              </label>
+              <div className={`mt-3 flex flex-col rounded-2xl border p-3 ${dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white shadow-sm"}`}>
               <div className="mb-2 flex items-center justify-between gap-3">
                 <label htmlFor="camera-friend-search" className={`text-xs font-semibold ${dark ? "text-white/80" : "text-gray-700"}`}>Send to</label>
                 <span className={`text-[11px] tabular-nums ${dark ? "text-white/55" : "text-gray-500"}`}>{recipients.length} selected</span>
@@ -238,7 +250,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
                 placeholder="Search friends"
                 className={`w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-4 ${dark ? "border-white/15 bg-black/30 text-white placeholder:text-white/40 focus:border-fuchsia-400 focus:ring-fuchsia-400/15" : "border-gray-200 bg-gray-50 text-gray-900 placeholder:text-gray-400 focus:border-fuchsia-500 focus:ring-fuchsia-500/10"}`}
               />
-              <div aria-label="Friends" role="listbox" aria-multiselectable="true" className={`mt-2 min-h-0 flex-1 divide-y overflow-y-auto rounded-xl border ${dark ? "divide-white/10 border-white/10 bg-black/20" : "divide-gray-100 border-gray-100 bg-white"}`}>
+              <div aria-label="Friends" role="listbox" aria-multiselectable="true" className={`mt-2 divide-y rounded-xl border ${dark ? "divide-white/10 border-white/10 bg-black/20" : "divide-gray-100 border-gray-100 bg-white"}`}>
                 {matchingFriends.map((friend) => {
                   const selected = recipients.includes(friend.username);
                   return (
@@ -269,10 +281,11 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
                 )}
               </div>
               <p className={`mt-2 shrink-0 text-[10px] leading-4 ${dark ? "text-white/45" : "text-gray-500"}`}>Encrypted on this device when every recipient has registered a key.</p>
-            </div>
+              </div>
+            </>
           )}
 
-          <label className={`mt-3 flex shrink-0 flex-col gap-1 text-xs font-medium ${dark ? "text-white/65" : "text-gray-600"}`}>
+          {target !== "snap" && <label className={`mt-3 flex flex-col gap-1 text-xs font-medium ${dark ? "text-white/65" : "text-gray-600"}`}>
             Caption
             <textarea
               value={caption}
@@ -282,7 +295,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
               placeholder="Add a caption…"
               className={`resize-none rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-4 ${dark ? "border-white/15 bg-white/5 text-white placeholder:text-white/35 focus:border-fuchsia-400 focus:ring-fuchsia-400/15" : "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-fuchsia-500 focus:ring-fuchsia-500/10"}`}
             />
-          </label>
+          </label>}
 
           {missingKeys.length > 0 && (
             <div role="alert" className={`mt-3 shrink-0 rounded-2xl border p-3 text-xs leading-5 ${dark ? "border-amber-300/30 bg-amber-400/10 text-amber-100" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
