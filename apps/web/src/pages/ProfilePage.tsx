@@ -11,6 +11,10 @@ import PageHeader from "../components/PageHeader.js";
 import PostCard from "../components/PostCard.js";
 import Avatar from "../components/Avatar.js";
 import AppDialog from "../components/AppDialog.js";
+import Sheet from "../components/Sheet.js";
+import SecurityCodeSheet from "../components/SecurityCodeSheet.js";
+import { useCircles } from "../lib/circles.js";
+import type { PublicEncryptionKey } from "../lib/encryption.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 import { InlineSkeletonText } from "../components/LoadingSkeleton.js";
 import { card, input, btnPrimary, btnSecondary } from "../lib/ui.js";
@@ -51,6 +55,43 @@ export default function ProfilePage() {
   const [reportReason, setReportReason] = useState("");
   const [reportStatus, setReportStatus] = useState<string | null>(null);
   const [profileActionError, setProfileActionError] = useState<string | null>(null);
+  const [circlesOpen, setCirclesOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
+  const circlesQuery = useCircles();
+  const containingQuery = useQuery({
+    queryKey: ["circles-containing", username],
+    queryFn: async () => (await apiFetch<{ circleIds: string[] }>(`/circles/containing/${encodeURIComponent(username)}`)).circleIds,
+    enabled: circlesOpen,
+  });
+  const keysQuery = useQuery({
+    queryKey: ["profile-encryption-keys", username],
+    queryFn: async () => {
+      const [mine, theirs] = await Promise.all([
+        apiFetch<{ keys: PublicEncryptionKey[] }>("/users/me/encryption-keys"),
+        apiFetch<{ keys: PublicEncryptionKey[] }>(`/users/${encodeURIComponent(username)}/encryption-keys`),
+      ]);
+      return [...mine.keys, ...theirs.keys];
+    },
+    enabled: securityOpen,
+  });
+
+  async function toggleCircleMember(circleId: string, isMember: boolean) {
+    setProfileActionError(null);
+    try {
+      if (isMember) {
+        await apiFetch(`/circles/${circleId}/members/${encodeURIComponent(username)}`, { method: "DELETE" });
+      } else {
+        await apiFetch(`/circles/${circleId}/members`, { method: "POST", body: JSON.stringify({ username }) });
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["circles-containing", username] }),
+        queryClient.invalidateQueries({ queryKey: ["circles"] }),
+        queryClient.invalidateQueries({ queryKey: ["circle", circleId] }),
+      ]);
+    } catch (caught) {
+      setProfileActionError(caught instanceof Error ? caught.message : "Could not update the circle.");
+    }
+  }
 
   const profileQuery = useQuery({
     queryKey: ["profile", username],
@@ -277,6 +318,24 @@ export default function ProfilePage() {
                 )}
               </div>
               {!profile.isMe && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCirclesOpen(true)}
+                    className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <span aria-hidden="true">◯</span> Circles
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSecurityOpen(true)}
+                    className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <span aria-hidden="true">🛡️</span> Security code
+                  </button>
+                </div>
+              )}
+              {!profile.isMe && (
                 <div className="mt-2 flex gap-3 text-xs text-gray-400">
                   <button onClick={() => setBlockDialogOpen(true)} className="hover:underline">
                     {isBlocked ? "Unblock" : "Block"}
@@ -289,8 +348,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {reportStatus && <p role="status" className="mb-3 text-sm text-green-700">{reportStatus}</p>}
-          {profileActionError && <p role="alert" className="mb-3 text-sm text-red-600">{profileActionError}</p>}
+          {reportStatus && <p role="status" className="mb-3 text-sm text-green-700">{reportStatus}</p>}          {profileActionError && <p role="alert" className="mb-3 text-sm text-red-600">{profileActionError}</p>}
 
           {editing && (
             <div className={`${card} mb-6 flex flex-col gap-2`}>
@@ -340,6 +398,54 @@ export default function ProfilePage() {
             >
               Load more posts
             </button>
+          )}
+        </>
+      )}
+      {profile && !profile.isMe && (
+        <>
+          <Sheet open={circlesOpen} onClose={() => setCirclesOpen(false)} title={`Circles for @${profile.username}`}>
+            {circlesQuery.data && circlesQuery.data.circles.length === 0 ? (
+              <div className="py-2 text-sm text-gray-600">
+                <p>You have no circles yet.</p>
+                <Link to="/circles" className="mt-2 inline-block font-medium text-blue-600 hover:underline">Create one</Link>
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {(circlesQuery.data?.circles ?? []).map((circle) => {
+                  const isMember = !!containingQuery.data?.includes(circle.id);
+                  return (
+                    <li key={circle.id}>
+                      <label className="flex cursor-pointer items-center gap-3 py-3">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-gray-900">{circle.name}</span>
+                          <span className="block text-xs text-gray-500">{circle.memberCount} members</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={isMember}
+                          disabled={containingQuery.isLoading}
+                          onChange={() => void toggleCircleMember(circle.id, isMember)}
+                          className="h-5 w-5 accent-[#1D9BF0]"
+                        />
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <p className="mt-3 text-xs leading-5 text-gray-500">
+              Members are notified and can see what you share with that circle.
+            </p>
+            {profileActionError && <p role="alert" className="mt-2 text-xs text-red-600">{profileActionError}</p>}
+          </Sheet>
+          {currentUser && securityOpen && keysQuery.data && (
+            <SecurityCodeSheet
+              open
+              onClose={() => setSecurityOpen(false)}
+              meId={currentUser.id}
+              peers={[{ id: profile.id, username: profile.username, avatarKey: profile.avatarKey }]}
+              keys={keysQuery.data}
+            />
           )}
         </>
       )}

@@ -15,6 +15,13 @@ const enabledPreferences: NotificationPreferences = {
   storyReactions: true,
   mentions: true,
   closeFriends: true,
+  postsFromCircles: true,
+  circles: true,
+  meetupResponses: true,
+  quietHoursEnabled: false,
+  quietStartMinute: 1320,
+  quietEndMinute: 420,
+  timezone: "UTC",
 };
 
 describe("isNotificationEnabled", () => {
@@ -36,6 +43,9 @@ describe("isNotificationEnabled", () => {
       "story_reaction",
       "mention",
       "close_friend",
+      "circle_post",
+      "circle_added",
+      "meetup_response",
     ];
     for (const type of notificationTypes) {
       expect(isNotificationEnabled(type, enabledPreferences)).toBe(true);

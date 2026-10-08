@@ -5,7 +5,13 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { deleteMediaIfUnreferenced } from "../storage.js";
 import { ownsMedia } from "../mediaAccess.js";
-import { getBlockedUserIds, getCloseFriendGrantedAuthorIds } from "../visibility.js";
+import {
+  canViewContent,
+  circleMemberClause,
+  getBlockedUserIds,
+  getVisibilityGrants,
+  visibleContentClauses,
+} from "../visibility.js";
 import { toPublicUser } from "../serializers.js";
 import { postWithCountsInclude, toFeedPost } from "../postSerializer.js";
 import { createMentionNotifications, createPostNotifications } from "../notifications.js";
@@ -79,6 +85,14 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "Parent post not found" });
       }
     }
+    const visibility = parsed.data.visibility ?? "public";
+    if (visibility === "circle") {
+      const circle = await prisma.circle.findFirst({
+        where: { id: parsed.data.circleId, ownerId: request.userId! },
+        select: { id: true },
+      });
+      if (!circle) return reply.code(400).send({ error: "Choose one of your circles" });
+    }
 
     const post = await prisma.post.create({
       data: {
@@ -87,7 +101,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         imageKey: parsed.data.imageKey,
         mediaType: parsed.data.mediaType ?? "image",
         parentPostId: parsed.data.parentPostId,
-        visibility: parsed.data.visibility ?? "public",
+        visibility,
+        circleId: visibility === "circle" ? parsed.data.circleId : null,
         ...(parsed.data.poll
           ? {
               poll: {
@@ -117,7 +132,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         ? [createPostNotifications({
             authorId: request.userId!,
             postId: post.id,
-            visibility: parsed.data.visibility ?? "public",
+            visibility,
+            circleId: post.circleId,
           }).catch((error) => request.log.error(error, "Post notification creation failed"))]
         : []),
     ];
@@ -159,6 +175,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       if (!post) {
         return reply.code(404).send({ error: "Post not found" });
       }
+      if (!(await canViewContent(request.userId!, post))) {
+        return reply.code(404).send({ error: "Post not found" });
+      }
       const [parent, replies] = await Promise.all([
         post.parentPostId
           ? prisma.post.findUnique({
@@ -174,9 +193,11 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       ]);
 
       return reply.send({
-        parent: parent ? toFeedPost(parent) : null,
+        parent: parent && await canViewContent(request.userId!, parent) ? toFeedPost(parent) : null,
         post: toFeedPost(post),
-        replies: replies.map(toFeedPost),
+        replies: (await Promise.all(
+          replies.map(async (item) => (await canViewContent(request.userId!, item) ? item : null))
+        )).filter((item) => item !== null).map(toFeedPost),
       });
     }
   );
@@ -189,9 +210,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const post = await prisma.post.findUnique({
         where: { id: request.params.id },
-        select: { factCheckSummary: true, factCheckCount: true },
+        select: { factCheckSummary: true, factCheckCount: true, authorId: true, visibility: true, circleId: true },
       });
-      if (!post) {
+      if (!post || !(await canViewContent(request.userId!, post))) {
         return reply.code(404).send({ error: "Post not found" });
       }
       return reply.send({
@@ -217,7 +238,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       }
       const viewerId = request.userId!;
 
-      const [user, following, blockedIds, closeFriendGrantedAuthorIds] =
+      const [user, following, blockedIds, grants] =
         await Promise.all([
           prisma.user.findUniqueOrThrow({ where: { id: viewerId } }),
           prisma.follow.findMany({
@@ -225,7 +246,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             select: { followeeId: true },
           }),
           getBlockedUserIds(viewerId),
-          getCloseFriendGrantedAuthorIds(viewerId),
+          getVisibilityGrants(viewerId),
         ]);
       const authorIds = [
         viewerId,
@@ -236,29 +257,24 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       const [posts, follows] = await Promise.all([
         prisma.post.findMany({
           where: {
-            authorId: { in: authorIds },
-            OR: [
-              { visibility: "public" },
-              { authorId: viewerId },
+            AND: [
               {
-                visibility: "close_friends",
-                authorId: { in: closeFriendGrantedAuthorIds },
+                OR: [
+                  { authorId: { in: authorIds }, OR: visibleContentClauses(viewerId, grants) },
+                  circleMemberClause(grants, blockedIds),
+                ],
               },
+              ...(cursor && cursorDate
+                ? [{
+                    OR: [
+                      { createdAt: { lt: cursorDate } },
+                      ...(cursor.type === "post"
+                        ? [{ createdAt: cursorDate, id: { lt: cursor.id } }]
+                        : []),
+                    ],
+                  }]
+                : []),
             ],
-            ...(cursor && cursorDate
-              ? {
-                  AND: [
-                    {
-                      OR: [
-                        { createdAt: { lt: cursorDate } },
-                        ...(cursor.type === "post"
-                          ? [{ createdAt: cursorDate, id: { lt: cursor.id } }]
-                          : []),
-                      ],
-                    },
-                  ],
-                }
-              : {}),
           },
           include: postWithCountsInclude,
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],

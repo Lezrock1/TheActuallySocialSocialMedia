@@ -2,8 +2,9 @@ import type { NotificationPreferences, NotificationType } from "@app/shared";
 import { prisma } from "./db.js";
 import { getBlockedUserIds } from "./visibility.js";
 import { sendWebPushNotification } from "./pushNotifications.js";
-import { isNotificationEnabled } from "./notificationPreferences.js";
+import { isNotificationEnabled, notificationPreferenceSelect } from "./notificationPreferences.js";
 import { selectPostNotificationRecipients } from "./postNotifications.js";
+import { isQuietNow } from "./quietHours.js";
 
 export async function createUserNotification(input: {
   recipientId: string;
@@ -20,6 +21,14 @@ export async function createUserNotification(input: {
   if (!isNotificationEnabled(input.type, preferences)) return;
   try {
     const notification = await prisma.notification.create({ data: input });
+    const inQuietHours = preferences !== null && isQuietNow({
+      enabled: preferences.quietHoursEnabled,
+      startMinute: preferences.quietStartMinute,
+      endMinute: preferences.quietEndMinute,
+      timezone: preferences.timezone,
+    }, new Date());
+    // Held back now; the quiet-hours digest job announces it afterwards.
+    if (inQuietHours) return;
     void sendWebPushNotification({
       notificationId: notification.id,
       recipientId: input.recipientId,
@@ -43,12 +52,28 @@ export async function createUserNotification(input: {
 export async function createPostNotifications(input: {
   authorId: string;
   postId: string;
-  visibility: "public" | "close_friends";
+  visibility: "public" | "close_friends" | "circle";
+  circleId?: string | null;
 }): Promise<void> {
   const blockedIds = [...new Set([
     input.authorId,
     ...(await getBlockedUserIds(input.authorId)),
   ])];
+  if (input.visibility === "circle") {
+    if (!input.circleId) return;
+    const members = await prisma.circleMember.findMany({
+      where: { circleId: input.circleId, userId: { notIn: blockedIds } },
+      select: { userId: true },
+    });
+    await Promise.all(members.map(({ userId }) => createUserNotification({
+      recipientId: userId,
+      actorId: input.authorId,
+      type: "circle_post",
+      dedupeKey: `post:${input.postId}:${userId}`,
+      postId: input.postId,
+    })));
+    return;
+  }
   const [followers, closeFriends] = await Promise.all([
     input.visibility === "public"
       ? prisma.follow.findMany({
@@ -64,21 +89,7 @@ export async function createPostNotifications(input: {
   const savedPreferences = closeFriends.length
     ? await prisma.notificationPreference.findMany({
         where: { userId: { in: closeFriends.map((friend) => friend.friendId) } },
-        select: {
-          userId: true,
-          postsFromFollowing: true,
-          postsFromCloseFriends: true,
-          snaps: true,
-          messages: true,
-          liveRooms: true,
-          follows: true,
-          comments: true,
-          commentReplies: true,
-          commentLikes: true,
-          storyReactions: true,
-          mentions: true,
-          closeFriends: true,
-        },
+        select: { userId: true, ...notificationPreferenceSelect },
       })
     : [];
   const preferencesByUserId = new Map(savedPreferences.map((preference) => [preference.userId, preference]));
@@ -105,20 +116,7 @@ export async function createPostNotifications(input: {
 async function getNotificationPreferences(userId: string): Promise<NotificationPreferences | null> {
   return prisma.notificationPreference.findUnique({
     where: { userId },
-    select: {
-      postsFromFollowing: true,
-      postsFromCloseFriends: true,
-      snaps: true,
-      messages: true,
-      liveRooms: true,
-      follows: true,
-      comments: true,
-      commentReplies: true,
-      commentLikes: true,
-      storyReactions: true,
-      mentions: true,
-      closeFriends: true,
-    },
+    select: notificationPreferenceSelect,
   });
 }
 

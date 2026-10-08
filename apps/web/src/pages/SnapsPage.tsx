@@ -1,24 +1,22 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InboxSnap, PublicUser, SnapStreakSummary } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
-import { downloadMediaBlob, resizeImageForUpload, uploadMedia } from "../lib/upload.js";
+import { downloadMediaBlob } from "../lib/upload.js";
 import {
   decryptSnap,
   encryptSnap,
   getDeviceEncryptionKeys,
 } from "../lib/encryption.js";
-import type { PublicEncryptionKey } from "../lib/encryption.js";
-import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import Avatar from "../components/Avatar.js";
-import CameraIcon from "../components/CameraIcon.js";
 import PullToRefresh from "../components/PullToRefresh.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
-import { activityList, activityRow, card, formatActivityTime } from "../lib/ui.js";
+import { activityList, activityRow, card, formatActivityTime, btnPrimary } from "../lib/ui.js";
+import { useCamera } from "../components/camera/CameraProvider.js";
 
 async function fetchInbox(): Promise<InboxSnap[]> {
   const res = await apiFetch<{ snaps: InboxSnap[] }>("/snaps/inbox");
@@ -35,47 +33,15 @@ async function fetchStreaks(): Promise<SnapStreakSummary[]> {
   return res.streaks;
 }
 
-type ShareTarget = "post" | "story" | "snap";
-
 export default function SnapsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
-  const [friendSearch, setFriendSearch] = useState("");
-  const [text, setText] = useState("");
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [studioOpen, setStudioOpen] = useState(false);
-  const [studioStep, setStudioStep] = useState<"capture" | "review">("capture");
-  const [cameraFacingMode, setCameraFacingMode] = useState<"environment" | "user">("environment");
-  const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
   const [viewing, setViewing] = useState<InboxSnap | null>(null);
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
   const [viewingText, setViewingText] = useState("");
   const [snapError, setSnapError] = useState<string | null>(null);
-  const [sendingError, setSendingError] = useState<string | null>(null);
-  const [missingRecipientNames, setMissingRecipientNames] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (searchParams.get("camera") !== "1") return;
-    setStudioOpen(true);
-    setStudioStep("capture");
-    setSelectedImage(null);
-    setPreviewUrl(null);
-    setSelectedRecipients([]);
-    setFriendSearch("");
-    setText("");
-    setShareTarget(null);
-    setCameraError(null);
-    setSendingError(null);
-    setMissingRecipientNames([]);
-    setSearchParams({}, { replace: true });
-  }, [searchParams, setSearchParams]);
+  const camera = useCamera();
 
   const { data: snaps = [] } = useQuery({
     queryKey: ["snaps-inbox"],
@@ -91,38 +57,7 @@ export default function SnapsPage() {
     queryFn: fetchStreaks,
   });
 
-  const normalizedSearch = friendSearch.trim().replace(/^@/, "").toLocaleLowerCase();
   const streakByFriend = new Map(streaks.map((streak) => [streak.friend.id, streak]));
-  const newFriendCandidates = following
-    .filter((friend) => !streakByFriend.has(friend.id))
-    .sort((a, b) => a.username.localeCompare(b.username));
-  const suggestionStart = Math.floor(Date.now() / 86_400_000) % Math.max(newFriendCandidates.length, 1);
-  const suggestedFriendIds = new Set(
-    Array.from({ length: Math.min(2, newFriendCandidates.length) }, (_, index) =>
-      newFriendCandidates[(suggestionStart + index) % newFriendCandidates.length]?.id
-    ).filter((id): id is string => !!id)
-  );
-  const matchingFriends = following
-    .filter((friend) => {
-      if (!normalizedSearch) return true;
-      return friend.username.toLocaleLowerCase().includes(normalizedSearch) ||
-        friend.displayName?.toLocaleLowerCase().includes(normalizedSearch);
-    })
-    .sort((a, b) => {
-      if (normalizedSearch) {
-        const aName = `${a.displayName ?? ""} ${a.username}`.toLocaleLowerCase();
-        const bName = `${b.displayName ?? ""} ${b.username}`.toLocaleLowerCase();
-        const matchOrder = Number(!aName.startsWith(normalizedSearch)) - Number(!bName.startsWith(normalizedSearch));
-        if (matchOrder) return matchOrder;
-      }
-      const aLastSnap = streakByFriend.get(a.id)?.lastExchangeAt;
-      const bLastSnap = streakByFriend.get(b.id)?.lastExchangeAt;
-      const recentOrder = (bLastSnap ? Date.parse(bLastSnap) : 0) - (aLastSnap ? Date.parse(aLastSnap) : 0);
-      if (recentOrder) return recentOrder;
-      const suggestionOrder = Number(!suggestedFriendIds.has(a.id)) - Number(!suggestedFriendIds.has(b.id));
-      if (suggestionOrder) return suggestionOrder;
-      return (a.displayName || a.username).localeCompare(b.displayName || b.username);
-    });
   const friendsWithStreaks = following
     .map((friend) => ({ friend, streak: streakByFriend.get(friend.id) }))
     .sort((aEntry, bEntry) => {
@@ -143,49 +78,6 @@ export default function SnapsPage() {
   }, [viewingImageUrl]);
 
   useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
-
-  useEffect(() => {
-    if (!studioOpen || studioStep !== "capture") return;
-    let cancelled = false;
-    let stream: MediaStream | null = null;
-
-    async function startCamera() {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setCameraError("Camera access is unavailable. Choose a photo instead.");
-        return;
-      }
-      try {
-        const cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: cameraFacingMode } },
-          audio: false,
-        });
-        if (cancelled) {
-          cameraStream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        stream = cameraStream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = cameraStream;
-          await videoRef.current.play();
-        }
-      } catch {
-        if (!cancelled) setCameraError("Camera access was denied. Choose a photo instead.");
-      }
-    }
-
-    void startCamera();
-    return () => {
-      cancelled = true;
-      stream?.getTracks().forEach((track) => track.stop());
-      if (videoRef.current) videoRef.current.srcObject = null;
-    };
-  }, [cameraFacingMode, studioOpen, studioStep]);
-
-  useEffect(() => {
     if (!viewing) return;
     const timeout = window.setTimeout(() => {
       setViewing(null);
@@ -193,190 +85,6 @@ export default function SnapsPage() {
     }, 10_000);
     return () => window.clearTimeout(timeout);
   }, [viewing]);
-
-  function toggleRecipient(username: string) {
-    setMissingRecipientNames([]);
-    setSelectedRecipients((prev) =>
-      prev.includes(username) ? prev.filter((u) => u !== username) : [...prev, username]
-    );
-  }
-
-  function onSelectImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setSelectedImage(file);
-    setPreviewUrl(URL.createObjectURL(file));
-    setStudioOpen(true);
-    setStudioStep("review");
-    setShareTarget(null);
-    setCameraError(null);
-    setSendingError(null);
-    setMissingRecipientNames([]);
-    setMissingRecipientNames([]);
-  }
-
-  function openCamera() {
-    setStudioOpen(true);
-    setStudioStep("capture");
-    setSelectedImage(null);
-    setPreviewUrl(null);
-    setSelectedRecipients([]);
-    setFriendSearch("");
-    setText("");
-    setShareTarget(null);
-    setCameraError(null);
-    setSendingError(null);
-    setMissingRecipientNames([]);
-  }
-
-  function capturePhoto() {
-    const video = videoRef.current;
-    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
-      setCameraError("The camera is still starting. Try again in a moment.");
-      return;
-    }
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const context = canvas.getContext("2d");
-    if (!context) {
-      setCameraError("Could not capture this photo. Please try again.");
-      return;
-    }
-    if (cameraFacingMode === "user") {
-      context.translate(canvas.width, 0);
-      context.scale(-1, 1);
-    }
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        setCameraError("Could not capture this photo. Please try again.");
-        return;
-      }
-      const image = new File([blob], "camera-snap.jpg", { type: "image/jpeg" });
-      setSelectedImage(image);
-      setPreviewUrl(URL.createObjectURL(image));
-      setShareTarget(null);
-      setSendingError(null);
-      setMissingRecipientNames([]);
-      setStudioStep("review");
-    }, "image/jpeg", 0.92);
-  }
-
-  function retakePhoto() {
-    setSelectedImage(null);
-    setPreviewUrl(null);
-    setShareTarget(null);
-    setCameraError(null);
-    setSendingError(null);
-    setMissingRecipientNames([]);
-    setStudioStep("capture");
-  }
-
-  function closeStudio() {
-    setStudioOpen(false);
-    setStudioStep("capture");
-    setSelectedImage(null);
-    setPreviewUrl(null);
-    setSelectedRecipients([]);
-    setFriendSearch("");
-    setText("");
-    setShareTarget(null);
-    setCameraError(null);
-    setSendingError(null);
-    setMissingRecipientNames([]);
-  }
-
-  async function sharePhoto(allowPlaintext = false) {
-    if (!selectedImage || !shareTarget) return;
-    if (shareTarget === "snap" && selectedRecipients.length === 0) return;
-    setSending(true);
-    setSendingError(null);
-    try {
-      if (shareTarget === "snap") {
-        if (!user) throw new Error("Sign in to send an encrypted Snap.");
-        await registerDeviceEncryptionKey(user.id);
-        const keyResponse = await apiFetch<{ keys: PublicEncryptionKey[] }>(
-          "/snaps/encryption-keys",
-          {
-            method: "POST",
-            body: JSON.stringify({ recipientUsernames: selectedRecipients }),
-          }
-        );
-        const recipientIds = [
-          user.id,
-          ...following
-            .filter((friend) => selectedRecipients.includes(friend.username))
-            .map((friend) => friend.id),
-        ];
-        const keyedUsers = new Set(keyResponse.keys.map((key) => key.userId));
-        const missingRecipientIds = recipientIds.filter((userId) => !keyedUsers.has(userId));
-        if (missingRecipientIds.length > 0 && !allowPlaintext) {
-          const missingNames = following
-            .filter((friend) => missingRecipientIds.includes(friend.id))
-            .map((friend) => `@${friend.username}`);
-          if (missingRecipientIds.includes(user.id)) missingNames.push("your device");
-          setMissingRecipientNames(missingNames.length > 0 ? missingNames : ["a recipient device"]);
-          return;
-        }
-        if (allowPlaintext) {
-          const imageKey = await uploadMedia(selectedImage);
-          await apiFetch("/snaps", {
-            method: "POST",
-            body: JSON.stringify({
-              imageKey,
-              text: text.trim() || undefined,
-              recipientUsernames: selectedRecipients,
-            }),
-          });
-        } else {
-          const { encryptedImage, payload } = await encryptSnap(
-            await resizeImageForUpload(selectedImage),
-            text,
-            keyResponse.keys
-          );
-          const imageKey = await uploadMedia(encryptedImage, { resize: false });
-          await apiFetch("/snaps", {
-            method: "POST",
-            body: JSON.stringify({
-              imageKey,
-              encryptedPayload: payload,
-              recipientUsernames: selectedRecipients,
-            }),
-          });
-        }
-      } else {
-        const imageKey = await uploadMedia(selectedImage);
-        if (shareTarget === "post") {
-          await apiFetch("/posts", {
-            method: "POST",
-            body: JSON.stringify({
-              imageKey,
-              text: text.trim() || undefined,
-              visibility: "public",
-            }),
-          });
-        } else {
-          await apiFetch("/stories", {
-            method: "POST",
-            body: JSON.stringify({ imageKey, text: text.trim() || undefined, visibility: "public" }),
-          });
-        }
-      }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["feed", "first"] }),
-        queryClient.invalidateQueries({ queryKey: ["stories"] }),
-        queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
-        queryClient.invalidateQueries({ queryKey: ["snap-streaks"] }),
-      ]);
-      closeStudio();
-    } catch (error) {
-      setSendingError(error instanceof Error ? error.message : "Could not send this Snap. Please try again.");
-    } finally {
-      setSending(false);
-    }
-  }
 
   async function openSnap(snap: InboxSnap) {
     setSnapError(null);
@@ -414,17 +122,20 @@ export default function SnapsPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-4 pb-28 sm:py-8 sm:pb-8">
-      <PullToRefresh enabled={!studioOpen && !viewing} onRefresh={() => Promise.all([
+      <PullToRefresh enabled={!viewing} onRefresh={() => Promise.all([
         queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
         queryClient.invalidateQueries({ queryKey: ["snap-streaks"] }),
         queryClient.invalidateQueries({ queryKey: ["snaps", "unread-count"] }),
       ])} />
       <PageHeader title="Snaps" />
       <NavBar />
-      <div className="mb-4 flex flex-col items-start gap-2">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <p className="w-fit bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text text-sm font-semibold text-transparent">
           Send a Snap, keep a streak going.
         </p>
+        <button type="button" onClick={camera.open} className={`${btnPrimary} min-h-10 shrink-0 bg-fuchsia-600 hover:bg-fuchsia-700`}>
+          Create Snap
+        </button>
       </div>
 
       <main className="flex min-w-0 flex-col gap-4">
@@ -511,197 +222,6 @@ export default function SnapsPage() {
       <p className="mt-4 text-[11px] leading-5 text-gray-500">
         When all recipient devices have keys, Snap content is encrypted on your device before upload, so the server cannot read it. The server can still see the sender, recipients, and view times.
       </p>
-
-      {studioOpen && (
-        <div className="fixed inset-0 z-[60] flex flex-col bg-black text-white" role="dialog" aria-modal="true" aria-label={studioStep === "capture" ? "Camera" : "Review photo"}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={onSelectImage}
-          />
-          <header className="z-10 flex min-h-14 items-center justify-between border-b border-white/15 px-4">
-            <button type="button" onClick={closeStudio} className="min-h-10 px-2 text-sm text-white/80 hover:text-white">Cancel</button>
-            <h2 className="text-sm font-semibold">
-              {studioStep === "capture" ? "Camera" : shareTarget === "snap" ? "Choose friends" : "Review photo"}
-            </h2>
-            <span className="w-14" aria-hidden="true" />
-          </header>
-
-          {studioStep === "capture" ? (
-            <>
-              <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  className={`h-full w-full object-cover ${cameraFacingMode === "user" ? "-scale-x-100" : ""}`}
-                />
-                {cameraError && (
-                  <p role="alert" className="absolute left-4 right-4 top-1/2 -translate-y-1/2 text-center text-sm text-white">{cameraError}</p>
-                )}
-              </div>
-              <footer className="flex min-h-28 items-center justify-center gap-4 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:gap-8 sm:px-6">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-20 text-center text-xs font-medium text-white/80 hover:text-white"
-                >
-                  Choose from photo library
-                </button>
-                <button
-                  type="button"
-                  onClick={capturePhoto}
-                  aria-label="Take photo"
-                  className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full border-[5px] border-white bg-fuchsia-600 shadow-lg transition active:scale-95"
-                >
-                  <CameraIcon />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCameraError(null);
-                    setCameraFacingMode((mode) => mode === "environment" ? "user" : "environment");
-                  }}
-                  aria-label={`Switch to ${cameraFacingMode === "environment" ? "front" : "rear"} camera`}
-                  className="w-20 text-center text-xs font-medium text-white/80 hover:text-white"
-                >
-                  {cameraFacingMode === "environment" ? "Front camera" : "Rear camera"}
-                </button>
-              </footer>
-            </>
-          ) : (
-            <>
-              <div className={shareTarget === "snap"
-                ? "flex min-h-0 basis-[20vh] items-center justify-center overflow-hidden bg-black px-4 py-2"
-                : "flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black px-4 py-3"}>
-                {previewUrl && <img src={previewUrl} alt="Captured photo preview" className={shareTarget === "snap" ? "max-h-full max-w-full rounded-lg object-contain" : "max-h-full max-w-full rounded-lg object-contain"} />}
-              </div>
-              <footer className={shareTarget === "snap"
-                ? "flex min-h-0 flex-1 flex-col overflow-hidden border-t border-white/15 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 text-gray-900"
-                : "max-h-[55vh] overflow-y-auto border-t border-white/15 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 text-gray-900"}>
-                <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Share to</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {([
-                    ["post", "Post"],
-                    ["story", "Story"],
-                    ["snap", "Snap"],
-                  ] as const).map(([target, label]) => (
-                    <button
-                      key={target}
-                      type="button"
-                      onClick={() => {
-                        setShareTarget(target);
-                        setMissingRecipientNames([]);
-                      }}
-                      aria-pressed={shareTarget === target}
-                      className={`min-h-10 rounded-lg border px-3 text-sm font-semibold transition ${shareTarget === target ? "border-fuchsia-600 bg-fuchsia-50 text-fuchsia-800" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                {shareTarget && (
-                  <textarea
-                    value={text}
-                    onChange={(event) => setText(event.target.value)}
-                    maxLength={shareTarget === "post" ? 2000 : 500}
-                    rows={2}
-                    placeholder="Add a caption..."
-                    className="mt-3 w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
-                  />
-                )}
-
-                {shareTarget === "snap" && (
-                  <div className="mt-2 flex min-h-0 flex-1 flex-col">
-                    <label htmlFor="snap-friend-search" className="mb-2 block text-xs font-semibold text-gray-600">Send to friends</label>
-                    <input
-                      id="snap-friend-search"
-                      value={friendSearch}
-                      onChange={(event) => setFriendSearch(event.target.value)}
-                      placeholder="Search by name or @username"
-                      className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
-                    />
-                    <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-gray-200">
-                      {matchingFriends.map((friend) => {
-                        const selected = selectedRecipients.includes(friend.username);
-                        const streak = streakByFriend.get(friend.id);
-                        return (
-                          <button
-                            key={friend.id}
-                            type="button"
-                            onClick={() => toggleRecipient(friend.username)}
-                            aria-pressed={selected}
-                            className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50"
-                          >
-                            <Avatar avatarKey={friend.avatarKey} username={friend.username} size={32} />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium">{friend.displayName || `@${friend.username}`}</span>
-                              {friend.displayName && <span className="block text-xs text-gray-500">@{friend.username}</span>}
-                              {suggestedFriendIds.has(friend.id) && (
-                                <span className="mt-0.5 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                                  New friend · send a Snap!
-                                </span>
-                              )}
-                            </span>
-                            <span className="shrink-0 text-xs font-semibold text-orange-600">🔥 {streak?.currentStreak ?? 0}</span>
-                            <span className={`flex h-5 w-5 items-center justify-center rounded-full border text-xs ${selected ? "border-fuchsia-600 bg-fuchsia-600 text-white" : "border-gray-300 text-transparent"}`}>✓</span>
-                          </button>
-                        );
-                      })}
-                      {matchingFriends.length === 0 && (
-                        <p className="px-3 py-3 text-sm text-gray-500">{following.length ? "No friends match that search." : "Follow someone to send them a Snap."}</p>
-                      )}
-                    </div>
-                    {selectedRecipients.length > 0 && <p className="mt-1 shrink-0 text-xs text-gray-500">{selectedRecipients.length} selected</p>}
-                  </div>
-                )}
-
-                {missingRecipientNames.length > 0 && shareTarget === "snap" && (
-                  <div role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-                    <p className="font-semibold">Encryption keys are missing</p>
-                    <p className="mt-1">
-                      {missingRecipientNames.join(", ")} need to open InTouch once to register a device key. If you continue, this Snap will not be end-to-end encrypted and the server can read its image and caption.
-                    </p>
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setMissingRecipientNames([])}
-                        className="min-h-10 flex-1 rounded-lg border border-amber-300 px-3 text-xs font-semibold hover:bg-amber-100"
-                      >
-                        Wait for keys
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void sharePhoto(true)}
-                        disabled={sending}
-                        className="min-h-10 flex-1 rounded-lg bg-amber-700 px-3 text-xs font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
-                      >
-                        {sending ? "Sending..." : "Send unencrypted"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {sendingError && <p role="alert" className="mt-3 text-sm text-red-600">{sendingError}</p>}
-                <div className="mt-4 flex gap-2">
-                  <button type="button" onClick={retakePhoto} disabled={sending} className="min-h-11 flex-1 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">Retake</button>
-                  <button
-                    type="button"
-                    onClick={() => void sharePhoto()}
-                    disabled={sending || !shareTarget || (shareTarget === "snap" && selectedRecipients.length === 0)}
-                    className="min-h-11 flex-1 rounded-lg bg-fuchsia-600 px-3 text-sm font-semibold text-white hover:bg-fuchsia-700 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {sending ? "Sharing..." : shareTarget === "post" ? "Post photo" : shareTarget === "story" ? "Add to story" : shareTarget === "snap" ? "Send Snap" : "Choose where to share"}
-                  </button>
-                </div>
-              </footer>
-            </>
-          )}
-        </div>
-      )}
 
       {viewing && (
         <div

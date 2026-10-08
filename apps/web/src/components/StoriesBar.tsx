@@ -1,26 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import type { FormEvent } from "react";
 import { STORY_REACTIONS } from "@app/shared";
-import type { PostVisibility, StoryGroup } from "@app/shared";
+import type { StoryGroup, StoryMeetup } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
-import { mediaUrl, preloadMediaKeys, uploadMedia } from "../lib/upload.js";
+import { mediaUrl, preloadMediaKeys } from "../lib/upload.js";
 import Avatar from "./Avatar.js";
 import LiveRoomsBar from "./LiveRoomsBar.js";
+import StoryComposer from "./StoryComposer.js";
+import AudioPlayer from "./AudioPlayer.js";
+import MeetupCard from "./chat/MeetupCard.js";
 
 async function fetchStoryGroups(): Promise<StoryGroup[]> {
   const res = await apiFetch<{ groups: StoryGroup[] }>("/stories");
   return res.groups;
-}
-
-function formatRemainingTime(expiresAt: string): string {
-  const remainingMs = new Date(expiresAt).getTime() - Date.now();
-  if (remainingMs <= 0) return "Ending now";
-  const minutes = Math.ceil(remainingMs / (60 * 1000));
-  if (minutes < 60) return `${minutes}m left`;
-  const hours = Math.ceil(minutes / 60);
-  return `${hours}h left`;
 }
 
 interface NetworkInformationLike extends EventTarget {
@@ -56,16 +50,13 @@ function getStoryLoadingPolicy(): StoryLoadingPolicy {
 export default function StoriesBar() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [meetupBusy, setMeetupBusy] = useState(false);
   const [viewing, setViewing] = useState<StoryGroup | null>(null);
   const [storyIndex, setStoryIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
   const [replySending, setReplySending] = useState(false);
   const [reactionError, setReactionError] = useState<string | null>(null);
-  const [visibility, setVisibility] = useState<PostVisibility>("public");
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [retryFile, setRetryFile] = useState<File | null>(null);
   const [loadingPolicy, setLoadingPolicy] = useState(getStoryLoadingPolicy);
 
   const { data: groups = [] } = useQuery({
@@ -195,81 +186,43 @@ export default function StoriesBar() {
     }
   }
 
-  async function uploadStory(file: File) {
-    setUploading(true);
-    setUploadError(null);
+  async function toggleMeetup(meetupId: string) {
+    if (meetupBusy) return;
+    setMeetupBusy(true);
+    setReactionError(null);
     try {
-      const imageKey = await uploadMedia(file);
-      await apiFetch("/stories", {
-        method: "POST",
-        body: JSON.stringify({ imageKey, visibility }),
-      });
-      setRetryFile(null);
+      const result = await apiFetch<{ meetup: StoryMeetup | null }>(`/meetups/${meetupId}/going`, { method: "POST" });
+      setViewing((current) => current
+        ? {
+            ...current,
+            stories: current.stories.map((story, index) =>
+              index === storyIndex ? { ...story, meetup: result.meetup } : story
+            ),
+          }
+        : current);
       await queryClient.invalidateQueries({ queryKey: ["stories"] });
-    } catch (error) {
-      setUploadError(error instanceof Error
-        ? `${error.message} · Story not sent.`
-        : "Story upload failed.");
-      setRetryFile(file);
+    } catch {
+      setReactionError("Could not update your answer.");
     } finally {
-      setUploading(false);
+      setMeetupBusy(false);
     }
-  }
-
-  async function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    await uploadStory(file);
   }
 
   return (
     <div className="min-w-0">
-      <div className="mb-2 flex items-center gap-2 text-xs text-gray-400">
-        <span>New story visible to</span>
-        <select
-          value={visibility}
-          onChange={(e) => setVisibility(e.target.value as PostVisibility)}
-          className="rounded-md border border-gray-200 px-1.5 py-0.5"
-        >
-          <option value="public">All followers</option>
-          <option value="close_friends">Close friends only</option>
-        </select>
-      </div>
       <LiveRoomsBar compact />
-      {uploadError && (
-        <div role="alert" className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          <span className="min-w-0 flex-1">{uploadError}</span>
-          {retryFile && (
-            <button
-              type="button"
-              onClick={() => void uploadStory(retryFile)}
-              disabled={uploading}
-              className="rounded-md border border-red-300 bg-white px-2 py-1 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
-            >
-              Retry
-            </button>
-          )}
-        </div>
-      )}
       <div className="flex gap-4 overflow-x-auto pb-2">
         <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="flex shrink-0 flex-col items-center gap-1 disabled:opacity-50"
+          type="button"
+          onClick={() => setComposerOpen(true)}
+          aria-label="Create a story"
+          className="flex shrink-0 flex-col items-center gap-1"
         >
-          <span className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-gray-300 text-xl text-gray-400">
-            {uploading ? "…" : "+"}
+          <span className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-gray-300 text-xl text-gray-400 transition-colors hover:border-gray-400 hover:text-gray-600">
+            +
           </span>
           <span className="text-[11px] text-gray-500">Story</span>
         </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => void onFileSelected(e)}
-        />
         {groups.map((group) => (
           <button
             key={group.author.id}
@@ -344,6 +297,33 @@ export default function StoriesBar() {
                 className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-3 pb-4 pt-12"
                 onClick={(event) => event.stopPropagation()}
               >
+                {viewing.stories[storyIndex].audioKey && (
+                  <div className="mb-3 flex justify-center rounded-2xl bg-black/40 px-3 py-2 backdrop-blur">
+                    <AudioPlayer
+                      key={viewing.stories[storyIndex].id}
+                      src={mediaUrl(viewing.stories[storyIndex].audioKey!)}
+                      durationMs={viewing.stories[storyIndex].audioDurationMs ?? 0}
+                      peaks={[]}
+                      tone="dark"
+                      autoPlay
+                    />
+                  </div>
+                )}
+                {viewing.stories[storyIndex].meetup && (
+                  <div className="mb-3 flex justify-center">
+                    <MeetupCard
+                      tone="dark"
+                      title={viewing.stories[storyIndex].meetup!.title ?? ""}
+                      startsAt={viewing.stories[storyIndex].meetup!.startsAt}
+                      place={viewing.stories[storyIndex].meetup!.place}
+                      attendees={viewing.stories[storyIndex].meetup!.attendees}
+                      attendeeCount={viewing.stories[storyIndex].meetup!.attendeeCount}
+                      isGoing={viewing.stories[storyIndex].meetup!.isGoing}
+                      busy={meetupBusy}
+                      onToggle={() => void toggleMeetup(viewing.stories[storyIndex].meetup!.id)}
+                    />
+                  </div>
+                )}
                 {viewing.stories[storyIndex].text && (
                   <p className="mb-3 text-center text-base font-semibold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
                     {viewing.stories[storyIndex].text}
@@ -395,6 +375,7 @@ export default function StoriesBar() {
           </div>
         </div>
       )}
+      <StoryComposer open={composerOpen} onClose={() => setComposerOpen(false)} />
     </div>
   );
 }

@@ -84,13 +84,14 @@ export async function deleteMediaObject(key: string): Promise<void> {
 }
 
 async function hasMediaReferences(key: string): Promise<boolean> {
-  const [posts, stories, snaps, users] = await Promise.all([
+  const [posts, stories, snaps, users, messages] = await Promise.all([
     prisma.post.count({ where: { imageKey: key } }),
-    prisma.story.count({ where: { imageKey: key } }),
+    prisma.story.count({ where: { OR: [{ imageKey: key }, { audioKey: key }] } }),
     prisma.snap.count({ where: { imageKey: key } }),
     prisma.user.count({ where: { avatarKey: key } }),
+    prisma.message.count({ where: { mediaKey: key } }),
   ]);
-  return posts + stories + snaps + users > 0;
+  return posts + stories + snaps + users + messages > 0;
 }
 
 export async function purgeQueuedMediaDeletions(limit = 50): Promise<void> {

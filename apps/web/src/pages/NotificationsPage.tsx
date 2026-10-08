@@ -44,6 +44,12 @@ function notificationText(notification: UserNotification): string {
       return "sent you a Snap";
     case "close_friend":
       return "added you as a close friend";
+    case "circle_post":
+      return "shared a new post with a circle you're in";
+    case "circle_added":
+      return "added you to a circle";
+    case "meetup_response":
+      return "is going to your meetup";
   }
 }
 

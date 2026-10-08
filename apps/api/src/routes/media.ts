@@ -16,15 +16,17 @@ import { canReadMedia } from "../mediaAccess.js";
 import { compressVideoToFit } from "../videoCompression.js";
 import { byUser, createRateLimiter, rateLimitBy } from "../rateLimit.js";
 
-const uploadLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 20 });
+const uploadLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 60 });
 const MAX_CONCURRENT_TRANSCODES = 2;
 let activeTranscodes = 0;
 
 const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const MAX_RAW_UPLOAD_BYTES = 500 * 1024 * 1024 + 16;
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg", "image/png", "image/webp", "image/gif",
   "video/mp4", "video/webm", "video/quicktime",
+  "audio/webm", "audio/mp4", "audio/mpeg", "audio/ogg", "audio/aac", "audio/x-m4a",
 ]);
 
 export async function mediaRoutes(app: FastifyInstance): Promise<void> {
@@ -35,7 +37,9 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     if (!file) {
       return reply.code(400).send({ error: "No file uploaded" });
     }
-    if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+    // MediaRecorder reports types like "audio/webm;codecs=opus".
+    const mimeType = file.mimetype.split(";")[0].trim().toLowerCase();
+    if (!ALLOWED_MIME_TYPES.has(mimeType)) {
       file.file.resume();
       return reply.code(400).send({ error: "Unsupported file type" });
     }
@@ -56,13 +60,16 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(413).send({ error: "Upload exceeds the 500 MB limit" });
       }
 
-      const isVideo = file.mimetype.startsWith("video/");
+      const isVideo = mimeType.startsWith("video/");
+      if (mimeType.startsWith("audio/") && originalSize > MAX_AUDIO_BYTES) {
+        return reply.code(413).send({ error: "Audio must be 10 MB or smaller" });
+      }
       if (!isVideo && originalSize > MAX_MEDIA_BYTES) {
         return reply.code(413).send({ error: "Images must be 50 MB or smaller" });
       }
 
       let storedPath = inputPath;
-      let contentType = file.mimetype;
+      let contentType = mimeType;
       let filename = file.filename;
       let storedSize = originalSize;
       const compressed = isVideo && originalSize > MAX_MEDIA_BYTES;

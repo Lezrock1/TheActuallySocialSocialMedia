@@ -1,9 +1,10 @@
-import type { FeedPost, MediaType, PostVisibility } from "@app/shared";
+import type { CircleRef, FeedPost, MediaType, PostVisibility } from "@app/shared";
 import { toPublicUser } from "./serializers.js";
 
 export const postWithCountsInclude = {
   author: true,
   poll: { select: { id: true } },
+  circle: { select: { id: true, name: true } },
   _count: { select: { replies: true, comments: true } },
 } as const;
 
@@ -15,6 +16,7 @@ export function toFeedPost(post: {
   mediaType: string;
   createdAt: Date;
   visibility: string;
+  circle: CircleRef | null;
   parentPostId: string | null;
   poll: { id: string } | null;
   factCheckCount: number;
@@ -28,6 +30,7 @@ export function toFeedPost(post: {
     mediaType: post.mediaType as MediaType,
     createdAt: post.createdAt.toISOString(),
     visibility: post.visibility as PostVisibility,
+    circle: post.circle ? { id: post.circle.id, name: post.circle.name } : null,
     parentPostId: post.parentPostId,
     pollId: post.poll?.id ?? null,
     replyCount: post._count.replies,

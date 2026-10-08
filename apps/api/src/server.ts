@@ -5,6 +5,7 @@ import multipart from "@fastify/multipart";
 import { env } from "./env.js";
 import { ensureBucket } from "./storage.js";
 import { ensureBootstrapInvitation } from "./invitations.js";
+import { startQuietHoursDigestJob } from "./quietHoursDigest.js";
 import { createRealtimeServer } from "./realtime.js";
 import { startCleanupJob } from "./cleanup.js";
 import { authRoutes } from "./routes/auth.js";
@@ -17,6 +18,8 @@ import { conversationRoutes } from "./routes/conversations.js";
 import { aiRoutes } from "./routes/ai.js";
 import { userRoutes } from "./routes/users.js";
 import { invitationRoutes } from "./routes/invitations.js";
+import { circleRoutes } from "./routes/circles.js";
+import { accountExportRoutes } from "./routes/accountExport.js";
 import { commentRoutes } from "./routes/comments.js";
 import { moderationRoutes } from "./routes/moderation.js";
 import { closeFriendRoutes } from "./routes/closeFriends.js";
@@ -59,6 +62,7 @@ async function main(): Promise<void> {
   const io = createRealtimeServer(app.server);
   app.decorate("io", io);
   startCleanupJob(app.log);
+  startQuietHoursDigestJob(app.log);
 
   app.get("/health", async () => ({ ok: true }));
 
@@ -75,6 +79,8 @@ async function main(): Promise<void> {
   await app.register(commentRoutes);
   await app.register(moderationRoutes);
   await app.register(closeFriendRoutes);
+  await app.register(circleRoutes);
+  await app.register(accountExportRoutes);
   await app.register(notificationRoutes);
   await app.register(encryptionRoutes);
   await app.register(pollRoutes);

@@ -15,6 +15,13 @@ const allEnabled: NotificationPreferences = {
   storyReactions: true,
   mentions: true,
   closeFriends: true,
+  postsFromCircles: true,
+  circles: true,
+  meetupResponses: true,
+  quietHoursEnabled: false,
+  quietStartMinute: 1320,
+  quietEndMinute: 420,
+  timezone: "UTC",
 };
 
 describe("selectPostNotificationRecipients", () => {

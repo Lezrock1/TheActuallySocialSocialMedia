@@ -51,6 +51,10 @@ model User {
   commentLikes     CommentLike[]
   pushSubscriptions WebPushSubscription[]
   notificationPreferences NotificationPreference?
+  circles           Circle[]
+  circleMemberships CircleMember[]
+  meetupResponses   MeetupResponse[]
+  meetups           Meetup[]
 }
 
 model Follow {
@@ -88,8 +92,10 @@ model Post {
   imageKey     String?
   mediaType    String   @default("image")
   createdAt    DateTime @default(now())
-  // "public" | "close_friends"
+  // "public" | "close_friends" | "circle"
   visibility   String   @default("public")
+  // only for visibility "circle"; null afterwards means author-only (circle deleted)
+  circleId     String?
   // set when this post is a reply to another post (Twitter-style thread)
   parentPostId String?
 
@@ -99,6 +105,7 @@ model Post {
   factCheckCount   Int     @default(0)
 
   author          User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  circle          Circle?          @relation(fields: [circleId], references: [id], onDelete: SetNull)
   parent          Post?            @relation("PostReplies", fields: [parentPostId], references: [id], onDelete: Cascade)
   replies         Post[]           @relation("PostReplies")
   comments        Comment[]
@@ -193,6 +200,16 @@ model NotificationPreference {
   storyReactions       Boolean  @default(true)
   mentions             Boolean  @default(true)
   closeFriends         Boolean  @default(true)
+  postsFromCircles     Boolean  @default(true)
+  circles              Boolean  @default(true)
+  meetupResponses      Boolean  @default(true)
+  quietHoursEnabled    Boolean  @default(false)
+  // minutes after local midnight
+  quietStartMinute     Int      @default(1320)
+  quietEndMinute       Int      @default(420)
+  // IANA zone name reported by the browser
+  timezone             String   @default("UTC")
+  quietDigestSentAt    DateTime?
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -200,16 +217,76 @@ model Story {
   id         String   @id @default(cuid())
   authorId   String
   imageKey   String
+  // optional voice track; imageKey then holds a generated cover card
+  audioKey   String?
+  audioDurationMs Int?
   text       String?
   createdAt  DateTime @default(now())
   expiresAt  DateTime
-  // "public" | "close_friends"
+  // "public" | "close_friends" | "circle"
   visibility String   @default("public")
+  circleId   String?
 
   author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  circle Circle? @relation(fields: [circleId], references: [id], onDelete: SetNull)
   reactions StoryReaction[]
+  meetup Meetup?
 
   @@index([authorId, expiresAt])
+}
+
+model Circle {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  createdAt DateTime @default(now())
+
+  owner   User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members CircleMember[]
+  posts   Post[]
+  stories Story[]
+
+  @@unique([ownerId, name])
+}
+
+model CircleMember {
+  id        String   @id @default(cuid())
+  circleId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  circle Circle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([circleId, userId])
+  @@index([userId])
+}
+
+model Meetup {
+  id        String   @id @default(cuid())
+  storyId   String   @unique
+  authorId  String
+  title     String?
+  startsAt  DateTime
+  place     String
+  createdAt DateTime @default(now())
+
+  story     Story            @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  author    User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  responses MeetupResponse[]
+}
+
+model MeetupResponse {
+  id        String   @id @default(cuid())
+  meetupId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  meetup Meetup @relation(fields: [meetupId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetupId, userId])
+  @@index([userId])
 }
 
 model StoryReaction {
@@ -357,6 +434,8 @@ model Message {
   senderId       String
   text           String
   isEncrypted    Boolean  @default(false)
+  // ciphertext blob referenced by a voice message (content key stays inside the encrypted text)
+  mediaKey       String?
   createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

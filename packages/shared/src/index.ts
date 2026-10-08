@@ -42,8 +42,34 @@ export const loginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
-export const POST_VISIBILITY = ["public", "close_friends"] as const;
+export const POST_VISIBILITY = ["public", "close_friends", "circle"] as const;
 export type PostVisibility = (typeof POST_VISIBILITY)[number];
+
+export const MAX_CIRCLES_PER_USER = 10;
+export const MAX_CIRCLE_MEMBERS = 100;
+
+export const circleNameSchema = z.string().trim().min(1).max(30);
+export const createCircleSchema = z.object({ name: circleNameSchema });
+export type CreateCircleInput = z.infer<typeof createCircleSchema>;
+export const updateCircleSchema = z.object({ name: circleNameSchema });
+export type UpdateCircleInput = z.infer<typeof updateCircleSchema>;
+export const circleMemberSchema = z.object({ username: z.string().min(1).max(50) });
+export type CircleMemberInput = z.infer<typeof circleMemberSchema>;
+
+export interface CircleSummary {
+  id: string;
+  name: string;
+  memberCount: number;
+}
+
+export interface CircleDetail extends CircleSummary {
+  members: PublicUser[];
+}
+
+export interface CircleRef {
+  id: string;
+  name: string;
+}
 export const TRANSLATION_LANGUAGE_CODES = ["de", "en", "es", "fr", "it", "pt", "nl", "pl"] as const;
 export type TranslationLanguage = (typeof TRANSLATION_LANGUAGE_CODES)[number];
 export const TRANSLATION_LANGUAGES: { code: TranslationLanguage; label: string }[] = [
@@ -78,7 +104,11 @@ export const createPostSchema = z.object({
   mediaType: z.enum(MEDIA_TYPES).optional(),
   parentPostId: z.string().optional(),
   visibility: z.enum(POST_VISIBILITY).optional(),
+  circleId: z.string().min(1).optional(),
   poll: createPollSchema.optional(),
+}).refine((post) => post.visibility !== "circle" || !!post.circleId, {
+  message: "Choose a circle",
+  path: ["circleId"],
 });
 export type CreatePostInput = z.infer<typeof createPostSchema>;
 
@@ -98,6 +128,7 @@ export interface FeedPost {
   mediaType: MediaType;
   createdAt: string;
   visibility: PostVisibility;
+  circle: CircleRef | null;
   parentPostId: string | null;
   pollId: string | null;
   replyCount: number;
@@ -242,6 +273,9 @@ export const NOTIFICATION_TYPES = [
   "live_room",
   "snap",
   "close_friend",
+  "circle_post",
+  "circle_added",
+  "meetup_response",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -258,6 +292,14 @@ export interface NotificationPreferences {
   storyReactions: boolean;
   mentions: boolean;
   closeFriends: boolean;
+  postsFromCircles: boolean;
+  circles: boolean;
+  meetupResponses: boolean;
+  quietHoursEnabled: boolean;
+  // minutes after local midnight
+  quietStartMinute: number;
+  quietEndMinute: number;
+  timezone: string;
 }
 
 export interface UserNotification {
@@ -279,20 +321,54 @@ export interface NotificationsPage {
   unreadCount: number;
 }
 
+export const MAX_STORY_AUDIO_MS = 60_000;
+export const MAX_VOICE_MESSAGE_MS = 120_000;
+
+export const storyMeetupSchema = z.object({
+  title: z.string().trim().max(60).optional(),
+  startsAt: z.string().datetime(),
+  place: z.string().trim().min(1).max(120),
+});
+export type StoryMeetupInput = z.infer<typeof storyMeetupSchema>;
+
 export const createStorySchema = z.object({
   imageKey: z.string().min(1),
+  audioKey: z.string().min(1).optional(),
+  audioDurationMs: z.number().int().min(500).max(MAX_STORY_AUDIO_MS).optional(),
   text: z.string().max(500).optional(),
   visibility: z.enum(POST_VISIBILITY).optional(),
+  circleId: z.string().min(1).optional(),
+  meetup: storyMeetupSchema.optional(),
+}).refine((story) => story.visibility !== "circle" || !!story.circleId, {
+  message: "Choose a circle",
+  path: ["circleId"],
+}).refine((story) => !story.audioKey || story.audioDurationMs !== undefined, {
+  message: "Audio needs a duration",
+  path: ["audioDurationMs"],
 });
 export type CreateStoryInput = z.infer<typeof createStorySchema>;
+
+export interface StoryMeetup {
+  id: string;
+  title: string | null;
+  startsAt: string;
+  place: string;
+  attendeeCount: number;
+  attendees: PublicUser[];
+  isGoing: boolean;
+}
 
 export interface Story {
   id: string;
   imageKey: string;
+  audioKey: string | null;
+  audioDurationMs: number | null;
   text: string | null;
   createdAt: string;
   expiresAt: string;
   visibility: PostVisibility;
+  circle: CircleRef | null;
+  meetup: StoryMeetup | null;
   reactionCounts: { emoji: string; count: number }[];
   myReaction: string | null;
 }
@@ -391,8 +467,8 @@ export const encryptedMessagePayloadSchema = z.object({
 export type EncryptedMessagePayload = z.infer<typeof encryptedMessagePayloadSchema>;
 
 export const sendMessageSchema = z.union([
-  z.object({ text: z.string().min(1).max(4000) }).strict(),
-  z.object({ encryptedPayload: encryptedMessagePayloadSchema }).strict(),
+  z.object({ text: z.string().min(1).max(4000), mediaKey: z.string().min(1).optional() }).strict(),
+  z.object({ encryptedPayload: encryptedMessagePayloadSchema, mediaKey: z.string().min(1).optional() }).strict(),
 ]);
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 
@@ -437,6 +513,8 @@ export interface ConversationMessage {
   isEncrypted: boolean;
   encryptedPayload: EncryptedMessagePayload | null;
   createdAt: string;
+  // ciphertext attachment of a voice message
+  mediaKey?: string | null;
 }
 
 export interface ConversationMessagesPage {
@@ -469,3 +547,5 @@ export const createReportSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 export type CreateReportInput = z.infer<typeof createReportSchema>;
+
+export * from "./safetyNumber.js";

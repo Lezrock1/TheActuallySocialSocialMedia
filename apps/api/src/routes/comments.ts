@@ -6,6 +6,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { createMentionNotifications, createUserNotification } from "../notifications.js";
+import { canViewContent, canViewPostById } from "../visibility.js";
 
 interface CommentRow {
   id: string;
@@ -37,6 +38,9 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
     "/posts/:id/comments",
     { preHandler: requireAuth },
     async (request, reply) => {
+      if (!(await canViewPostById(request.userId!, request.params.id))) {
+        return reply.code(404).send({ error: "Post not found" });
+      }
       const comments = await prisma.comment.findMany({
         where: { postId: request.params.id },
         include: {
@@ -64,7 +68,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
       const post = await prisma.post.findUnique({
         where: { id: request.params.id },
       });
-      if (!post) {
+      if (!post || !(await canViewContent(request.userId!, post))) {
         return reply.code(404).send({ error: "Post not found" });
       }
       let parentComment: { id: string; postId: string; authorId: string; parentCommentId: string | null } | null = null;
@@ -143,6 +147,9 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
         select: { id: true, authorId: true, postId: true },
       });
       if (!comment) return reply.code(404).send({ error: "Comment not found" });
+      if (!(await canViewPostById(request.userId!, comment.postId))) {
+        return reply.code(404).send({ error: "Comment not found" });
+      }
 
       const existing = await prisma.commentLike.findUnique({
         where: {

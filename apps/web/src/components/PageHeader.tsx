@@ -69,6 +69,14 @@ export default function PageHeader({
                 AI Tools
               </Link>
               <Link
+                to="/circles"
+                role="menuitem"
+                onClick={() => setMenuOpen(false)}
+                className="block px-4 py-2.5 hover:bg-gray-50"
+              >
+                Circles
+              </Link>
+              <Link
                 to="/invitations"
                 role="menuitem"
                 onClick={() => setMenuOpen(false)}

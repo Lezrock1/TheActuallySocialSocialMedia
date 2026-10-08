@@ -4,7 +4,9 @@ import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import type { FeedItem, FeedPage as FeedPageType } from "@app/shared";
-import type { PostVisibility } from "@app/shared";
+import { audienceBody, PUBLIC_AUDIENCE } from "../lib/circles.js";
+import type { Audience } from "../lib/circles.js";
+import AudiencePicker from "../components/AudiencePicker.js";
 import { apiFetch } from "../lib/api.js";
 import { mediaUrl, uploadMediaWithInfo } from "../lib/upload.js";
 import { card, input, btnPrimary, btnSecondary } from "../lib/ui.js";
@@ -76,7 +78,7 @@ export default function FeedPage() {
   const [mediaType, setMediaType] = useState<"image" | "video">("image");
   const [mediaUploading, setMediaUploading] = useState(false);
   const [mediaNotice, setMediaNotice] = useState<string | null>(null);
-  const [visibility, setVisibility] = useState<PostVisibility>("public");
+  const [audience, setAudience] = useState<Audience>(PUBLIC_AUDIENCE);
   const [posting, setPosting] = useState(false);
   const [postSuccess, setPostSuccess] = useState(false);
   const [pollEnabled, setPollEnabled] = useState(false);
@@ -85,7 +87,7 @@ export default function FeedPage() {
   const [composerError, setComposerError] = useState<string | null>(null);
   const [postSendError, setPostSendError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const postSuccessTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const postSuccessTimeoutRef = useRef<number | null>(null);
   const feedListRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
@@ -206,7 +208,7 @@ export default function FeedPage() {
           text: text || undefined,
           imageKey: imageKey ?? undefined,
           mediaType: imageKey ? mediaType : undefined,
-          visibility,
+          ...audienceBody(audience),
           poll: pollEnabled ? { question: pollQuestion.trim(), options: normalizedOptions } : undefined,
         }),
       });
@@ -219,7 +221,7 @@ export default function FeedPage() {
       setImageKey(null);
       setMediaType("image");
       setMediaNotice(null);
-      setVisibility("public");
+      setAudience(PUBLIC_AUDIENCE);
       setPollEnabled(false);
       setPollQuestion("");
       setPollOptions(["", ""]);
@@ -382,14 +384,7 @@ export default function FeedPage() {
             >
               {mediaUploading ? "Uploading…" : imageKey ? "Change media" : "Add photo"}
             </button>
-            <select
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value as PostVisibility)}
-              className={`${input} min-w-0 max-w-full py-1.5`}
-            >
-              <option value="public">Public</option>
-              <option value="close_friends">Close friends only</option>
-            </select>
+            <AudiencePicker value={audience} onChange={setAudience} />
           </div>
           <input
             ref={fileInputRef}

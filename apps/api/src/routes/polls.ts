@@ -2,13 +2,13 @@ import type { FastifyInstance } from "fastify";
 import { votePollSchema } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
-import { isBlocked } from "../visibility.js";
+import { canViewContent } from "../visibility.js";
 
 async function getVisiblePoll(pollId: string, userId: string) {
   const poll = await prisma.poll.findUnique({
     where: { id: pollId },
     include: {
-      post: { select: { authorId: true, visibility: true } },
+      post: { select: { authorId: true, visibility: true, circleId: true } },
       options: {
         orderBy: { position: "asc" },
         include: { _count: { select: { votes: true } } },
@@ -16,19 +16,7 @@ async function getVisiblePoll(pollId: string, userId: string) {
       votes: { where: { userId }, select: { optionId: true } },
     },
   });
-  if (!poll || await isBlocked(userId, poll.post.authorId)) return null;
-
-  if (poll.post.visibility === "close_friends" && poll.post.authorId !== userId) {
-    const closeFriend = await prisma.closeFriend.findUnique({
-      where: {
-        ownerId_friendId: {
-          ownerId: poll.post.authorId,
-          friendId: userId,
-        },
-      },
-    });
-    if (!closeFriend) return null;
-  }
+  if (!poll || !(await canViewContent(userId, poll.post))) return null;
 
   const totalVotes = poll.options.reduce((total, option) => total + option._count.votes, 0);
   return {

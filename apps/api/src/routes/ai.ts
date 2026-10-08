@@ -15,7 +15,7 @@ import { encryptSecret, decryptSecret } from "../ai/crypto.js";
 import { createAdapter } from "../ai/adapters.js";
 import { assertProviderUrlAllowed, UnsafeUrlError } from "../ai/safeHttp.js";
 import { byUser, createRateLimiter, rateLimitBy } from "../rateLimit.js";
-import { isBlocked } from "../visibility.js";
+import { canViewContent } from "../visibility.js";
 import type { ChatMessage } from "../ai/adapters.js";
 import {
   buildInitialUserMessage,
@@ -153,19 +153,8 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "Post text not found" });
       }
       if (post.authorId !== request.userId) {
-        if (await isBlocked(request.userId!, post.authorId)) {
+        if (!(await canViewContent(request.userId!, post))) {
           return reply.code(404).send({ error: "Post not found" });
-        }
-        if (post.visibility === "close_friends") {
-          const closeFriend = await prisma.closeFriend.findUnique({
-            where: {
-              ownerId_friendId: {
-                ownerId: post.authorId,
-                friendId: request.userId!,
-              },
-            },
-          });
-          if (!closeFriend) return reply.code(404).send({ error: "Post not found" });
         }
       }
 
@@ -349,7 +338,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         prisma.post.findUnique({ where: { id: postId }, include: { author: true } }),
         prisma.aiProviderConfig.findUnique({ where: { id: providerConfigId } }),
       ]);
-      if (!post) {
+      if (!post || !(await canViewContent(request.userId!, post))) {
         return reply.code(404).send({ error: "Post not found" });
       }
       if (!config || config.userId !== request.userId) {

@@ -29,6 +29,7 @@ export async function cleanupExpiredMedia(): Promise<void> {
 
   const expiredKeys = new Set([
     ...expiredStories.map((story) => story.imageKey),
+    ...expiredStories.flatMap((story) => (story.audioKey ? [story.audioKey] : [])),
     ...expiredSnaps.map((snap) => snap.imageKey),
   ]);
   for (const key of expiredKeys) {

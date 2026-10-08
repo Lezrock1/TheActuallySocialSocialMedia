@@ -21,7 +21,7 @@ import type { PublicEncryptionKey } from "../lib/encryption.js";
 import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
 import { useWebRtcCall } from "../lib/useWebRtcCall.js";
 import { getSocket } from "../lib/socket.js";
-import { mediaUrl } from "../lib/upload.js";
+import { mediaUrl, uploadMedia } from "../lib/upload.js";
 import { useConversationBackground } from "../lib/pageBackground.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
@@ -41,50 +41,26 @@ import {
   btnSecondary,
 } from "../lib/ui.js";
 import { InlineSkeletonText } from "../components/LoadingSkeleton.js";
-
-interface StoryReplyContext {
-  storyId: string;
-  imageKey: string;
-  authorUsername: string;
-  createdAt: string;
-}
-
-interface DecryptedMessageContent {
-  text: string;
-  storyReply?: StoryReplyContext;
-}
+import MeetupCard from "../components/chat/MeetupCard.js";
+import VoiceMessage from "../components/chat/VoiceMessage.js";
+import MeetupSheet from "../components/MeetupFields.js";
+import type { MeetupDraft } from "../components/MeetupFields.js";
+import SecurityCodeSheet from "../components/SecurityCodeSheet.js";
+import { overallStatus, usePeerSafety } from "../lib/safety.js";
+import {
+  buildMeetupContent,
+  buildRsvpContent,
+  buildVoiceContent,
+  computeMeetupAttendance,
+  parseMessageContent,
+} from "../lib/messageContent.js";
+import type { StoryReplyContext } from "../lib/messageContent.js";
+import { computePeaks, encryptAudioBlob } from "../lib/voice.js";
+import { formatDuration, useAudioRecorder } from "../lib/useAudioRecorder.js";
+import type { AudioRecording } from "../lib/useAudioRecorder.js";
+import { MAX_VOICE_MESSAGE_MS } from "@app/shared";
 
 const MESSAGE_PAGE_LIMIT = 40;
-
-function parseDecryptedMessage(content: string): DecryptedMessageContent {
-  try {
-    const value = JSON.parse(content) as {
-      type?: unknown;
-      text?: unknown;
-      story?: Partial<StoryReplyContext>;
-    };
-    if (
-      value.type === "story_reply" &&
-      typeof value.text === "string" &&
-      typeof value.story?.storyId === "string" &&
-      typeof value.story.imageKey === "string" &&
-      typeof value.story.authorUsername === "string"
-    ) {
-      return {
-        text: value.text,
-        storyReply: {
-          storyId: value.story.storyId,
-          imageKey: value.story.imageKey,
-          authorUsername: value.story.authorUsername,
-          createdAt: typeof value.story.createdAt === "string" ? value.story.createdAt : "",
-        },
-      };
-    }
-  } catch {
-    // Ordinary messages are plain text rather than structured JSON.
-  }
-  return { text: content };
-}
 
 async function fetchConversations(): Promise<ConversationSummary[]> {
   const res = await apiFetch<{ conversations: ConversationSummary[] }>(
@@ -153,6 +129,12 @@ export default function DMsPage() {
   const [messageError, setMessageError] = useState<string | null>(null);
   const [decryptedMessages, setDecryptedMessages] = useState<Record<string, string>>({});
   const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const [meetupOpen, setMeetupOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
+  const [safetyVersion, setSafetyVersion] = useState(0);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [rsvpBusy, setRsvpBusy] = useState<string | null>(null);
+  const recorder = useAudioRecorder({ maxMs: MAX_VOICE_MESSAGE_MS, onFinished: (recording) => void sendVoice(recording) });
 
   useEffect(() => {
     if (searchParams.get("view") !== "live_rooms") return;
@@ -278,6 +260,17 @@ export default function DMsPage() {
   const allMembersHaveKeys = !!activeConversation &&
     activeConversation.members.length > 0 &&
     activeConversation.members.every((member) => membersWithKeys.has(member.id));
+  const parsedMessages = messages.map((message) => ({
+    message,
+    parsed: parseMessageContent(message.isEncrypted ? decryptedMessages[message.id] ?? "" : message.text ?? ""),
+    decrypting: message.isEncrypted && decryptedMessages[message.id] === undefined,
+  }));
+  const attendance = computeMeetupAttendance(
+    parsedMessages.map(({ message, parsed }) => ({ senderId: message.senderId, parsed }))
+  );
+  const peers = (activeConversation?.members ?? []).filter((member) => member.id !== user?.id);
+  const peerSafety = usePeerSafety(user?.id, peers.map((peer) => peer.id), encryptionKeys, safetyVersion);
+  const securityStatus = overallStatus(peers.map((peer) => peerSafety[peer.id] ?? { safetyNumber: null, status: "unavailable" }));
 
   useEffect(() => {
     if (!activeId || !messagesLoaded) return;
@@ -440,14 +433,23 @@ export default function DMsPage() {
       : [...current, friend.username]);
   }
 
+  async function sendEncrypted(content: string, mediaKey?: string) {
+    if (!activeId || !deviceKeyReady) throw new Error("Encryption is not ready yet.");
+    if (!allMembersHaveKeys) {
+      throw new Error("Every participant must open Messages once before you can send an encrypted message.");
+    }
+    const encryptedPayload: EncryptedMessagePayload = await encryptMessage(content, encryptionKeys);
+    await apiFetch(`/conversations/${activeId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ encryptedPayload, ...(mediaKey ? { mediaKey } : {}) }),
+    });
+  }
+
   async function sendMessage(e: FormEvent) {
     e.preventDefault();
     if (!messageText.trim() || !activeId || !deviceKeyReady) return;
     setMessageError(null);
     try {
-      if (!allMembersHaveKeys) {
-        throw new Error("Every participant must open Messages once before you can send an encrypted message.");
-      }
       const messageContent = storyReplyContext
         ? JSON.stringify({
             type: "story_reply",
@@ -455,15 +457,54 @@ export default function DMsPage() {
             text: messageText.trim(),
           })
         : messageText.trim();
-      const encryptedPayload: EncryptedMessagePayload = await encryptMessage(messageContent, encryptionKeys);
-      await apiFetch(`/conversations/${activeId}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ encryptedPayload }),
-      });
+      await sendEncrypted(messageContent);
       setMessageText("");
       setStoryReplyContext(null);
     } catch (error) {
       setMessageError(error instanceof Error ? error.message : "Could not encrypt this message");
+    }
+  }
+
+  async function sendVoice(recording: AudioRecording) {
+    if (recording.durationMs < 700) return;
+    setMessageError(null);
+    setVoiceBusy(true);
+    try {
+      const [encrypted, peaks] = await Promise.all([encryptAudioBlob(recording.blob), computePeaks(recording.blob)]);
+      const mediaKey = await uploadMedia(encrypted.file, { resize: false });
+      await sendEncrypted(buildVoiceContent({
+        mediaKey,
+        key: encrypted.key,
+        iv: encrypted.iv,
+        durationMs: recording.durationMs,
+        peaks,
+      }), mediaKey);
+    } catch (error) {
+      setMessageError(error instanceof Error ? error.message : "Could not send the voice message.");
+    } finally {
+      setVoiceBusy(false);
+    }
+  }
+
+  async function sendMeetup(draft: MeetupDraft) {
+    await sendEncrypted(buildMeetupContent({
+      id: crypto.randomUUID(),
+      title: draft.title.trim(),
+      startsAt: new Date(draft.when).toISOString(),
+      place: draft.place.trim(),
+      note: draft.note.trim(),
+    }));
+  }
+
+  async function toggleRsvp(meetupId: string, going: boolean) {
+    setRsvpBusy(meetupId);
+    setMessageError(null);
+    try {
+      await sendEncrypted(buildRsvpContent(meetupId, going));
+    } catch (error) {
+      setMessageError(error instanceof Error ? error.message : "Could not update your answer.");
+    } finally {
+      setRsvpBusy(null);
     }
   }
 
@@ -693,6 +734,19 @@ export default function DMsPage() {
               <div className="ml-auto flex shrink-0 items-center gap-1">
                 <button
                   type="button"
+                  onClick={() => setSecurityOpen(true)}
+                  aria-label="Security code"
+                  title={securityStatus === "verified" ? "Security code verified" : securityStatus === "changed" ? "Security code changed" : "Verify security code"}
+                  className={`relative flex h-9 w-9 items-center justify-center rounded-full border hover:bg-gray-50 ${securityStatus === "changed" ? "border-amber-300 text-amber-700" : securityStatus === "verified" ? "border-green-300 text-green-700" : "border-gray-200 text-gray-600"}`}
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3 5 6v5.5c0 4.2 2.9 7.6 7 9.5 4.1-1.9 7-5.3 7-9.5V6l-7-3Z" />
+                    {securityStatus === "verified" && <path d="m9 12 2.2 2.2L15.5 10" />}
+                    {securityStatus === "changed" && <path d="M12 8.5v4M12 15.5h.01" />}
+                  </svg>
+                </button>
+                <button
+                  type="button"
                   onClick={() => activeId && void call.startCall(activeId, "audio")}
                   disabled={!canCall || !!call.activeCall || !!call.incomingCall}
                   aria-label="Start audio call"
@@ -726,7 +780,7 @@ export default function DMsPage() {
             <details className="mb-3 mt-1 text-[11px] text-gray-600">
               <summary className="cursor-pointer">Key verification and device limits</summary>
               <p className="mt-1">
-                The server distributes public keys. Compare these fingerprints with each participant through another trusted channel; otherwise a malicious server could substitute a key.
+                Tap the shield above to compare a short security code with each participant. The server distributes public keys, so without that check a malicious server could substitute a key.
                 Keys are stored only in this browser, and newly added devices cannot read earlier messages.
               </p>
               {encryptionKeys.map((key) => (
@@ -751,21 +805,45 @@ export default function DMsPage() {
                   </button>
                 </div>
               )}
-              {messages.map((message) => {
-                const content = message.isEncrypted
-                  ? decryptedMessages[message.id] ?? "Decrypting message..."
-                  : message.text ?? "";
-                const parsed = parseDecryptedMessage(content);
+              {parsedMessages.map(({ message, parsed, decrypting }) => {
+                if (parsed.kind === "rsvp") return null;
+                const mine = message.senderId === user?.id;
+                const sender = activeConversation?.members.find((member) => member.id === message.senderId);
+
+                if (parsed.kind === "meetup") {
+                  const goingIds = attendance.get(parsed.meetup.id)?.goingUserIds ?? [];
+                  const goingMembers = (activeConversation?.members ?? []).filter((member) => goingIds.includes(member.id));
+                  const isGoing = !!user && goingIds.includes(user.id);
+                  return (
+                    <div key={message.id} className={`flex max-w-[92%] flex-col gap-1 ${mine ? "self-end items-end" : "self-start items-start"}`}>
+                      <span className="px-1 text-[11px] text-gray-500">
+                        {mine ? "You" : `@${sender?.username ?? "someone"}`} proposed a meetup
+                      </span>
+                      <MeetupCard
+                        title={parsed.meetup.title}
+                        startsAt={parsed.meetup.startsAt}
+                        place={parsed.meetup.place}
+                        note={parsed.meetup.note}
+                        attendees={goingMembers}
+                        attendeeCount={goingMembers.length}
+                        isGoing={isGoing}
+                        busy={rsvpBusy === parsed.meetup.id}
+                        onToggle={() => void toggleRsvp(parsed.meetup.id, !isGoing)}
+                      />
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={message.id}
                     className={`max-w-[85%] break-words rounded-2xl px-3 py-2 text-sm ${
-                      message.senderId === user?.id
+                      mine
                         ? "self-end bg-black text-white"
                         : "self-start bg-gray-100"
                     }`}
                   >
-                    {parsed.storyReply && (
+                    {parsed.kind === "text" && parsed.storyReply && (
                       <div
                         data-story-id={parsed.storyReply.storyId}
                         className="mb-2 flex items-center gap-2 overflow-hidden rounded-lg bg-black/5 p-1.5"
@@ -786,7 +864,11 @@ export default function DMsPage() {
                         </span>
                       </div>
                     )}
-                    <p className="whitespace-pre-wrap">{parsed.text}</p>
+                    {parsed.kind === "voice" ? (
+                      <VoiceMessage voice={parsed.voice} tone={mine ? "dark" : "light"} />
+                    ) : (
+                      <p className="whitespace-pre-wrap">{decrypting ? "Decrypting message..." : parsed.text}</p>
+                    )}
                     <EncryptionNotice encrypted={message.isEncrypted}>
                       {message.isEncrypted ? "End-to-end encrypted" : "Not end-to-end encrypted"}
                     </EncryptionNotice>
@@ -830,31 +912,110 @@ export default function DMsPage() {
                 transform: keyboardOffset > 0 ? `translateY(-${keyboardOffset}px)` : undefined,
               }}
             >
-              <form onSubmit={(e) => void sendMessage(e)} className="flex items-center gap-2">
-                <input
-                  ref={composerInputRef}
-                  value={messageText}
-                  onFocus={() => {
-                    window.setTimeout(() => {
-                      messageScrollRef.current?.scrollTo({
-                        top: messageScrollRef.current.scrollHeight,
-                        behavior: "smooth",
-                      });
-                    }, 60);
-                  }}
-                  onChange={(e) => setMessageText(e.target.value)}
-                  placeholder="Message..."
-                  className={`${input} min-w-0 flex-1`}
-                />
-                <button
-                  disabled={!deviceKeyReady || !allMembersHaveKeys}
-                  className={`${btnPrimary} min-h-10 shrink-0 bg-green-700 hover:bg-green-800 focus-visible:ring-green-700/20 disabled:opacity-50`}
-                >Send</button>
-              </form>
+              {recorder.recording ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2">
+                  <span className="record-pulse h-3 w-3 shrink-0 rounded-full bg-red-500" />
+                  <span className="w-11 shrink-0 text-sm font-semibold tabular-nums text-red-700">
+                    {formatDuration(recorder.elapsedMs)}
+                  </span>
+                  <span className="flex h-7 min-w-0 flex-1 items-center gap-[2px]" aria-hidden="true">
+                    {Array.from({ length: 28 }, (_, index) => (
+                      <span
+                        key={index}
+                        style={{ height: `${Math.max(14, Math.min(100, recorder.level * 100 * (0.45 + ((index * 7) % 6) / 7)))}%` }}
+                        className="w-[3px] flex-1 rounded-full bg-red-400 transition-[height] duration-100"
+                      />
+                    ))}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={recorder.cancel}
+                    aria-label="Discard recording"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-red-600 hover:bg-red-100"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={recorder.stop}
+                    aria-label="Send voice message"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-700 text-white hover:bg-green-800 active:scale-95"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={(e) => void sendMessage(e)} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMeetupOpen(true)}
+                    disabled={!deviceKeyReady || !allMembersHaveKeys}
+                    aria-label="Propose a meetup"
+                    title="Propose a meetup"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3.5" y="5" width="17" height="15" rx="3" />
+                      <path d="M8 3v4M16 3v4M3.5 10h17M12 13v4M10 15h4" />
+                    </svg>
+                  </button>
+                  <input
+                    ref={composerInputRef}
+                    value={messageText}
+                    onFocus={() => {
+                      window.setTimeout(() => {
+                        messageScrollRef.current?.scrollTo({
+                          top: messageScrollRef.current.scrollHeight,
+                          behavior: "smooth",
+                        });
+                      }, 60);
+                    }}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    placeholder={voiceBusy ? "Sending voice message..." : "Message..."}
+                    className={`${input} min-w-0 flex-1`}
+                  />
+                  {messageText.trim() || voiceBusy ? (
+                    <button
+                      disabled={!deviceKeyReady || !allMembersHaveKeys || voiceBusy}
+                      className={`${btnPrimary} min-h-10 shrink-0 bg-green-700 hover:bg-green-800 focus-visible:ring-green-700/20 disabled:opacity-50`}
+                    >Send</button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void recorder.start()}
+                      disabled={!deviceKeyReady || !allMembersHaveKeys}
+                      aria-label="Record a voice message"
+                      title="Voice message"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-700 text-white transition-transform hover:bg-green-800 active:scale-95 disabled:opacity-50"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="3" width="6" height="12" rx="3" />
+                        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                      </svg>
+                    </button>
+                  )}
+                </form>
+              )}
+              {recorder.error && <p role="alert" className="mt-1 text-xs text-red-600">{recorder.error}</p>}
             </div>
           </section>
         )}
       </div>
+      <MeetupSheet open={meetupOpen} onClose={() => setMeetupOpen(false)} onSubmit={sendMeetup} />
+      {user && peers.length > 0 && (
+        <SecurityCodeSheet
+          open={securityOpen}
+          onClose={() => setSecurityOpen(false)}
+          meId={user.id}
+          peers={peers}
+          keys={encryptionKeys}
+          onChanged={() => setSafetyVersion((value) => value + 1)}
+        />
+      )}
       <CallOverlay
         incomingCall={call.incomingCall}
         activeCall={call.activeCall}

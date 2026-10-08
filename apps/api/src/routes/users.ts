@@ -9,6 +9,7 @@ import { postWithCountsInclude, toFeedPost } from "../postSerializer.js";
 import {
   getBlockedUserIds,
   getCloseFriendGrantedAuthorIds,
+  getViewerCircleIds,
   isBlocked,
 } from "../visibility.js";
 import { ownsMedia } from "../mediaAccess.js";
@@ -211,6 +212,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const isOwnProfile = target.id === request.userId;
+      const circleIds = isOwnProfile ? [] : await getViewerCircleIds(request.userId!);
       const closeFriendGrantedAuthorIds = isOwnProfile
         ? []
         : await getCloseFriendGrantedAuthorIds(request.userId!);
@@ -229,6 +231,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
                     visibility: "close_friends",
                     authorId: { in: closeFriendGrantedAuthorIds },
                   },
+                  { visibility: "circle", circleId: { in: circleIds } },
                 ],
               }),
         },

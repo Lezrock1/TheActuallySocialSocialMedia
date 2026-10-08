@@ -251,7 +251,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const [assets, posts, stories, sentSnaps, receivedSnaps, conversations, sharedFactChecks] = await Promise.all([
       prisma.mediaAsset.findMany({ where: { ownerId: user.id }, select: { key: true } }),
       prisma.post.findMany({ where: { authorId: user.id }, select: { imageKey: true } }),
-      prisma.story.findMany({ where: { authorId: user.id }, select: { imageKey: true } }),
+      prisma.story.findMany({ where: { authorId: user.id }, select: { imageKey: true, audioKey: true } }),
       prisma.snap.findMany({ where: { senderId: user.id }, select: { imageKey: true } }),
       prisma.snapRecipient.findMany({
         where: { userId: user.id },
@@ -278,17 +278,25 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const exclusivelyReceivedSnaps = receivedSnaps
       .filter(({ snap }) => snap.recipients.length === 1)
       .map(({ snap }) => snap);
+    const directConversationIds = conversations
+      .filter((conversation) => conversation.members.length <= 2)
+      .map((conversation) => conversation.id);
+    const voiceMessages = await prisma.message.findMany({
+      where: {
+        mediaKey: { not: null },
+        OR: [{ senderId: user.id }, { conversationId: { in: directConversationIds } }],
+      },
+      select: { mediaKey: true },
+    });
     const mediaKeys = [...new Set([
       user.avatarKey,
       ...assets.map((asset) => asset.key),
       ...posts.map((post) => post.imageKey),
-      ...stories.map((story) => story.imageKey),
+      ...stories.flatMap((story) => [story.imageKey, story.audioKey]),
       ...sentSnaps.map((snap) => snap.imageKey),
       ...exclusivelyReceivedSnaps.map((snap) => snap.imageKey),
+      ...voiceMessages.map((message) => message.mediaKey),
     ].filter((key): key is string => Boolean(key)))];
-    const directConversationIds = conversations
-      .filter((conversation) => conversation.members.length <= 2)
-      .map((conversation) => conversation.id);
     const sharedFactCheckPostIds = [...new Set(sharedFactChecks.map((conversation) => conversation.postId))];
 
     await prisma.$transaction(async (transaction) => {

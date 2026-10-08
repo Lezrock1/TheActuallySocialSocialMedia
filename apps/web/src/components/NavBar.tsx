@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../lib/api.js";
 import CameraIcon from "./CameraIcon.js";
+import { useCamera } from "./camera/CameraProvider.js";
 
 const primaryLinkClass = ({ isActive }: { isActive: boolean }) =>
   `inline-flex h-10 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors ${isActive ? "border-[#1D9BF0] text-gray-900" : "border-transparent text-gray-600 hover:text-gray-900"}`;
@@ -135,6 +136,7 @@ export default function NavBar() {
 // Rendered once outside the page transition so tab changes never remount it.
 export function MobileNav() {
   const { notificationCount, messageUnreadCount, feedUnreadCount, snapUnreadCount } = useNavCounts();
+  const camera = useCamera();
 
   return (
       <nav
@@ -171,13 +173,14 @@ export function MobileNav() {
           </span>
           <span>Alerts</span>
         </NavLink>
-        <NavLink
-          to="/snaps?camera=1"
+        <button
+          type="button"
+          onClick={camera.open}
           aria-label="Open camera"
           className="absolute left-1/2 top-0 z-50 flex h-16 w-16 -translate-x-1/2 -translate-y-[30%] items-center justify-center rounded-full bg-fuchsia-600 text-white shadow-lg ring-4 ring-white transition hover:bg-fuchsia-700 active:scale-95"
         >
           <CameraIcon />
-        </NavLink>
+        </button>
       </nav>
   );
 }

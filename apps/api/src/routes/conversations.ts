@@ -12,6 +12,7 @@ import { toPublicUser } from "../serializers.js";
 import { createUserNotification } from "../notifications.js";
 import { emitToUsers } from "../realtime.js";
 import { isBlocked } from "../visibility.js";
+import { ownsMedia } from "../mediaAccess.js";
 
 const DEFAULT_MESSAGES_LIMIT = 40;
 const MAX_MESSAGES_LIMIT = 100;
@@ -201,6 +202,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
             ? encryptedMessagePayloadSchema.parse(JSON.parse(m.text))
             : null,
           createdAt: m.createdAt.toISOString(),
+          mediaKey: m.mediaKey,
         })),
         nextCursor,
       });
@@ -282,6 +284,13 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         ? parsed.data.encryptedPayload
         : null;
       const plainText = "text" in parsed.data ? parsed.data.text : null;
+      const mediaKey = parsed.data.mediaKey ?? null;
+      if (mediaKey && !encryptedPayload) {
+        return reply.code(400).send({ error: "Voice-message attachments must be end-to-end encrypted" });
+      }
+      if (mediaKey && !(await ownsMedia(request.userId!, mediaKey))) {
+        return reply.code(403).send({ error: "You can only attach your own uploads" });
+      }
       const isEncrypted = encryptedPayload !== null;
       const storedText = encryptedPayload ? JSON.stringify(encryptedPayload) : plainText!;
       const message = await prisma.message.create({
@@ -290,6 +299,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
           senderId: request.userId!,
           text: storedText,
           isEncrypted,
+          mediaKey,
         },
       });
       const messageDto = {
@@ -299,6 +309,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         isEncrypted,
         encryptedPayload,
         createdAt: message.createdAt.toISOString(),
+        mediaKey,
       };
 
       const members = await prisma.conversationMember.findMany({

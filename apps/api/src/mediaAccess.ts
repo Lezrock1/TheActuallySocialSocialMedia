@@ -1,5 +1,5 @@
 import { prisma } from "./db.js";
-import { getBlockedUserIds, getCloseFriendGrantedAuthorIds } from "./visibility.js";
+import { getBlockedUserIds, getCloseFriendGrantedAuthorIds, getViewerCircleIds } from "./visibility.js";
 
 const AVATAR_MAX_AGE_SECONDS = 24 * 60 * 60;
 
@@ -21,18 +21,18 @@ export async function canReadMedia(
   key: string
 ): Promise<MediaAccess> {
   const now = new Date();
-  const [asset, posts, stories, snaps, avatarOwners] = await Promise.all([
+  const [asset, posts, stories, snaps, avatarOwners, messages] = await Promise.all([
     prisma.mediaAsset.findUnique({
       where: { key },
       select: { ownerId: true },
     }),
     prisma.post.findMany({
       where: { imageKey: key },
-      select: { authorId: true, visibility: true },
+      select: { authorId: true, visibility: true, circleId: true },
     }),
     prisma.story.findMany({
-      where: { imageKey: key },
-      select: { authorId: true, visibility: true, expiresAt: true },
+      where: { OR: [{ imageKey: key }, { audioKey: key }] },
+      select: { authorId: true, visibility: true, circleId: true, expiresAt: true },
     }),
     prisma.snap.findMany({
       where: { imageKey: key },
@@ -49,37 +49,53 @@ export async function canReadMedia(
       where: { avatarKey: key },
       select: { id: true },
     }),
+    prisma.message.findMany({
+      where: { mediaKey: key },
+      select: {
+        conversation: {
+          select: { members: { where: { userId: viewerId }, select: { id: true } } },
+        },
+      },
+    }),
   ]);
 
   const hasReferences =
-    posts.length > 0 || stories.length > 0 || snaps.length > 0 || avatarOwners.length > 0;
+    posts.length > 0 || stories.length > 0 || snaps.length > 0 || avatarOwners.length > 0 ||
+    messages.length > 0;
   if (asset?.ownerId === viewerId && !hasReferences) {
     return { allowed: true, maxAgeSeconds: 30 };
   }
 
-  const [blockedIds, closeFriendAuthorIds] = await Promise.all([
+  const [blockedIds, closeFriendAuthorIds, circleIds] = await Promise.all([
     getBlockedUserIds(viewerId),
     getCloseFriendGrantedAuthorIds(viewerId),
+    getViewerCircleIds(viewerId),
   ]);
-  const canSeeAuthor = (authorId: string, visibility: string): boolean => {
+  const canSeeAuthor = (authorId: string, visibility: string, circleId: string | null = null): boolean => {
     if (authorId === viewerId) return true;
     if (blockedIds.includes(authorId)) return false;
     if (visibility === "public") return true;
+    if (visibility === "circle") return !!circleId && circleIds.includes(circleId);
     return visibility === "close_friends" && closeFriendAuthorIds.includes(authorId);
   };
 
-  const canReadPost = posts.some((post) => canSeeAuthor(post.authorId, post.visibility));
+  const canReadPost = posts.some((post) => canSeeAuthor(post.authorId, post.visibility, post.circleId));
   const canReadStory = stories.some(
-    (story) => story.expiresAt > now && canSeeAuthor(story.authorId, story.visibility)
+    (story) => story.expiresAt > now && canSeeAuthor(story.authorId, story.visibility, story.circleId)
   );
+  const canReadMessage = messages.some((message) => message.conversation.members.length > 0);
   const canReadSnap = snaps.some(
     (snap) => snap.expiresAt > now &&
       !blockedIds.includes(snap.senderId) &&
       snap.recipients.length > 0
   );
   const canReadAvatar = avatarOwners.some((avatar) => canSeeAuthor(avatar.id, "public"));
-  const allowed = canReadPost || canReadStory || canReadSnap || canReadAvatar;
+  const allowed = canReadPost || canReadStory || canReadSnap || canReadAvatar || canReadMessage;
   if (!allowed || canReadSnap) return { allowed, maxAgeSeconds: 0 };
+
+  // Voice messages are immutable ciphertext, so members may cache them.
+  const onlyMessage = messages.length > 0 && posts.length === 0 && stories.length === 0 && !canReadAvatar;
+  if (onlyMessage) return { allowed: true, maxAgeSeconds: AVATAR_MAX_AGE_SECONDS };
 
   // Avatar keys are replaced on change, so avatar-only media can be cached for a day.
   const onlyAvatar = avatarOwners.length > 0 && posts.length === 0 && stories.length === 0;

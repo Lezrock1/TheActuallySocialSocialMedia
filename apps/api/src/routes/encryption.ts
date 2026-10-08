@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { registerEncryptionKeySchema } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
+import { isBlocked } from "../visibility.js";
 
 const MAX_DEVICE_KEYS = 10;
 
@@ -51,4 +52,32 @@ export async function encryptionRoutes(app: FastifyInstance): Promise<void> {
     });
     return reply.code(201).send({ fingerprint });
   });
+
+  app.get("/users/me/encryption-keys", { preHandler: requireAuth }, async (request, reply) => {
+    const keys = await prisma.encryptionKey.findMany({
+      where: { userId: request.userId! },
+      select: { userId: true, fingerprint: true, publicKey: true },
+    });
+    return reply.send({ keys });
+  });
+
+  // Public keys of another member, used for the security-code comparison.
+  app.get<{ Params: { username: string } }>(
+    "/users/:username/encryption-keys",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const target = await prisma.user.findFirst({
+        where: { username: { equals: request.params.username, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (!target || await isBlocked(request.userId!, target.id)) {
+        return reply.code(404).send({ error: "User not found" });
+      }
+      const keys = await prisma.encryptionKey.findMany({
+        where: { userId: target.id },
+        select: { userId: true, fingerprint: true, publicKey: true },
+      });
+      return reply.send({ keys });
+    }
+  );
 }

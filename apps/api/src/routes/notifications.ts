@@ -5,10 +5,11 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { env } from "../env.js";
+import { isValidTimeZone } from "../quietHours.js";
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
-const FEED_NOTIFICATION_TYPES = ["post", "close_friend_post"];
+const FEED_NOTIFICATION_TYPES = ["post", "close_friend_post", "circle_post"];
 const pushSubscriptionSchema = z.object({
   endpoint: z.string().url().max(2048).refine((value) => {
     const url = new URL(value);
@@ -38,22 +39,16 @@ const notificationPreferencesSchema = z.object({
   storyReactions: z.boolean().optional(),
   mentions: z.boolean().optional(),
   closeFriends: z.boolean().optional(),
+  postsFromCircles: z.boolean().optional(),
+  circles: z.boolean().optional(),
+  meetupResponses: z.boolean().optional(),
+  quietHoursEnabled: z.boolean().optional(),
+  quietStartMinute: z.number().int().min(0).max(1439).optional(),
+  quietEndMinute: z.number().int().min(0).max(1439).optional(),
+  timezone: z.string().max(64).refine(isValidTimeZone, "Unknown timezone").optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, "Choose at least one setting");
 
-function toNotificationPreferences(value: {
-  postsFromFollowing: boolean;
-  postsFromCloseFriends: boolean;
-  snaps: boolean;
-  messages: boolean;
-  liveRooms: boolean;
-  follows: boolean;
-  comments: boolean;
-  commentReplies: boolean;
-  commentLikes: boolean;
-  storyReactions: boolean;
-  mentions: boolean;
-  closeFriends: boolean;
-}): NotificationPreferences {
+function toNotificationPreferences(value: NotificationPreferences): NotificationPreferences {
   return {
     postsFromFollowing: value.postsFromFollowing,
     postsFromCloseFriends: value.postsFromCloseFriends,
@@ -67,6 +62,13 @@ function toNotificationPreferences(value: {
     storyReactions: value.storyReactions,
     mentions: value.mentions,
     closeFriends: value.closeFriends,
+    postsFromCircles: value.postsFromCircles,
+    circles: value.circles,
+    meetupResponses: value.meetupResponses,
+    quietHoursEnabled: value.quietHoursEnabled,
+    quietStartMinute: value.quietStartMinute,
+    quietEndMinute: value.quietEndMinute,
+    timezone: value.timezone,
   };
 }
 
@@ -83,10 +85,17 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
   app.patch("/notifications/preferences", { preHandler: requireAuth }, async (request, reply) => {
     const parsed = notificationPreferencesSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const quietFieldsChanged = ["quietHoursEnabled", "quietStartMinute", "quietEndMinute", "timezone"]
+      .some((key) => key in parsed.data);
+    const changes = {
+      ...parsed.data,
+      // Only windows that start after this save may produce a digest.
+      ...(quietFieldsChanged ? { quietDigestSentAt: new Date() } : {}),
+    };
     const preferences = await prisma.notificationPreference.upsert({
       where: { userId: request.userId! },
-      create: { userId: request.userId!, ...parsed.data },
-      update: parsed.data,
+      create: { userId: request.userId!, ...changes },
+      update: changes,
     });
     return reply.send({ preferences: toNotificationPreferences(preferences) });
   });

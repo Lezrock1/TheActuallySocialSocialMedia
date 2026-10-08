@@ -3,13 +3,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../lib/api.js";
 import { useAuth } from "../auth/AuthContext.js";
-import { deleteDeviceEncryptionKeys } from "../lib/encryption.js";
+import { deleteDeviceEncryptionKeys, deleteVerifiedPeers } from "../lib/encryption.js";
 import { forgetDeviceEncryptionKeyRegistration } from "../lib/encryptionRegistration.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import BackgroundSettings from "../components/BackgroundSettings.js";
 import TranslationLanguageSettings from "../components/TranslationLanguageSettings.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import Sheet from "../components/Sheet.js";
 import { btnPrimary, card, input } from "../lib/ui.js";
 
 interface AccountDetails {
@@ -48,6 +49,11 @@ export default function AccountSettingsPage() {
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [exportPassword, setExportPassword] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportStarted, setExportStarted] = useState(false);
 
   useEffect(() => {
     if (!accountQuery.data) return;
@@ -163,6 +169,29 @@ export default function AccountSettingsPage() {
     }
   }
 
+  async function exportData(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!exportPassword) return;
+    setExporting(true);
+    setExportError(null);
+    setExportStarted(false);
+    try {
+      await apiFetch<void>("/auth/account/export-token", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword: exportPassword }),
+      });
+      const apiBase = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
+      // A plain navigation lets the browser stream the ZIP straight to disk.
+      window.location.assign(`${apiBase}/auth/account/export`);
+      setExportPassword("");
+      setExportStarted(true);
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : "Could not start the export.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function deleteAccount(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user || deleteConfirmation !== "DELETE") return;
@@ -177,6 +206,7 @@ export default function AccountSettingsPage() {
       let localCleanupWarning = false;
       try {
         await deleteDeviceEncryptionKeys(user.id);
+        await deleteVerifiedPeers(user.id);
         forgetDeviceEncryptionKeyRegistration(user.id);
         if ("serviceWorker" in navigator) {
           const registration = await navigator.serviceWorker.getRegistration("/");
@@ -269,16 +299,57 @@ export default function AccountSettingsPage() {
             </button>
           </form>
 
-          <section className="mt-6 rounded-xl border border-red-200 bg-white p-4 shadow-sm">
-            <div>
-              <h2 className="text-base font-semibold text-red-700">Delete account</h2>
-              <p className="mt-1 text-sm leading-5 text-gray-600">
-                Permanently removes your profile, posts, comments, messages, Snaps, follows, settings, and uploaded files from the live service. One-to-one conversations with you are removed for both participants; group messages you sent are removed.
-              </p>
-              <p className="mt-2 text-xs leading-5 text-gray-500">
-                Offline backups may retain database copies until those backups are removed. Copies or notifications already delivered to other people cannot be recalled, and this cannot erase data saved on their devices.
-              </p>
+          <section aria-labelledby="export-title" className={`${card} mt-6`}>
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 4v11M7 11l5 5 5-5M5 20h14" />
+                </svg>
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 id="export-title" className="text-base font-semibold text-gray-900">Download your data</h2>
+                <p className="mt-1 text-xs leading-5 text-gray-500">
+                  Get a ZIP with your profile, posts, comments, stories, circles, settings and the files you uploaded.
+                  End-to-end encrypted chats are included as ciphertext, because only your devices can read them. Passwords and API keys are never included.
+                </p>
+              </div>
             </div>
+            <form onSubmit={(event) => void exportData(event)} className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <input
+                type="password"
+                required
+                autoComplete="current-password"
+                placeholder="Current password"
+                value={exportPassword}
+                onChange={(event) => { setExportPassword(event.target.value); setExportStarted(false); }}
+                className={`${input} min-w-0 flex-1`}
+              />
+              <button type="submit" disabled={exporting || !exportPassword} className={`${btnPrimary} min-h-11`}>
+                {exporting ? "Preparing…" : "Download my data"}
+              </button>
+            </form>
+            {exportError && <p role="alert" className="mt-2 text-sm text-red-600">{exportError}</p>}
+            {exportStarted && <p role="status" className="mt-2 text-sm text-green-700">Your download is starting. Large archives can take a moment.</p>}
+          </section>
+
+          <section className="mt-6 rounded-xl border border-red-200 bg-white p-4 shadow-sm">
+            <h2 className="text-base font-semibold text-red-700">Delete account</h2>
+            <p className="mt-1 text-sm leading-5 text-gray-600">
+              Permanently removes your profile, posts, comments, messages, Snaps, follows, circles, settings and uploaded files. This cannot be undone, so download your data first.
+            </p>
+            <button
+              type="button"
+              onClick={() => { setDeleteOpen(true); setDeleteError(null); }}
+              className="mt-4 min-h-11 w-full rounded-xl border border-red-300 bg-white px-4 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+            >
+              Delete my account…
+            </button>
+          </section>
+
+          <Sheet open={deleteOpen} onClose={() => !deleting && setDeleteOpen(false)} title="Delete your account?">
+            <p className="text-sm leading-6 text-gray-600">
+              One-to-one conversations with you are removed for both participants; group messages you sent are removed. Offline backups may keep copies until they expire, and content already delivered to other people cannot be recalled.
+            </p>
             <form onSubmit={(event) => void deleteAccount(event)} className="mt-4 flex flex-col gap-3">
               <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-800">
                 Current password
@@ -305,12 +376,12 @@ export default function AccountSettingsPage() {
               <button
                 type="submit"
                 disabled={deleting || !deletePassword || deleteConfirmation !== "DELETE"}
-                className="min-h-11 w-full rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-11 w-full rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {deleting ? "Deleting account…" : "Delete account permanently"}
               </button>
             </form>
-          </section>
+          </Sheet>
         </>
       )}
     </div>

@@ -10,6 +10,7 @@ const AiSettingsPage = lazy(() => import("./pages/AiSettingsPage.js"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage.js"));
 const PostThreadPage = lazy(() => import("./pages/PostThreadPage.js"));
 const InvitationsPage = lazy(() => import("./pages/InvitationsPage.js"));
+const CirclesPage = lazy(() => import("./pages/CirclesPage.js"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage.js"));
 const PeopleSearchPage = lazy(() => import("./pages/PeopleSearchPage.js"));
 const NotificationSettingsPage = lazy(() => import("./pages/NotificationSettingsPage.js"));
@@ -18,6 +19,7 @@ const SecuritySettingsPage = lazy(() => import("./pages/SecuritySettingsPage.js"
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage.js"));
 const ApiUnavailablePage = lazy(() => import("./pages/ApiUnavailablePage.js"));
 import { MobileNav } from "./components/NavBar.js";
+import { CameraProvider } from "./components/camera/CameraProvider.js";
 import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
 import { AppBootSkeleton } from "./components/LoadingSkeleton.js";
 
@@ -42,6 +44,7 @@ function titleForPath(pathname: string): string {
   if (pathname.startsWith("/settings/account")) return "Account Settings";
   if (pathname.startsWith("/settings/security")) return "Security";
   if (pathname.startsWith("/invitations")) return "Invitations";
+  if (pathname.startsWith("/circles")) return "Circles";
   if (pathname.startsWith("/post/")) return "Post";
   if (pathname.startsWith("/u/")) return "Profile";
   if (pathname.startsWith("/login")) return "Login";
@@ -137,6 +140,14 @@ function AppRoutes() {
           }
         />
         <Route
+          path="/circles"
+          element={
+            <RequireAuth>
+              <CirclesPage />
+            </RequireAuth>
+          }
+        />
+        <Route
           path="/people"
           element={
             <RequireAuth>
@@ -172,7 +183,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <CameraProvider>
+        <AppRoutes />
+      </CameraProvider>
     </AuthProvider>
   );
 }

@@ -120,6 +120,11 @@ function PostCard({
               Close friends
             </span>
           )}
+          {post.visibility === "circle" && (
+            <span className="max-w-[9rem] truncate rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-800">
+              {post.circle?.name ?? "Private"}
+            </span>
+          )}
         </div>
         {isOwn && (
           <button onClick={() => setDeleteDialogOpen(true)} className={btnDanger}>

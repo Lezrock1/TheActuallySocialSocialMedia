@@ -1,6 +1,10 @@
 import type { NotificationPreferences, NotificationType } from "@app/shared";
 
-const preferenceByType: Record<NotificationType, keyof NotificationPreferences> = {
+type BooleanPreferenceKey = {
+  [K in keyof NotificationPreferences]: NotificationPreferences[K] extends boolean ? K : never;
+}[keyof NotificationPreferences];
+
+const preferenceByType: Record<NotificationType, BooleanPreferenceKey> = {
   post: "postsFromFollowing",
   close_friend_post: "postsFromCloseFriends",
   snap: "snaps",
@@ -13,7 +17,32 @@ const preferenceByType: Record<NotificationType, keyof NotificationPreferences> 
   story_reaction: "storyReactions",
   mention: "mentions",
   close_friend: "closeFriends",
+  circle_post: "postsFromCircles",
+  circle_added: "circles",
+  meetup_response: "meetupResponses",
 };
+
+export const notificationPreferenceSelect = {
+  postsFromFollowing: true,
+  postsFromCloseFriends: true,
+  snaps: true,
+  messages: true,
+  liveRooms: true,
+  follows: true,
+  comments: true,
+  commentReplies: true,
+  commentLikes: true,
+  storyReactions: true,
+  mentions: true,
+  closeFriends: true,
+  postsFromCircles: true,
+  circles: true,
+  meetupResponses: true,
+  quietHoursEnabled: true,
+  quietStartMinute: true,
+  quietEndMinute: true,
+  timezone: true,
+} as const;
 
 export function isNotificationEnabled(
   type: NotificationType,

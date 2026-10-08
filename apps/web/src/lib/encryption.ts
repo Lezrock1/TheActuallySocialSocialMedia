@@ -23,6 +23,7 @@ export interface DeviceEncryptionKey {
 
 const DATABASE_NAME = "intouch-encryption";
 const STORE_NAME = "device-keys";
+const VERIFIED_STORE_NAME = "verified-peers";
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -41,9 +42,15 @@ function fromBase64(value: string): Uint8Array<ArrayBuffer> {
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE_NAME, 1);
+    const request = indexedDB.open(DATABASE_NAME, 2);
     request.onupgradeneeded = () => {
-      request.result.createObjectStore(STORE_NAME, { keyPath: "id" });
+      const database = request.result;
+      if (!database.objectStoreNames.contains(STORE_NAME)) {
+        database.createObjectStore(STORE_NAME, { keyPath: "id" });
+      }
+      if (!database.objectStoreNames.contains(VERIFIED_STORE_NAME)) {
+        database.createObjectStore(VERIFIED_STORE_NAME, { keyPath: "id" });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -111,6 +118,54 @@ export async function getDeviceEncryptionKeys(userId: string): Promise<DeviceEnc
   return getStoredKeys(userId);
 }
 
+interface VerifiedPeer {
+  id: string;
+  safetyNumber: string;
+  verifiedAt: number;
+}
+
+// The safety number the user confirmed for this peer, or null if never verified.
+export async function getVerifiedSafetyNumber(userId: string, peerId: string): Promise<string | null> {
+  const database = await openDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const request = database
+        .transaction(VERIFIED_STORE_NAME)
+        .objectStore(VERIFIED_STORE_NAME)
+        .get(`${userId}:${peerId}`);
+      request.onsuccess = () => resolve((request.result as VerifiedPeer | undefined)?.safetyNumber ?? null);
+      request.onerror = () => reject(request.error);
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export async function setVerifiedSafetyNumber(
+  userId: string,
+  peerId: string,
+  safetyNumber: string | null
+): Promise<void> {
+  const database = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(VERIFIED_STORE_NAME, "readwrite");
+      const store = transaction.objectStore(VERIFIED_STORE_NAME);
+      if (safetyNumber) {
+        const entry: VerifiedPeer = { id: `${userId}:${peerId}`, safetyNumber, verifiedAt: Date.now() };
+        store.put(entry);
+      } else {
+        store.delete(`${userId}:${peerId}`);
+      }
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } finally {
+    database.close();
+  }
+}
+
 export async function deleteDeviceEncryptionKeys(userId: string): Promise<void> {
   const database = await openDatabase();
   try {
@@ -121,6 +176,28 @@ export async function deleteDeviceEncryptionKeys(userId: string): Promise<void> 
       request.onsuccess = () => {
         for (const key of request.result as DeviceEncryptionKey[]) {
           if (key.userId === userId) store.delete(key.id);
+        }
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export async function deleteVerifiedPeers(userId: string): Promise<void> {
+  const database = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(VERIFIED_STORE_NAME, "readwrite");
+      const store = transaction.objectStore(VERIFIED_STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => {
+        for (const entry of request.result as VerifiedPeer[]) {
+          if (entry.id.startsWith(`${userId}:`)) store.delete(entry.id);
         }
       };
       request.onerror = () => reject(request.error);
