@@ -15,15 +15,31 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setError(null);
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setError("Enter your email and password.");
+      return;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) {
+      setError("Enter the email address you registered with (not your username).");
+      return;
+    }
+    setSubmitting(true);
     try {
-      await login(email, password);
-      navigate("/");
+      await login(trimmedEmail, password);
+      navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Login failed");
+      setError(err instanceof ApiError
+        ? err.message
+        : "Could not reach the server. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -44,26 +60,32 @@ export default function LoginPage() {
             )}
           </div>
         )}
-        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <form onSubmit={onSubmit} noValidate className="flex flex-col gap-3">
           <input
             type="email"
+            name="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            inputMode="email"
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className={input}
-            required
           />
           <input
             type="password"
+            name="password"
+            autoComplete="current-password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className={input}
-            required
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button type="submit" className={btnPrimary}>
-            Log in
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          <button type="submit" disabled={submitting} className={`${btnPrimary} disabled:opacity-60`}>
+            {submitting ? "Logging in…" : "Log in"}
           </button>
         </form>
         <p className="mt-4 text-sm text-gray-500">
