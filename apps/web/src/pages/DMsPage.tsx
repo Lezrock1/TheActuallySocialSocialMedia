@@ -29,7 +29,7 @@ import PageHeader from "../components/PageHeader.js";
 import Avatar from "../components/Avatar.js";
 import CallOverlay from "../components/CallOverlay.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
-import LiveRoomsBar from "../components/LiveRoomsBar.js";
+import LiveRoomsBar, { fetchLiveRooms } from "../components/LiveRoomsBar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
 import {
   activityList,
@@ -107,6 +107,22 @@ export default function DMsPage() {
   const { user } = useAuth();
   const conversationBackgroundStyle = useConversationBackground();
   const queryClient = useQueryClient();
+  const { data: liveRooms = [] } = useQuery({
+    queryKey: ["live-rooms"],
+    queryFn: fetchLiveRooms,
+    enabled: !!user,
+    refetchInterval: 30_000,
+  });
+  const hasJoinableLiveRoom = liveRooms.some((room) => !room.participantIds.includes(user?.id ?? ""));
+
+  useEffect(() => {
+    const socket = getSocket();
+    const refresh = () => void queryClient.invalidateQueries({ queryKey: ["live-rooms"] });
+    socket.on("live-rooms:changed", refresh);
+    return () => {
+      socket.off("live-rooms:changed", refresh);
+    };
+  }, [queryClient]);
   const call = useWebRtcCall(user?.id);
   const friendPickerRef = useRef<HTMLDivElement>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
@@ -627,7 +643,7 @@ export default function DMsPage() {
               onClick={() => setMessageView("live_rooms")}
               className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${messageView === "live_rooms" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
             >
-              Live Rooms
+              <span className={hasJoinableLiveRoom ? "live-tab-pulse" : ""}>Live Rooms</span>
             </button>
           </div>
           {messageView !== "live_rooms" && <form

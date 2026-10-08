@@ -334,3 +334,39 @@ html[data-theme="dark"] [class~="hover:bg-white"]:hover {
 html[data-theme="dark"] [class~="hover:bg-gray-100"]:hover {
   background-color: var(--surface-strong) !important;
 }
+
+@keyframes gold-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+/* Gold with a silvery highlight that sweeps across the text. */
+.gold-shimmer {
+  background-image: linear-gradient(100deg, #b8860b 0%, #e9c23a 22%, #f7f1d6 40%, #d4a420 55%, #a87400 78%, #b8860b 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: gold-shimmer 2.8s linear infinite;
+}
+
+html[data-theme="dark"] .gold-shimmer {
+  background-image: linear-gradient(100deg, #f2c94c 0%, #ffe28a 22%, #fffaf0 40%, #f5d46a 55%, #e0a52a 78%, #f2c94c 100%);
+}
+
+@keyframes live-tab-pulse {
+  0%, 100% { color: #b91c1c; opacity: 1; }
+  50% { color: #ef4444; opacity: 0.7; }
+}
+
+.live-tab-pulse {
+  animation: live-tab-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gold-shimmer,
+  .live-tab-pulse {
+    animation: none;
+  }
+}

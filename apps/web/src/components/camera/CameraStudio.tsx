@@ -287,9 +287,9 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
           </div>
 
           {target !== "snap" ? (
-            <div className={`mt-3 flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 ${dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white"}`}>
-              <span className={`shrink-0 text-xs font-medium ${dark ? "text-white/65" : "text-gray-500"}`}>Visible to</span>
-              <AudiencePicker value={audience} onChange={setAudience} tone="dark" />
+            <div className={`mt-3 flex items-center justify-between gap-3 rounded-xl border px-3 py-1.5 ${dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white"}`}>
+              <span className={`shrink-0 text-xs font-medium leading-none ${dark ? "text-white/65" : "text-gray-500"}`}>Visible to</span>
+              <AudiencePicker value={audience} onChange={setAudience} tone={dark ? "dark" : "light"} showHint={false} className="flex-nowrap justify-end" />
             </div>
           ) : (
             <>
@@ -334,7 +334,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
                       <Avatar avatarKey={friend.avatarKey} username={friend.username} size={38} />
                       <span className="min-w-0 flex-1">
                         <span className={`block truncate text-sm font-medium ${dark ? "text-white" : "text-gray-900"}`}>{friend.displayName || `@${friend.username}`}</span>
-                        <span className={`block truncate text-xs ${isNew ? `font-semibold ${dark ? "text-amber-300" : "text-[#a16207]"}` : streak?.waitingForYou ? (dark ? "text-fuchsia-300" : "text-fuchsia-700") : (dark ? "text-white/50" : "text-gray-500")}`}>
+                        <span className={`block truncate text-xs ${isNew ? "gold-shimmer font-bold" : streak?.waitingForYou ? (dark ? "text-fuchsia-300" : "text-fuchsia-700") : (dark ? "text-white/50" : "text-gray-500")}`}>
                           {isNew ? "New friend, send a Snap!" : streak?.waitingForYou ? "Sent you a Snap" : `@${friend.username}`}
                         </span>
                       </span>

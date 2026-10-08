@@ -15,7 +15,7 @@ async function fetchFriends(username: string): Promise<PublicUser[]> {
   return result.users;
 }
 
-async function fetchLiveRooms(): Promise<LiveRoom[]> {
+export async function fetchLiveRooms(): Promise<LiveRoom[]> {
   return new Promise((resolve, reject) => {
     const socket = getSocket();
     const timeout = window.setTimeout(() => reject(new Error("Room list timed out")), 8_000);
