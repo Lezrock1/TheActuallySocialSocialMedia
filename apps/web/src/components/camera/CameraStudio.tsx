@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { PublicUser } from "@app/shared";
+import type { PublicUser, SnapStreakSummary } from "@app/shared";
 import { apiFetch } from "../../lib/api.js";
 import { encryptSnap, getDeviceEncryptionKeys } from "../../lib/encryption.js";
 import type { PublicEncryptionKey } from "../../lib/encryption.js";
@@ -17,6 +17,48 @@ import CameraCapture from "./CameraCapture.js";
 import Avatar from "../Avatar.js";
 
 type ShareTarget = "post" | "story" | "snap";
+
+const NEW_FRIEND_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+interface SnapFriendEntry {
+  friend: PublicUser;
+  streak: SnapStreakSummary | undefined;
+  isNew: boolean;
+}
+
+// Top 3 = most recent Snap contacts; new friends follow right after; slots 4-5 are sometimes shuffled.
+function orderSnapFriends(
+  friends: PublicUser[],
+  streaks: SnapStreakSummary[],
+  followedAt: Record<string, string>,
+  luck: { shuffle: boolean; a: number; b: number }
+): SnapFriendEntry[] {
+  const now = Date.now();
+  const streakByFriend = new Map(streaks.map((streak) => [streak.friend.id, streak]));
+  const entries = friends.map((friend): SnapFriendEntry => {
+    const streak = streakByFriend.get(friend.id);
+    const followed = followedAt[friend.id] ? Date.parse(followedAt[friend.id]) : 0;
+    return { friend, streak, isNew: !streak?.lastExchangeAt && followed > 0 && now - followed <= NEW_FRIEND_WINDOW_MS };
+  });
+  const name = (entry: SnapFriendEntry) => entry.friend.displayName || entry.friend.username;
+  const lastAt = (entry: SnapFriendEntry) => (entry.streak?.lastExchangeAt ? Date.parse(entry.streak.lastExchangeAt) : 0);
+  const regular = entries
+    .filter((entry) => !entry.isNew)
+    .sort((a, b) => lastAt(b) - lastAt(a) || name(a).localeCompare(name(b)));
+  const fresh = entries
+    .filter((entry) => entry.isNew)
+    .sort((a, b) => Date.parse(followedAt[b.friend.id]) - Date.parse(followedAt[a.friend.id]));
+  const ordered = [...regular.slice(0, 3), ...fresh, ...regular.slice(3)];
+  if (luck.shuffle && ordered.length > 5) {
+    const window = ordered.slice(3, 8);
+    const first = Math.floor(luck.a * window.length);
+    const [pickedA] = window.splice(first, 1);
+    const second = Math.floor(luck.b * window.length);
+    const [pickedB] = window.splice(second, 1);
+    ordered.splice(3, 5, pickedA, pickedB, ...window);
+  }
+  return ordered;
+}
 
 function ShareTargetButton({
   target,
@@ -64,12 +106,23 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const isVideo = !!file?.type.startsWith("video/");
 
-  const { data: friends = [] } = useQuery({
+  const { data: followingData } = useQuery({
     queryKey: ["camera-following", user?.username],
-    queryFn: async () => (await apiFetch<{ users: PublicUser[] }>(`/users/${user!.username}/following`)).users,
+    queryFn: () => apiFetch<{ users: PublicUser[]; followedAt?: Record<string, string> }>(`/users/${user!.username}/following`),
     enabled: !!user && target === "snap",
     staleTime: 30_000,
   });
+  const { data: streaks } = useQuery({
+    queryKey: ["snap-streaks"],
+    queryFn: async () => (await apiFetch<{ streaks: SnapStreakSummary[] }>("/snaps/streaks")).streaks,
+    enabled: !!user && target === "snap",
+  });
+  const luckRef = useRef({ shuffle: Math.random() < 0.5, a: Math.random(), b: Math.random() });
+  const friends = useMemo(() => followingData?.users ?? [], [followingData]);
+  const orderedFriends = useMemo(
+    () => orderSnapFriends(friends, streaks ?? [], followingData?.followedAt ?? {}, luckRef.current),
+    [friends, streaks, followingData]
+  );
 
   useEffect(() => {
     if (!file) {
@@ -82,7 +135,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
   }, [file]);
 
   const normalizedSearch = friendSearch.trim().replace(/^@/, "").toLocaleLowerCase();
-  const matchingFriends = friends.filter((friend) =>
+  const matchingFriends = orderedFriends.filter(({ friend }) =>
     !normalizedSearch || friend.username.toLocaleLowerCase().includes(normalizedSearch) ||
     friend.displayName?.toLocaleLowerCase().includes(normalizedSearch)
   );
@@ -264,7 +317,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
                 className={`w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-4 ${dark ? "border-white/15 bg-black/30 text-white placeholder:text-white/40 focus:border-fuchsia-400 focus:ring-fuchsia-400/15" : "border-gray-200 bg-gray-50 text-gray-900 placeholder:text-gray-400 focus:border-fuchsia-500 focus:ring-fuchsia-500/10"}`}
               />
               <div aria-label="Friends" role="listbox" aria-multiselectable="true" className={`mt-2 divide-y rounded-xl border ${dark ? "divide-white/10 border-white/10 bg-black/20" : "divide-gray-100 border-gray-100 bg-white"}`}>
-                {matchingFriends.map((friend) => {
+                {matchingFriends.map(({ friend, streak, isNew }) => {
                   const selected = recipients.includes(friend.username);
                   return (
                     <button
@@ -281,8 +334,15 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
                       <Avatar avatarKey={friend.avatarKey} username={friend.username} size={38} />
                       <span className="min-w-0 flex-1">
                         <span className={`block truncate text-sm font-medium ${dark ? "text-white" : "text-gray-900"}`}>{friend.displayName || `@${friend.username}`}</span>
-                        <span className={`block truncate text-xs ${dark ? "text-white/50" : "text-gray-500"}`}>@{friend.username}</span>
+                        <span className={`block truncate text-xs ${isNew ? `font-semibold ${dark ? "text-amber-300" : "text-[#a16207]"}` : streak?.waitingForYou ? (dark ? "text-fuchsia-300" : "text-fuchsia-700") : (dark ? "text-white/50" : "text-gray-500")}`}>
+                          {isNew ? "New friend, send a Snap!" : streak?.waitingForYou ? "Sent you a Snap" : `@${friend.username}`}
+                        </span>
                       </span>
+                      {!!streak?.currentStreak && (
+                        <span className={`shrink-0 text-xs font-bold tabular-nums ${dark ? "text-orange-300" : "text-orange-600"}`} aria-label={`${streak.currentStreak} day streak`}>
+                          🔥 {streak.currentStreak}
+                        </span>
+                      )}
                       <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] transition-colors ${selected ? "border-fuchsia-500 bg-fuchsia-600 text-white" : (dark ? "border-white/35 text-transparent" : "border-gray-300 text-transparent")}`}>✓</span>
                     </button>
                   );

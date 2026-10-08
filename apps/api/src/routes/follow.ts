@@ -110,6 +110,7 @@ export async function followRoutes(app: FastifyInstance): Promise<void> {
       });
       return reply.send({
         users: follows.map((f) => toPublicUser(f.followee)),
+        followedAt: Object.fromEntries(follows.map((f) => [f.followeeId, f.createdAt.toISOString()])),
       });
     }
   );

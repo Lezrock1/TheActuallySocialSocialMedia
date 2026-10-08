@@ -135,6 +135,10 @@ export default function CameraCapture({
   const holdActiveRef = useRef(false);
   const releasedRef = useRef(false);
   const recordStartRef = useRef(0);
+  const stopDrawingRef = useRef<(() => void) | null>(null);
+  const facingRef = useRef<FacingMode>("environment");
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
+  facingRef.current = facing;
 
   // Start (and restart) the camera stream; stop it whenever the tab is hidden.
   useEffect(() => {
@@ -254,8 +258,17 @@ export default function CameraCapture({
     pointersRef.current.delete(event.pointerId);
     pointerStartsRef.current.delete(event.pointerId);
     if (pointersRef.current.size < 2) pinchRef.current = null;
-    // A tap (not a drag) focuses at that point.
+    // A tap (not a drag) focuses at that point; a second quick tap flips the camera.
     if (wasSingle && start && Math.hypot(start.x - event.clientX, start.y - event.clientY) < 8) {
+      const now = Date.now();
+      const previous = lastTapRef.current;
+      if (previous && now - previous.time < 320 && Math.hypot(previous.x - event.clientX, previous.y - event.clientY) < 48) {
+        lastTapRef.current = null;
+        setFocusPoint(null);
+        flipCamera();
+        return;
+      }
+      lastTapRef.current = { time: now, x: event.clientX, y: event.clientY };
       const rect = event.currentTarget.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
@@ -265,6 +278,12 @@ export default function CameraCapture({
         pointsOfInterest: [{ x: x / rect.width, y: y / rect.height }],
       });
     }
+  }
+
+  function flipCamera() {
+    navigator.vibrate?.(10);
+    setFlipTurns((turns) => turns + 1);
+    setFacing((mode) => (mode === "environment" ? "user" : "environment"));
   }
 
   const takePhoto = useCallback(() => {
@@ -313,10 +332,10 @@ export default function CameraCapture({
   }, []);
 
   async function startRecording() {
-    const stream = videoRef.current?.srcObject as MediaStream | null;
+    const video = videoRef.current;
     const mimeType = pickVideoMimeType();
     setNotice(null);
-    if (!stream || !isVideoRecordingSupported() || !mimeType) {
+    if (!video || video.videoWidth === 0 || !isVideoRecordingSupported() || !mimeType) {
       setNotice("Video recording isn't supported in this browser.");
       return;
     }
@@ -328,12 +347,50 @@ export default function CameraCapture({
       setNotice("Recording without sound – microphone access is off.");
     }
     audioStreamRef.current = audio;
-    const combined = new MediaStream([...stream.getVideoTracks(), ...(audio?.getAudioTracks() ?? [])]);
+
+    // Recording from a canvas keeps the clip going when the camera is flipped mid-recording.
+    const ratio = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(video.videoWidth * ratio) & ~1;
+    canvas.height = Math.round(video.videoHeight * ratio) & ~1;
+    const context = canvas.getContext("2d");
+    if (!context || typeof canvas.captureStream !== "function") {
+      audio?.getTracks().forEach((track) => track.stop());
+      setNotice("Video recording isn't supported in this browser.");
+      return;
+    }
+    let frame = 0;
+    const draw = () => {
+      const source = videoRef.current;
+      if (source && source.videoWidth > 0) {
+        const scale = Math.max(canvas.width / source.videoWidth, canvas.height / source.videoHeight);
+        const width = source.videoWidth * scale;
+        const height = source.videoHeight * scale;
+        context.save();
+        if (facingRef.current === "user") {
+          context.translate(canvas.width, 0);
+          context.scale(-1, 1);
+        }
+        context.drawImage(source, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+        context.restore();
+      }
+      frame = requestAnimationFrame(draw);
+    };
+    draw();
+    const canvasStream = canvas.captureStream(30);
+    const stopDrawing = () => {
+      cancelAnimationFrame(frame);
+      canvasStream.getTracks().forEach((track) => track.stop());
+    };
+    stopDrawingRef.current = stopDrawing;
+
+    const combined = new MediaStream([...canvasStream.getVideoTracks(), ...(audio?.getAudioTracks() ?? [])]);
     const chunks: Blob[] = [];
     let recorder: MediaRecorder;
     try {
       recorder = new MediaRecorder(combined, { mimeType, videoBitsPerSecond: 2_500_000 });
     } catch {
+      stopDrawing();
       audio?.getTracks().forEach((track) => track.stop());
       setNotice("Could not start video recording.");
       return;
@@ -342,6 +399,8 @@ export default function CameraCapture({
       if (event.data.size > 0) chunks.push(event.data);
     };
     recorder.onstop = () => {
+      stopDrawing();
+      stopDrawingRef.current = null;
       audioStreamRef.current?.getTracks().forEach((track) => track.stop());
       audioStreamRef.current = null;
       recorderRef.current = null;
@@ -427,6 +486,7 @@ export default function CameraCapture({
       if (recorder.state === "recording") recorder.stop();
     }
     audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+    stopDrawingRef.current?.();
   }, []);
 
   const zoomRange = capabilities.zoom;
@@ -528,7 +588,7 @@ export default function CameraCapture({
 
       <footer className="px-8 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3">
         <p className="mb-3 text-center text-[11px] font-medium tracking-wide text-white/60" aria-live="polite">
-          {recording ? "Release to finish" : isVideoRecordingSupported() ? "Tap for photo · Hold for video" : "Tap for photo"}
+          {recording ? "Release to finish · Double-tap to flip" : isVideoRecordingSupported() ? "Tap for photo · Hold for video · Double-tap to flip" : "Tap for photo · Double-tap to flip"}
         </p>
         <div className="flex items-center justify-between">
           <button
@@ -547,7 +607,7 @@ export default function CameraCapture({
             onPointerCancel={onShutterPointerCancel}
             onContextMenu={(event) => event.preventDefault()}
             onClick={(event) => { if (event.detail === 0) onShutter(); }}
-            disabled={!ready}
+            disabled={!ready && !recording}
             aria-label={countdown !== null ? "Cancel timer" : recording ? "Recording video" : "Take photo, or hold to record video"}
             style={{ WebkitTouchCallout: "none" }}
             className={`group relative flex h-[5rem] w-[5rem] touch-none select-none items-center justify-center rounded-full border-4 transition-transform disabled:opacity-40 ${recording ? "scale-110 border-transparent" : "border-white active:scale-95"}`}
@@ -580,13 +640,9 @@ export default function CameraCapture({
           </button>
           <button
             type="button"
-            disabled={recording}
-            onClick={() => {
-              setFlipTurns((turns) => turns + 1);
-              setFacing((mode) => (mode === "environment" ? "user" : "environment"));
-            }}
+            onClick={flipCamera}
             aria-label={`Switch to ${facing === "environment" ? "front" : "rear"} camera`}
-            className="flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white transition-[transform,opacity] active:scale-90 disabled:opacity-30"
+            className="flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white transition-transform active:scale-90"
           >
             <svg {...iconProps} style={{ transform: `rotate(${flipTurns * 180}deg)`, transition: "transform 350ms ease" }}>
               <path d="M20 8a8 8 0 0 0-14-2L4 8M4 4v4h4M4 16a8 8 0 0 0 14 2l2-2M20 20v-4h-4" />

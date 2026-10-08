@@ -9,12 +9,14 @@ export default function AudiencePicker({
   className = "",
   tone = "light",
   showManageLink = true,
+  showHint = true,
 }: {
   value: Audience;
   onChange: (audience: Audience) => void;
   className?: string;
   tone?: "light" | "dark";
   showManageLink?: boolean;
+  showHint?: boolean;
 }) {
   const { data } = useCircles();
   const [manageOpen, setManageOpen] = useState(false);
@@ -60,13 +62,13 @@ export default function AudiencePicker({
           </button>
       )}
         <CircleMemberManagerSheet open={manageOpen} onClose={() => setManageOpen(false)} />
-        <span className={`w-full text-[10px] leading-4 ${tone === "dark" ? "text-white/55" : "text-gray-500"}`} aria-live="polite">
+        {showHint && <span className={`w-full text-[10px] leading-4 ${tone === "dark" ? "text-white/55" : "text-gray-500"}`} aria-live="polite">
           {selectedCircle
             ? `${selectedCircle.memberCount} members + you can see this.`
             : value.visibility === "close_friends"
               ? "Only your Close Friends can see this share."
               : "Anyone can see this share."}
-        </span>
+        </span>}
     </div>
   );
 }
