@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { mediaUrl } from "./upload.js";
+import { readTheme } from "./theme.js";
 
 export const PAGE_SURFACES = ["feed", "snaps", "messages", "alerts", "profile", "people", "settings", "other"] as const;
 export type PageSurface = (typeof PAGE_SURFACES)[number];
@@ -15,6 +16,7 @@ export interface PageBackgroundPreference {
 const STORAGE_PREFIX = "intouch:page-background:";
 const MODE_STORAGE_KEY = "intouch:page-background-mode";
 const CHANGE_EVENT = "intouch:page-background-change";
+const THEME_CHANGE_EVENT = "intouch:theme-change";
 export const DEFAULT_BACKGROUND: PageBackgroundPreference = {
   color: "#f7f7f8",
   imageKey: null,
@@ -84,11 +86,17 @@ export function pageSurfaceForPath(pathname: string): PageSurface {
   return "other";
 }
 
+function themedPreference(preference: PageBackgroundPreference): PageBackgroundPreference {
+  if (readTheme() === "dark") return { ...preference, color: "#111318" };
+  return preference;
+}
+
 function backgroundStyle(preference: PageBackgroundPreference, imageOverlayOpacity: number): CSSProperties {
+  const overlay = readTheme() === "dark" ? "17, 19, 24" : "247, 247, 248";
   return {
     backgroundColor: preference.color,
     backgroundImage: preference.imageKey
-      ? `linear-gradient(rgba(247, 247, 248, ${imageOverlayOpacity}), rgba(247, 247, 248, ${imageOverlayOpacity})), url("${mediaUrl(preference.imageKey)}")`
+      ? `linear-gradient(rgba(${overlay}, ${imageOverlayOpacity}), rgba(${overlay}, ${imageOverlayOpacity})), url("${mediaUrl(preference.imageKey)}")`
       : "none",
     backgroundSize: "cover",
     backgroundPosition: "center",
@@ -107,16 +115,18 @@ export function usePageBackground(surface: PageSurface): void {
     };
     const apply = () => {
       const key = readBackgroundMode() === "shared" ? "all" : surface;
-      Object.assign(body.style, backgroundStyle(readPageBackground(key), 0.78));
+      Object.assign(body.style, backgroundStyle(themedPreference(readPageBackground(key)), 0.78));
       body.style.backgroundSize = "cover";
       body.style.backgroundPosition = "center";
       body.style.backgroundAttachment = "fixed";
     };
     apply();
     window.addEventListener(CHANGE_EVENT, apply);
+    window.addEventListener(THEME_CHANGE_EVENT, apply);
     window.addEventListener("storage", apply);
     return () => {
       window.removeEventListener(CHANGE_EVENT, apply);
+      window.removeEventListener(THEME_CHANGE_EVENT, apply);
       window.removeEventListener("storage", apply);
       Object.assign(body.style, previous);
     };
@@ -124,14 +134,16 @@ export function usePageBackground(surface: PageSurface): void {
 }
 
 export function useConversationBackground(): CSSProperties {
-  const [preference, setPreference] = useState(() => readPageBackground("conversation"));
+  const [preference, setPreference] = useState(() => themedPreference(readPageBackground("conversation")));
 
   useEffect(() => {
-    const refresh = () => setPreference(readPageBackground("conversation"));
+    const refresh = () => setPreference(themedPreference(readPageBackground("conversation")));
     window.addEventListener(CHANGE_EVENT, refresh);
+    window.addEventListener(THEME_CHANGE_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener(CHANGE_EVENT, refresh);
+      window.removeEventListener(THEME_CHANGE_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);

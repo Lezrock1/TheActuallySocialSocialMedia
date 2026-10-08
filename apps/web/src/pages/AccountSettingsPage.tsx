@@ -7,7 +7,6 @@ import { deleteDeviceEncryptionKeys, deleteVerifiedPeers } from "../lib/encrypti
 import { forgetDeviceEncryptionKeyRegistration } from "../lib/encryptionRegistration.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
-import BackgroundSettings from "../components/BackgroundSettings.js";
 import TranslationLanguageSettings from "../components/TranslationLanguageSettings.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 import Sheet from "../components/Sheet.js";
@@ -235,7 +234,6 @@ export default function AccountSettingsPage() {
       <PageHeader title="Settings" />
       <NavBar />
       <p className="mb-4 text-sm leading-5 text-gray-500">Manage the details you use to sign in.</p>
-      <BackgroundSettings />
       <TranslationLanguageSettings />
 
       {accountQuery.isLoading && <CardListSkeleton rows={2} />}

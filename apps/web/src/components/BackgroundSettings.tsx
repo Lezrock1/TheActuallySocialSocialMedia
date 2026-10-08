@@ -147,8 +147,8 @@ export default function BackgroundSettings() {
     <section className={`${card} mb-4`}>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">Appearance</h2>
-          <p className="mt-1 text-xs text-gray-500">Choose one look for the whole app or customize each area.</p>
+          <h2 className="text-base font-semibold text-gray-900">Page backgrounds</h2>
+          <p className="mt-1 text-xs text-gray-500">Choose one background for the whole app or customize individual areas.</p>
         </div>
         <button
           type="button"

@@ -16,6 +16,7 @@ const PeopleSearchPage = lazy(() => import("./pages/PeopleSearchPage.js"));
 const NotificationSettingsPage = lazy(() => import("./pages/NotificationSettingsPage.js"));
 const AccountSettingsPage = lazy(() => import("./pages/AccountSettingsPage.js"));
 const SecuritySettingsPage = lazy(() => import("./pages/SecuritySettingsPage.js"));
+const AppearanceSettingsPage = lazy(() => import("./pages/AppearanceSettingsPage.js"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage.js"));
 const ApiUnavailablePage = lazy(() => import("./pages/ApiUnavailablePage.js"));
 import { MobileNav } from "./components/NavBar.js";
@@ -44,6 +45,7 @@ function titleForPath(pathname: string): string {
   if (pathname.startsWith("/settings/notifications")) return "Notification Settings";
   if (pathname.startsWith("/settings/account")) return "Account Settings";
   if (pathname.startsWith("/settings/security")) return "Security";
+  if (pathname.startsWith("/settings/appearance")) return "Appearance";
   if (pathname.startsWith("/invitations")) return "Invitations";
   if (pathname.startsWith("/circles")) return "Circles";
   if (pathname.startsWith("/post/")) return "Post";
@@ -121,6 +123,14 @@ function AppRoutes() {
           element={
             <RequireAuth>
               <SecuritySettingsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/settings/appearance"
+          element={
+            <RequireAuth>
+              <AppearanceSettingsPage />
             </RequireAuth>
           }
         />

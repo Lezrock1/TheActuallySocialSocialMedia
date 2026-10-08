@@ -7,6 +7,22 @@
   --page-background: #f7f7f8;
   --primary-text: #111827;
   --system-blue: #007aff;
+  --surface: #ffffff;
+  --surface-muted: #f3f4f6;
+  --surface-strong: #e5e7eb;
+  --surface-border: #e5e7eb;
+  --secondary-text: #6b7280;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --page-background: #111318;
+  --primary-text: #eceef3;
+  --surface: #191c23;
+  --surface-muted: #222630;
+  --surface-strong: #2d323d;
+  --surface-border: #343a46;
+  --secondary-text: #a4abb8;
 }
 
 html,
@@ -22,6 +38,137 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   -webkit-tap-highlight-color: transparent;
+}
+
+html[data-theme="dark"] body {
+  color: var(--primary-text);
+}
+
+html[data-theme="dark"] .bg-white,
+html[data-theme="dark"] [class~="bg-white/95"],
+html[data-theme="dark"] [class~="bg-white/90"],
+html[data-theme="dark"] [class~="bg-white/85"] {
+  background-color: var(--surface) !important;
+}
+
+html[data-theme="dark"] .bg-gray-50 {
+  background-color: var(--surface-muted) !important;
+}
+
+html[data-theme="dark"] .bg-gray-100 {
+  background-color: var(--surface-strong) !important;
+}
+
+html[data-theme="dark"] .bg-gray-200 {
+  background-color: #3a404c !important;
+}
+
+html[data-theme="dark"] .text-black,
+html[data-theme="dark"] .text-gray-900,
+html[data-theme="dark"] .text-gray-800 {
+  color: var(--primary-text) !important;
+}
+
+html[data-theme="dark"] .text-gray-700,
+html[data-theme="dark"] .text-gray-600,
+html[data-theme="dark"] .text-gray-500 {
+  color: var(--secondary-text) !important;
+}
+
+html[data-theme="dark"] .text-gray-400 {
+  color: #858d9a !important;
+}
+
+html[data-theme="dark"] .border-gray-100,
+html[data-theme="dark"] .border-gray-200,
+html[data-theme="dark"] .border-gray-300 {
+  border-color: var(--surface-border) !important;
+}
+
+html[data-theme="dark"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--surface-border) !important;
+}
+
+html[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select {
+  color-scheme: dark;
+  background-color: #20242d;
+  color: var(--primary-text);
+  border-color: var(--surface-border);
+}
+
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: #8992a0;
+}
+
+html[data-theme="dark"] .bg-blue-50,
+html[data-theme="dark"] .bg-indigo-50 {
+  background-color: #1e2a3d !important;
+}
+
+html[data-theme="dark"] .bg-green-50 {
+  background-color: #183127 !important;
+}
+
+html[data-theme="dark"] .bg-red-50,
+html[data-theme="dark"] .bg-amber-50 {
+  background-color: #35252a !important;
+}
+
+html[data-theme="dark"] .bg-yellow-100 {
+  background-color: #3b351c !important;
+}
+
+html[data-theme="dark"] .bg-red-100,
+html[data-theme="dark"] .bg-amber-100,
+html[data-theme="dark"] .bg-orange-100 {
+  background-color: #3a282c !important;
+}
+
+html[data-theme="dark"] .bg-green-100 {
+  background-color: #1e352c !important;
+}
+
+html[data-theme="dark"] .bg-indigo-100,
+html[data-theme="dark"] .bg-fuchsia-50,
+html[data-theme="dark"] .bg-purple-50 {
+  background-color: #29253b !important;
+}
+
+html[data-theme="dark"] .bg-blue-100 {
+  background-color: #202f44 !important;
+}
+
+html[data-theme="dark"] .text-blue-600,
+html[data-theme="dark"] .text-blue-700 {
+  color: #8bbcff !important;
+}
+
+html[data-theme="dark"] .text-green-700,
+html[data-theme="dark"] .text-green-800 {
+  color: #8ce0b0 !important;
+}
+
+html[data-theme="dark"] .text-red-600,
+html[data-theme="dark"] .text-red-700,
+html[data-theme="dark"] .text-amber-700,
+html[data-theme="dark"] .text-amber-800,
+html[data-theme="dark"] .text-amber-900 {
+  color: #ffb3a9 !important;
+}
+
+html[data-theme="dark"] .text-red-800,
+html[data-theme="dark"] .text-green-800,
+html[data-theme="dark"] .text-indigo-800,
+html[data-theme="dark"] .text-indigo-900 {
+  color: #e4e8f0 !important;
+}
+
+html[data-theme="dark"] .border-red-200,
+html[data-theme="dark"] .border-amber-200 {
+  border-color: #71414a !important;
 }
 
 body,

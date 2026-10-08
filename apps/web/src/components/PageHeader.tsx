@@ -105,6 +105,14 @@ export default function PageHeader({
               {settingsExpanded && (
                 <div role="group" aria-label="Settings" className="mb-1 ml-3 border-l border-gray-200 pl-2">
                   <Link
+                    to="/settings/appearance"
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
+                    className="block rounded-r-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  >
+                    Appearance
+                  </Link>
+                  <Link
                     to="/settings/account"
                     role="menuitem"
                     onClick={() => { setMenuOpen(false); setSettingsExpanded(false); }}
