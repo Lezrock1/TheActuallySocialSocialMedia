@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export default function AppDialog({
   open,
@@ -25,13 +26,13 @@ export default function AppDialog({
 }) {
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 px-4 sm:items-center" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-4 pb-[env(safe-area-inset-bottom)] backdrop-blur-[2px]" onClick={onClose}>
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-dialog-title"
-        className="w-full max-w-sm rounded-t-2xl border border-gray-200 bg-white p-4 shadow-xl sm:rounded-2xl"
+        className="menu-enter w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-4 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <h2 id="app-dialog-title" className="text-base font-semibold text-gray-900">{title}</h2>
@@ -56,6 +57,7 @@ export default function AppDialog({
           </button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }
