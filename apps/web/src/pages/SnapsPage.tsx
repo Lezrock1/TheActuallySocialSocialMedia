@@ -15,8 +15,7 @@ import PageHeader from "../components/PageHeader.js";
 import Avatar from "../components/Avatar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
-import { activityList, activityRow, card, formatActivityTime, btnPrimary } from "../lib/ui.js";
-import { useCamera } from "../components/camera/CameraProvider.js";
+import { activityList, activityRow, card, formatActivityTime } from "../lib/ui.js";
 
 async function fetchInbox(): Promise<InboxSnap[]> {
   const res = await apiFetch<{ snaps: InboxSnap[] }>("/snaps/inbox");
@@ -40,8 +39,6 @@ export default function SnapsPage() {
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
   const [viewingText, setViewingText] = useState("");
   const [snapError, setSnapError] = useState<string | null>(null);
-
-  const camera = useCamera();
 
   const { data: snaps = [] } = useQuery({
     queryKey: ["snaps-inbox"],
@@ -129,13 +126,10 @@ export default function SnapsPage() {
       ])} />
       <PageHeader title="Snaps" />
       <NavBar />
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4">
         <p className="w-fit bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text text-sm font-semibold text-transparent">
           Send a Snap, keep a streak going.
         </p>
-        <button type="button" onClick={camera.open} className={`${btnPrimary} min-h-10 shrink-0 bg-fuchsia-600 hover:bg-fuchsia-700`}>
-          Create Snap
-        </button>
       </div>
 
       <main className="flex min-w-0 flex-col gap-4">
