@@ -286,6 +286,48 @@ a {
   to { opacity: 1; transform: translateX(0); }
 }
 
+.snap-timer {
+  animation: snap-timer 10s linear both;
+  transform-origin: left center;
+}
+
+@keyframes snap-timer {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.chat-bubble {
+  max-width: 85%;
+  overflow-wrap: anywhere;
+  border-radius: 1.05rem;
+  padding: 0.4rem 0.7rem 0.3rem;
+  font-size: 0.9375rem;
+  line-height: 1.38;
+  box-shadow: 0 1px 1px rgb(15 23 42 / 9%);
+}
+
+.chat-bubble-mine {
+  background: #d9fdd3;
+  color: #111b21;
+  border-bottom-right-radius: 0.3rem;
+}
+
+.chat-bubble-theirs {
+  background: #ffffff;
+  color: #111b21;
+  border-bottom-left-radius: 0.3rem;
+}
+
+html[data-theme="dark"] .chat-bubble-mine {
+  background: #005c4b;
+  color: #e9edef;
+}
+
+html[data-theme="dark"] .chat-bubble-theirs {
+  background: #202c33;
+  color: #e9edef;
+}
+
 @keyframes shutter-flash {
   from { opacity: 0.85; }
   to { opacity: 0; }

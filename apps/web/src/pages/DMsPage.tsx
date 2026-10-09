@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -67,6 +67,30 @@ import { MAX_VOICE_MESSAGE_MS } from "@app/shared";
 
 const MESSAGE_PAGE_LIMIT = 40;
 
+function formatClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function dayKey(iso: string): string {
+  const date = new Date(iso);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function formatDayLabel(iso: string): string {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (dayKey(iso) === dayKey(today.toISOString())) return "Today";
+  if (dayKey(iso) === dayKey(yesterday.toISOString())) return "Yesterday";
+  return date.toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() === today.getFullYear() ? {} : { year: "numeric" }),
+  });
+}
+
 async function fetchConversations(): Promise<ConversationSummary[]> {
   const res = await apiFetch<{ conversations: ConversationSummary[] }>(
     "/conversations"
@@ -126,7 +150,8 @@ export default function DMsPage() {
   const call = useWebRtcCall(user?.id);
   const friendPickerRef = useRef<HTMLDivElement>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
-  const composerInputRef = useRef<HTMLInputElement>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const scrolledConversationRef = useRef<string | null>(null);
   const wasAtBottomRef = useRef(true);
   const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
@@ -278,8 +303,18 @@ export default function DMsPage() {
   function trackMessageScroll() {
     const container = messageScrollRef.current;
     if (!container) return;
-    wasAtBottomRef.current = container.scrollHeight - (container.scrollTop + container.clientHeight) <= 120;
+    const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
+    wasAtBottomRef.current = distance <= 120;
+    setShowJumpToLatest(distance > 320);
   }
+
+  function jumpToLatest() {
+    messageScrollRef.current?.scrollTo({ top: messageScrollRef.current.scrollHeight, behavior: "smooth" });
+  }
+
+  useEffect(() => {
+    if (!messageText && composerInputRef.current) composerInputRef.current.style.height = "";
+  }, [messageText]);
   const { data: encryptionKeys = [], isError: encryptionKeysError } = useQuery({
     queryKey: ["conversation-encryption-keys", activeId],
     queryFn: () => fetchEncryptionKeys(activeId!),
@@ -756,37 +791,30 @@ export default function DMsPage() {
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900">
+                    <span className={`min-w-0 flex-1 truncate text-sm text-gray-900 ${c.unreadCount > 0 ? "font-bold" : "font-semibold"}`}>
                       {c.isGroup
                         ? c.name ?? c.members.map((member) => `@${member.username}`).join(", ")
                         : `@${c.otherMember?.username ?? "Unknown"}`}
                     </span>
                     {c.lastMessage && (
-                      <time className="shrink-0 text-[11px] text-gray-400">
+                      <time className={`shrink-0 text-[11px] ${c.unreadCount > 0 ? "font-semibold text-green-600" : "text-gray-400"}`}>
                         {formatActivityTime(c.lastMessage.createdAt)}
                       </time>
                     )}
+                  </span>
+                  <span className="mt-0.5 flex min-w-0 items-center gap-2">
+                    <span className={`min-w-0 flex-1 truncate text-[13px] leading-5 ${c.unreadCount > 0 ? "font-medium text-gray-800" : "text-gray-500"}`}>
+                      {c.lastMessage ? (c.lastMessage.isEncrypted ? "Encrypted message" : c.lastMessage.text) : "No messages yet"}
+                    </span>
                     {c.unreadCount > 0 && (
                       <span
                         aria-label={`${c.unreadCount} unread messages`}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700"
+                        className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-green-600 px-1.5 text-[11px] font-bold text-white"
                       >
-                        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-green-600" />
                         {c.unreadCount > 99 ? "99+" : c.unreadCount}
                       </span>
                     )}
                   </span>
-                  {c.lastMessage && (
-                    <span className="mt-0.5 block">
-                      <span className="block truncate text-xs leading-5 text-gray-500">
-                        {c.lastMessage.isEncrypted ? "Encrypted message" : c.lastMessage.text}
-                      </span>
-                      <EncryptionNotice encrypted={c.lastMessage.isEncrypted}>
-                        {c.lastMessage.isEncrypted ? "End-to-end encrypted" : "Not end-to-end encrypted"}
-                      </EncryptionNotice>
-                    </span>
-                  )}
-                  {!c.lastMessage && <span className="mt-0.5 block text-xs text-gray-400">No messages yet</span>}
                 </span>
               </button>
             ))}
@@ -817,6 +845,9 @@ export default function DMsPage() {
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6M9 12h11" /></svg>
                 <span className="hidden min-[380px]:inline">Messages</span>
               </button>
+              {!activeConversation?.isGroup && activeConversation?.otherMember && (
+                <Avatar avatarKey={activeConversation.otherMember.avatarKey} username={activeConversation.otherMember.username} size={36} />
+              )}
               <h2 className="min-w-0 truncate text-sm font-semibold">
                 {activeConversation?.isGroup
                   ? activeConversation.name ?? activeConversation.members.map((member) => `@${member.username}`).join(", ")
@@ -883,7 +914,7 @@ export default function DMsPage() {
             {encryptionKeysError && (
               <p role="alert" className="mb-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
-            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[min(68dvh,calc(100dvh-15rem))] min-h-[42dvh] flex-col gap-2 overflow-y-auto overscroll-contain scroll-smooth sm:max-h-[65vh] sm:min-h-40`}>
+            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[min(68dvh,calc(100dvh-15rem))] min-h-[42dvh] flex-col gap-0.5 overflow-y-auto overscroll-contain scroll-smooth sm:max-h-[65vh] sm:min-h-40`}>
               {messagesQuery.hasNextPage && (
                 <div className="self-center pb-1 pt-0.5">
                   <button
@@ -896,10 +927,18 @@ export default function DMsPage() {
                   </button>
                 </div>
               )}
-              {parsedMessages.map(({ message, parsed, decrypting }) => {
+              {parsedMessages.map(({ message, parsed, decrypting }, messageIndex) => {
                 if (parsed.kind === "rsvp" || parsed.kind === "meetup_cancel") return null;
                 const mine = message.senderId === user?.id;
                 const sender = activeConversation?.members.find((member) => member.id === message.senderId);
+                const previousMessage = parsedMessages[messageIndex - 1]?.message;
+                const startsNewDay = !previousMessage || dayKey(previousMessage.createdAt) !== dayKey(message.createdAt);
+                const startsGroup = startsNewDay || previousMessage.senderId !== message.senderId;
+                const dayDivider = startsNewDay ? (
+                  <div key={`day-${message.id}`} className="my-2 self-center rounded-full bg-white/90 px-3 py-0.5 text-[11px] font-medium text-gray-500 shadow-sm">
+                    {formatDayLabel(message.createdAt)}
+                  </div>
+                ) : null;
 
                 if (parsed.kind === "meetup") {
                   const state = meetupStates.get(parsed.meetup.id);
@@ -912,7 +951,9 @@ export default function DMsPage() {
                   const isCancelled = state?.status === "cancelled";
                   const canManage = state?.proposerId === user?.id;
                   return (
-                    <div key={message.id} className={`flex max-w-[92%] flex-col gap-1 ${mine ? "self-end items-end" : "self-start items-start"}`}>
+                    <Fragment key={message.id}>
+                    {dayDivider}
+                    <div className={`flex max-w-[92%] flex-col gap-1 ${startsGroup ? "mt-2" : ""} ${mine ? "self-end items-end" : "self-start items-start"}`}>
                       <span className="px-1 text-[11px] text-gray-500">
                         {isCancelled
                           ? "Meetup cancelled"
@@ -939,18 +980,19 @@ export default function DMsPage() {
                         key={`${message.id}:${reminderVersion}`}
                       />
                     </div>
+                    </Fragment>
                   );
                 }
 
                 return (
+                  <Fragment key={message.id}>
+                  {dayDivider}
                   <div
-                    key={message.id}
-                    className={`max-w-[85%] break-words rounded-2xl px-3 py-2 text-sm ${
-                      mine
-                        ? "self-end bg-black text-white"
-                        : "self-start bg-gray-100"
-                    }`}
+                    className={`chat-bubble ${startsGroup ? "mt-2" : ""} ${mine ? "chat-bubble-mine self-end" : "chat-bubble-theirs self-start"}`}
                   >
+                    {!mine && startsGroup && activeConversation?.isGroup && (
+                      <span className="mb-0.5 block text-[12px] font-semibold text-emerald-700">@{sender?.username ?? "someone"}</span>
+                    )}
                     {parsed.kind === "text" && parsed.storyReply && (
                       <div
                         data-story-id={parsed.storyReply.storyId}
@@ -973,18 +1015,30 @@ export default function DMsPage() {
                       </div>
                     )}
                     {parsed.kind === "voice" ? (
-                      <VoiceMessage voice={parsed.voice} tone={mine ? "dark" : "light"} />
+                      <VoiceMessage voice={parsed.voice} tone="light" />
                     ) : (
                       <p className="whitespace-pre-wrap">{decrypting ? "Decrypting message..." : parsed.text}</p>
                     )}
-                    <EncryptionNotice encrypted={message.isEncrypted}>
-                      {message.isEncrypted ? "End-to-end encrypted" : "Not end-to-end encrypted"}
-                    </EncryptionNotice>
+                    <div className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] leading-4 opacity-60">
+                      {!message.isEncrypted && <span className="font-semibold text-red-600">Not encrypted</span>}
+                      <time dateTime={message.createdAt}>{formatClock(message.createdAt)}</time>
+                    </div>
                   </div>
+                  </Fragment>
                 );
               })}
               {messages.length === 0 && (
-                <p className="text-xs text-gray-400">No messages yet.</p>
+                <p className="self-center rounded-full bg-white/90 px-3 py-1 text-xs text-gray-500 shadow-sm">No messages yet. Say hi!</p>
+              )}
+              {showJumpToLatest && (
+                <button
+                  type="button"
+                  onClick={jumpToLatest}
+                  aria-label="Jump to latest message"
+                  className="sticky bottom-1 z-10 mt-1 flex h-10 w-10 shrink-0 items-center justify-center self-end rounded-full border border-gray-200 bg-white text-gray-600 shadow-md transition-transform active:scale-90"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                </button>
               )}
             </div>
             {messageError && <p role="alert" className="mb-2 text-xs text-red-600">{messageError}</p>}
@@ -1057,7 +1111,7 @@ export default function DMsPage() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={(e) => void sendMessage(e)} className="flex items-center gap-2">
+                <form onSubmit={(e) => void sendMessage(e)} className="flex items-end gap-2">
                   <button
                     type="button"
                     onClick={() => setMeetupOpen(true)}
@@ -1071,9 +1125,11 @@ export default function DMsPage() {
                       <path d="M8 3v4M16 3v4M3.5 10h17M12 13v4M10 15h4" />
                     </svg>
                   </button>
-                  <input
+                  <textarea
                     ref={composerInputRef}
                     value={messageText}
+                    rows={1}
+                    enterKeyHint="send"
                     onFocus={() => {
                       window.setTimeout(() => {
                         messageScrollRef.current?.scrollTo({
@@ -1082,15 +1138,31 @@ export default function DMsPage() {
                         });
                       }, 60);
                     }}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    placeholder={voiceBusy ? "Sending voice message..." : "Message..."}
-                    className={`${input} min-w-0 flex-1`}
+                    onChange={(e) => {
+                      setMessageText(e.target.value);
+                      e.target.style.height = "auto";
+                      e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
+                    }}
+                    onKeyDown={(e) => {
+                      // Desktop: Enter sends, Shift+Enter adds a line. On touch screens Enter stays a new line.
+                      if (e.key === "Enter" && !e.shiftKey && window.matchMedia("(pointer: fine)").matches) {
+                        e.preventDefault();
+                        e.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                    placeholder={voiceBusy ? "Sending voice message..." : "Message"}
+                    aria-label="Message"
+                    className="max-h-32 min-h-10 min-w-0 flex-1 resize-none rounded-3xl border border-gray-200 bg-white px-4 py-2 text-[15px] leading-6 text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none"
                   />
                   {messageText.trim() || voiceBusy ? (
                     <button
+                      type="submit"
+                      aria-label="Send message"
                       disabled={!deviceKeyReady || !allMembersHaveKeys || voiceBusy}
-                      className={`${btnPrimary} min-h-10 shrink-0 bg-green-700 hover:bg-green-800 focus-visible:ring-green-700/20 disabled:opacity-50`}
-                    >Send</button>
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-700 text-white transition-transform hover:bg-green-800 active:scale-90 disabled:opacity-50"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12 20 4l-4 16-4.5-6.5L5 12Zm6.5 1.5L20 4" /></svg>
+                    </button>
                   ) : (
                     <button
                       type="button"

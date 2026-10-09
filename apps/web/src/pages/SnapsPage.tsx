@@ -41,6 +41,10 @@ export default function SnapsPage() {
   const [viewingIsVideo, setViewingIsVideo] = useState(false);
   const [snapClosing, setSnapClosing] = useState(false);
   const closeTimerRef = useRef<number | null>(null);
+  const [openingSnapId, setOpeningSnapId] = useState<string | null>(null);
+  const [dragY, setDragY] = useState(0);
+  const dragRef = useRef<{ startY: number; moved: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
   const [snapError, setSnapError] = useState<string | null>(null);
 
   const { data: snaps = [] } = useQuery({
@@ -96,6 +100,8 @@ export default function SnapsPage() {
   }, []);
 
   async function openSnap(snap: InboxSnap) {
+    if (openingSnapId) return;
+    setOpeningSnapId(snap.id);
     setSnapError(null);
     try {
       let image = await downloadMediaBlob(snap.imageKey);
@@ -115,6 +121,7 @@ export default function SnapsPage() {
       setViewingIsVideo(image.type.startsWith("video/"));
       setViewingText(caption);
       setSnapClosing(false);
+      setDragY(0);
       setViewing(snap);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
@@ -122,6 +129,8 @@ export default function SnapsPage() {
       ]);
     } catch (error) {
       setSnapError(error instanceof Error ? error.message : "Could not load this Snap. Please try again.");
+    } finally {
+      setOpeningSnapId(null);
     }
   }
 
@@ -134,9 +143,37 @@ export default function SnapsPage() {
       setViewingIsVideo(false);
       setViewing(null);
       setSnapClosing(false);
+      setDragY(0);
       closeTimerRef.current = null;
     }, 220);
   }
+
+  function onViewerPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (snapClosing) return;
+    dragRef.current = { startY: event.clientY, moved: false };
+  }
+
+  function onViewerPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const delta = event.clientY - drag.startY;
+    if (Math.abs(delta) > 8) drag.moved = true;
+    if (drag.moved) setDragY(Math.max(0, delta));
+  }
+
+  function onViewerPointerEnd() {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (!drag?.moved) return;
+    suppressClickRef.current = true;
+    window.setTimeout(() => { suppressClickRef.current = false; }, 0);
+    if (dragY > 110) closeSnap();
+    else setDragY(0);
+  }
+
+  const dragStyle: React.CSSProperties | undefined = dragY > 0 && !snapClosing
+    ? { transform: `translateY(${dragY}px) scale(${Math.max(0.85, 1 - dragY / 1200)})`, animation: "none" }
+    : undefined;
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-4 pb-28 sm:py-8 sm:pb-8">
@@ -166,6 +203,8 @@ export default function SnapsPage() {
                 <button
                   key={snap.id}
                   onClick={() => void openSnap(snap)}
+                  disabled={!!openingSnapId}
+                  aria-busy={openingSnapId === snap.id}
                   className={activityRow}
                 >
                   <Avatar avatarKey={snap.sender.avatarKey} username={snap.sender.username} size={44} />
@@ -176,7 +215,11 @@ export default function SnapsPage() {
                       <span className="mt-1 block"><EncryptionNotice encrypted /></span>
                     )}
                   </span>
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#FFFC00] ring-1 ring-yellow-500/60" aria-label="Unopened" />
+                  {openingSnapId === snap.id ? (
+                    <span aria-label="Opening" className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-yellow-500 border-t-transparent" />
+                  ) : (
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#FFFC00] ring-1 ring-yellow-500/60" aria-label="Unopened" />
+                  )}
                 </button>
               ))}
               {snaps.length === 0 && (
@@ -240,12 +283,24 @@ export default function SnapsPage() {
 
       {viewing && (
         <div
-          className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-black ${snapClosing ? "snap-viewer-exit" : "snap-viewer-enter"}`}
+          className={`fixed inset-0 z-50 flex touch-none select-none flex-col items-center justify-center bg-black ${snapClosing ? "snap-viewer-exit" : "snap-viewer-enter"}`}
+          style={dragY > 0 && !snapClosing
+            ? { backgroundColor: `rgba(0,0,0,${Math.max(0.35, 1 - dragY / 500)})`, animation: "none" }
+            : undefined}
           role="dialog"
           aria-modal="true"
           aria-label={`Snap from @${viewing.sender.username}`}
-          onClick={closeSnap}
+          onClick={() => { if (!suppressClickRef.current) closeSnap(); }}
+          onPointerDown={onViewerPointerDown}
+          onPointerMove={onViewerPointerMove}
+          onPointerUp={onViewerPointerEnd}
+          onPointerCancel={onViewerPointerEnd}
         >
+          {!viewingIsVideo && !snapClosing && (
+            <span key={viewing.id} aria-hidden="true" className="pointer-events-none absolute inset-x-4 top-[max(0.5rem,env(safe-area-inset-top))] z-20 h-[3px] overflow-hidden rounded-full bg-white/25">
+              <span className="snap-timer block h-full rounded-full bg-white" />
+            </span>
+          )}
           <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-black/70 via-black/30 to-transparent px-4 pb-6 pt-[max(1rem,env(safe-area-inset-top))] text-white" onClick={(event) => event.stopPropagation()}>
             <span className="flex items-center gap-2 text-sm font-medium">
               <Avatar avatarKey={viewing.sender.avatarKey} username={viewing.sender.username} size={28} />
@@ -263,6 +318,7 @@ export default function SnapsPage() {
               controls
               loop
               onClick={(event) => event.stopPropagation()}
+              style={dragStyle}
               className={`max-h-screen max-w-full object-contain ${snapClosing ? "snap-media-exit" : "snap-media-enter"}`}
             />
           ) : (
@@ -270,6 +326,7 @@ export default function SnapsPage() {
             src={viewingImageUrl ?? undefined}
             alt=""
             onClick={(event) => event.stopPropagation()}
+            style={dragStyle}
             className={`max-h-screen max-w-full object-contain ${snapClosing ? "snap-media-exit" : "snap-media-enter"}`}
           />
           )}
