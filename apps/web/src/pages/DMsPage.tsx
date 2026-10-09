@@ -269,7 +269,12 @@ export default function DMsPage() {
   const newestMessageId = messages[messages.length - 1]?.id ?? null;
 
   useLayoutEffect(() => {
-    if (!activeId || !messagesLoaded || !messageScrollRef.current) return;
+    if (!activeId) {
+      // Reopening the same chat must pin to the newest message again.
+      scrolledConversationRef.current = null;
+      return;
+    }
+    if (!messagesLoaded || !messageScrollRef.current) return;
     const container = messageScrollRef.current;
 
     if (scrolledConversationRef.current !== activeId) {
@@ -277,6 +282,7 @@ export default function DMsPage() {
       wasAtBottomRef.current = true;
       scrolledConversationRef.current = activeId;
       lastVisibleMessageIdRef.current = newestMessageId;
+      pinToBottomFor(700);
       return;
     }
 
@@ -299,6 +305,18 @@ export default function DMsPage() {
       container.scrollTop = container.scrollHeight;
     }
   }, [activeId, decryptedMessages, messages.length, messagesLoaded, newestMessageId]);
+
+  // Late layout changes (decryption, thumbnails) keep the view on the newest message until the user scrolls.
+  function pinToBottomFor(durationMs: number) {
+    const end = performance.now() + durationMs;
+    const tick = () => {
+      const container = messageScrollRef.current;
+      if (!container || !wasAtBottomRef.current) return;
+      container.scrollTop = container.scrollHeight;
+      if (performance.now() < end) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
 
   function trackMessageScroll() {
     const container = messageScrollRef.current;
@@ -914,7 +932,7 @@ export default function DMsPage() {
             {encryptionKeysError && (
               <p role="alert" className="mb-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
-            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[min(68dvh,calc(100dvh-15rem))] min-h-[42dvh] flex-col gap-0.5 overflow-y-auto overscroll-contain scroll-smooth sm:max-h-[65vh] sm:min-h-40`}>
+            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[min(68dvh,calc(100dvh-15rem))] min-h-[42dvh] flex-col gap-0.5 overflow-y-auto overscroll-contain sm:max-h-[65vh] sm:min-h-40`}>
               {messagesQuery.hasNextPage && (
                 <div className="self-center pb-1 pt-0.5">
                   <button
