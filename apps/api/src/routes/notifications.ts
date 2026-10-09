@@ -150,7 +150,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
           where: {
             recipientId: request.userId!,
             readAt: null,
-            type: { notIn: ["message", ...FEED_NOTIFICATION_TYPES] },
+            type: { notIn: ["message", "snap", ...FEED_NOTIFICATION_TYPES] },
           },
         }),
         prisma.notification.count({
@@ -171,7 +171,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
       const limit = Math.min(Math.max(Number(request.query.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
       const [rows, unreadCount] = await Promise.all([
         prisma.notification.findMany({
-          where: { recipientId: request.userId!, type: { notIn: ["message", ...FEED_NOTIFICATION_TYPES] } },
+          where: { recipientId: request.userId!, type: { notIn: ["message", "snap", ...FEED_NOTIFICATION_TYPES] } },
           include: { actor: true, comment: { select: { text: true } } },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: limit + 1,
@@ -183,7 +183,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
           where: {
             recipientId: request.userId!,
             readAt: null,
-            type: { notIn: ["message", ...FEED_NOTIFICATION_TYPES] },
+            type: { notIn: ["message", "snap", ...FEED_NOTIFICATION_TYPES] },
           },
         }),
       ]);
@@ -246,7 +246,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
         where: {
           recipientId: request.userId!,
           readAt: null,
-          type: { notIn: ["message", ...FEED_NOTIFICATION_TYPES] },
+          type: { notIn: ["message", "snap", ...FEED_NOTIFICATION_TYPES] },
         },
         data: { readAt: new Date() },
       });

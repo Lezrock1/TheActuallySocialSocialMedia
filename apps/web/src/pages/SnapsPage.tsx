@@ -228,7 +228,7 @@ export default function SnapsPage() {
           aria-label={`Snap from @${viewing.sender.username}`}
           onClick={closeSnap}
         >
-          <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-white/20 p-4 text-white" onClick={(event) => event.stopPropagation()}>
+          <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-black/70 via-black/30 to-transparent px-4 pb-6 pt-[max(1rem,env(safe-area-inset-top))] text-white" onClick={(event) => event.stopPropagation()}>
             <span className="flex items-center gap-2 text-sm font-medium">
               <Avatar avatarKey={viewing.sender.avatarKey} username={viewing.sender.username} size={28} />
               {viewing.sender.displayName || `@${viewing.sender.username}`}
@@ -256,8 +256,9 @@ export default function SnapsPage() {
           />
           )}
           {viewing.isEncrypted && (
-            <div className="absolute left-4 top-16 rounded bg-black/70 px-2 py-1">
-              <EncryptionNotice encrypted />
+            <div className="absolute left-4 top-[calc(max(1rem,env(safe-area-inset-top))+3.25rem)] z-10 flex items-center gap-1.5 rounded-full bg-black/55 px-3 py-1 text-[11px] font-medium text-green-300 backdrop-blur-md" onClick={(event) => event.stopPropagation()}>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-3 w-3" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4.5 4.5L19 7" /></svg>
+              End-to-end encrypted
             </div>
           )}
           {viewingText && (
