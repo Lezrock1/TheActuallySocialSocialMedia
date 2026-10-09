@@ -804,7 +804,7 @@ export default function DMsPage() {
         </div>}
 
         {activeId && (
-          <section className="w-full" aria-label="Conversation">
+          <section key={activeId} className="message-conversation-enter w-full" aria-label="Conversation">
             <div className="mb-3 flex items-center gap-3">
               <button
                 type="button"
@@ -812,9 +812,10 @@ export default function DMsPage() {
                   setActiveId(null);
                   setSearchParams({});
                 }}
-                className="min-h-10 shrink-0 px-1 text-sm font-medium text-gray-600 hover:text-black"
+                className="flex h-10 shrink-0 items-center gap-1 rounded-full px-2 text-sm font-medium text-gray-600 transition-[background-color,transform] hover:bg-gray-100 hover:text-black active:scale-95"
               >
-                ← Messages
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6M9 12h11" /></svg>
+                <span className="hidden min-[380px]:inline">Messages</span>
               </button>
               <h2 className="min-w-0 truncate text-sm font-semibold">
                 {activeConversation?.isGroup
@@ -882,7 +883,7 @@ export default function DMsPage() {
             {encryptionKeysError && (
               <p role="alert" className="mb-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
-            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[55vh] min-h-40 flex-col gap-2 overflow-y-auto`}>
+            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[min(68dvh,calc(100dvh-15rem))] min-h-[42dvh] flex-col gap-2 overflow-y-auto overscroll-contain scroll-smooth sm:max-h-[65vh] sm:min-h-40`}>
               {messagesQuery.hasNextPage && (
                 <div className="self-center pb-1 pt-0.5">
                   <button

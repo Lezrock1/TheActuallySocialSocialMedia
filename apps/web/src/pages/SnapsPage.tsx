@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InboxSnap, PublicUser, SnapStreakSummary } from "@app/shared";
@@ -39,6 +39,8 @@ export default function SnapsPage() {
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
   const [viewingText, setViewingText] = useState("");
   const [viewingIsVideo, setViewingIsVideo] = useState(false);
+  const [snapClosing, setSnapClosing] = useState(false);
+  const closeTimerRef = useRef<number | null>(null);
   const [snapError, setSnapError] = useState<string | null>(null);
 
   const { data: snaps = [] } = useQuery({
@@ -76,13 +78,22 @@ export default function SnapsPage() {
   }, [viewingImageUrl]);
 
   useEffect(() => {
-    if (!viewing || viewingIsVideo) return;
-    const timeout = window.setTimeout(() => {
-      setViewing(null);
-      setViewingImageUrl(null);
-    }, 10_000);
+    if (!viewing || viewingIsVideo || snapClosing) return;
+    const timeout = window.setTimeout(closeSnap, 10_000);
     return () => window.clearTimeout(timeout);
-  }, [viewing, viewingIsVideo]);
+  }, [viewing, viewingIsVideo, snapClosing]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && viewing && !snapClosing) closeSnap();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [viewing, snapClosing]);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
+  }, []);
 
   async function openSnap(snap: InboxSnap) {
     setSnapError(null);
@@ -99,9 +110,11 @@ export default function SnapsPage() {
         caption = decrypted.text;
       }
       await apiFetch(`/snaps/${snap.id}/view`, { method: "POST" });
+      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
       setViewingImageUrl(URL.createObjectURL(image));
       setViewingIsVideo(image.type.startsWith("video/"));
       setViewingText(caption);
+      setSnapClosing(false);
       setViewing(snap);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
@@ -113,11 +126,16 @@ export default function SnapsPage() {
   }
 
   function closeSnap() {
-    if (viewingImageUrl) URL.revokeObjectURL(viewingImageUrl);
-    setViewingImageUrl(null);
-    setViewingText("");
-    setViewingIsVideo(false);
-    setViewing(null);
+    if (!viewing || snapClosing) return;
+    setSnapClosing(true);
+    closeTimerRef.current = window.setTimeout(() => {
+      setViewingImageUrl(null);
+      setViewingText("");
+      setViewingIsVideo(false);
+      setViewing(null);
+      setSnapClosing(false);
+      closeTimerRef.current = null;
+    }, 220);
   }
 
   return (
@@ -222,7 +240,7 @@ export default function SnapsPage() {
 
       {viewing && (
         <div
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black"
+          className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-black ${snapClosing ? "snap-viewer-exit" : "snap-viewer-enter"}`}
           role="dialog"
           aria-modal="true"
           aria-label={`Snap from @${viewing.sender.username}`}
@@ -245,14 +263,14 @@ export default function SnapsPage() {
               controls
               loop
               onClick={(event) => event.stopPropagation()}
-              className="max-h-screen max-w-full object-contain"
+              className={`max-h-screen max-w-full object-contain ${snapClosing ? "snap-media-exit" : "snap-media-enter"}`}
             />
           ) : (
           <img
             src={viewingImageUrl ?? undefined}
             alt=""
             onClick={(event) => event.stopPropagation()}
-            className="max-h-screen max-w-full object-contain"
+            className={`max-h-screen max-w-full object-contain ${snapClosing ? "snap-media-exit" : "snap-media-enter"}`}
           />
           )}
           {viewing.isEncrypted && (
