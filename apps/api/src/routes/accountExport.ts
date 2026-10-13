@@ -35,7 +35,7 @@ async function collectExport(userId: string) {
   const [
     user, posts, comments, commentLikes, stories, storyReactions, snaps, conversations, messages,
     following, followers, closeFriends, circles, blocks, notifications, preferences,
-    reports, aiProviders, aiConversations, encryptionKeys, invitations, pollVotes,
+    reports, aiProviders, aiConversations, encryptionKeys, invitations, pollVotes, momentPosts,
   ] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
@@ -96,6 +96,11 @@ async function collectExport(userId: string) {
       select: { createdAt: true, expiresAt: true, maxUses: true, useCount: true },
     }),
     prisma.pollVote.findMany({ where: { userId }, select: { pollId: true, optionId: true, createdAt: true } }),
+    prisma.momentPost.findMany({
+      where: { userId },
+      include: { moment: { select: { day: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
 
   return {
@@ -109,6 +114,10 @@ async function collectExport(userId: string) {
         : null,
     })),
     "comments.json": { written: comments, liked: commentLikes },
+    "moments.json": momentPosts.map((post) => ({
+      day: post.moment.day, imageKey: post.imageKey, mediaType: post.mediaType,
+      caption: post.caption, late: post.late, createdAt: iso(post.createdAt),
+    })),
     "stories.json": {
       active: stories.map((story) => ({
         id: story.id, imageKey: story.imageKey, audioKey: story.audioKey, videoKey: story.videoKey, text: story.text,

@@ -21,7 +21,7 @@ export async function canReadMedia(
   key: string
 ): Promise<MediaAccess> {
   const now = new Date();
-  const [asset, posts, stories, snaps, avatarOwners, messages] = await Promise.all([
+  const [asset, posts, stories, snaps, avatarOwners, messages, comments, momentPosts] = await Promise.all([
     prisma.mediaAsset.findUnique({
       where: { key },
       select: { ownerId: true },
@@ -57,11 +57,22 @@ export async function canReadMedia(
         },
       },
     }),
+    prisma.comment.findMany({
+      where: { imageKey: key },
+      select: {
+        authorId: true,
+        post: { select: { authorId: true, visibility: true, circleId: true } },
+      },
+    }),
+    prisma.momentPost.findMany({
+      where: { imageKey: key },
+      select: { userId: true, momentId: true },
+    }),
   ]);
 
   const hasReferences =
     posts.length > 0 || stories.length > 0 || snaps.length > 0 || avatarOwners.length > 0 ||
-    messages.length > 0;
+    messages.length > 0 || comments.length > 0 || momentPosts.length > 0;
   if (asset?.ownerId === viewerId && !hasReferences) {
     return { allowed: true, maxAgeSeconds: 30 };
   }
@@ -90,7 +101,38 @@ export async function canReadMedia(
       snap.recipients.length > 0
   );
   const canReadAvatar = avatarOwners.some((avatar) => canSeeAuthor(avatar.id, "public"));
-  const allowed = canReadPost || canReadStory || canReadSnap || canReadAvatar || canReadMessage;
+  const canReadComment = comments.some((comment) =>
+    !blockedIds.includes(comment.authorId) &&
+    canSeeAuthor(comment.post.authorId, comment.post.visibility, comment.post.circleId)
+  );
+
+  // Moments are only visible to friends who posted that same Moment themselves.
+  let canReadMoment = momentPosts.some((moment) => moment.userId === viewerId);
+  if (!canReadMoment && momentPosts.length > 0) {
+    const authorIds = [...new Set(momentPosts.map((moment) => moment.userId))];
+    const [viewerPosts, follows] = await Promise.all([
+      prisma.momentPost.findMany({
+        where: { userId: viewerId, momentId: { in: momentPosts.map((moment) => moment.momentId) } },
+        select: { momentId: true },
+      }),
+      prisma.follow.findMany({
+        where: {
+          OR: [
+            { followerId: viewerId, followeeId: { in: authorIds } },
+            { followeeId: viewerId, followerId: { in: authorIds } },
+          ],
+        },
+        select: { followerId: true, followeeId: true },
+      }),
+    ]);
+    const viewerMomentIds = new Set(viewerPosts.map((post) => post.momentId));
+    const friendIds = new Set(follows.map((follow) => (follow.followerId === viewerId ? follow.followeeId : follow.followerId)));
+    canReadMoment = momentPosts.some((moment) =>
+      !blockedIds.includes(moment.userId) && friendIds.has(moment.userId) && viewerMomentIds.has(moment.momentId)
+    );
+  }
+  const allowed = canReadPost || canReadStory || canReadSnap || canReadAvatar || canReadMessage ||
+    canReadComment || canReadMoment;
   if (!allowed || canReadSnap) return { allowed, maxAgeSeconds: 0 };
 
   // Voice messages are immutable ciphertext, so members may cache them.

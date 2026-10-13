@@ -14,6 +14,7 @@ import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import StoriesBar from "../components/StoriesBar.js";
+import MomentCard from "../components/MomentCard.js";
 import PostCard from "../components/PostCard.js";
 import Avatar from "../components/Avatar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
@@ -344,6 +345,7 @@ export default function FeedPage() {
       <PageHeader title="Feed" showSearch />
       <NavBar />
 
+      <MomentCard />
       <StoriesBar />
 
       <form ref={formRef} onSubmit={onPost} className={`${card} mb-4 flex flex-col gap-2.5 !p-3`}>

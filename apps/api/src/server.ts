@@ -8,6 +8,8 @@ import { ensureBootstrapInvitation } from "./invitations.js";
 import { startQuietHoursDigestJob } from "./quietHoursDigest.js";
 import { createRealtimeServer } from "./realtime.js";
 import { startCleanupJob } from "./cleanup.js";
+import { startMomentJob } from "./moments.js";
+import { momentRoutes } from "./routes/moments.js";
 import { authRoutes } from "./routes/auth.js";
 import { followRoutes } from "./routes/follow.js";
 import { postRoutes } from "./routes/posts.js";
@@ -63,6 +65,7 @@ async function main(): Promise<void> {
   app.decorate("io", io);
   startCleanupJob(app.log);
   startQuietHoursDigestJob(app.log);
+  startMomentJob(app.log);
 
   app.get("/health", async () => ({ ok: true }));
 
@@ -77,6 +80,7 @@ async function main(): Promise<void> {
   await app.register(userRoutes);
   await app.register(invitationRoutes);
   await app.register(commentRoutes);
+  await app.register(momentRoutes);
   await app.register(moderationRoutes);
   await app.register(closeFriendRoutes);
   await app.register(circleRoutes);

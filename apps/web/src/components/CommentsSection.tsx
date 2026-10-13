@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Comment } from "@app/shared";
 import { ApiError, apiFetch } from "../lib/api.js";
+import { mediaUrl, uploadMedia } from "../lib/upload.js";
+import ProgressiveImage from "./ProgressiveImage.js";
 import Avatar from "./Avatar.js";
 import LinkedMentions from "./LinkedMentions.js";
 import { InlineSkeletonText } from "./LoadingSkeleton.js";
@@ -36,6 +38,11 @@ function CommentItem({
           </Link>
           <LinkedMentions text={comment.text} />
         </p>
+        {comment.imageKey && (
+          <div className="mt-2 w-52 max-w-full overflow-hidden rounded-xl">
+            <ProgressiveImage mediaKey={comment.imageKey} className="rounded-xl" />
+          </div>
+        )}
         <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
           <time dateTime={comment.createdAt}>
             {new Date(comment.createdAt).toLocaleString("en-US", {
@@ -81,6 +88,9 @@ export default function CommentsSection({
   const [error, setError] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
   const [likingId, setLikingId] = useState<string | null>(null);
+  const [imageKey, setImageKey] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: comments = [], isLoading } = useQuery({
@@ -128,9 +138,24 @@ export default function CommentsSection({
     );
   }
 
+  async function onSelectImage(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setError(null);
+    setUploading(true);
+    try {
+      setImageKey(await uploadMedia(file));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not upload this photo");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!text.trim() || posting) return;
+    if ((!text.trim() && !imageKey) || posting || uploading) return;
     setPosting(true);
     setError(null);
     try {
@@ -138,6 +163,7 @@ export default function CommentsSection({
         method: "POST",
         body: JSON.stringify({
           text: text.trim(),
+          imageKey: imageKey ?? undefined,
           parentCommentId: replyTarget?.id,
         }),
       });
@@ -148,6 +174,7 @@ export default function CommentsSection({
       onCommentAdded();
       setShowAllComments(true);
       setText("");
+      setImageKey(null);
       setReplyTarget(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not post comment");
@@ -201,6 +228,25 @@ export default function CommentsSection({
               </div>
             )}
             <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading || posting}
+                aria-label={imageKey ? "Change photo" : "Add a photo"}
+                title={imageKey ? "Change photo" : "Add a photo"}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-[background-color,transform] active:scale-90 disabled:opacity-50 ${imageKey ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+              >
+                {uploading ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                ) : (
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3.5" y="4.5" width="17" height="15" rx="3.5" />
+                    <circle cx="9" cy="10" r="1.6" />
+                    <path d="m4 17 5-4.5 3.5 3L15.5 13 20 17" />
+                  </svg>
+                )}
+              </button>
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onSelectImage(e)} />
               <textarea
                 ref={inputRef}
               value={text}
@@ -212,12 +258,25 @@ export default function CommentsSection({
                 className="min-h-10 min-w-0 flex-1 resize-y rounded-2xl border border-gray-300 px-4 py-2 text-sm focus:border-black focus:outline-none"
               />
               <button
-                disabled={!text.trim() || posting}
+                disabled={(!text.trim() && !imageKey) || posting || uploading}
                 className="min-h-10 shrink-0 px-2 text-sm font-semibold text-blue-700 disabled:text-gray-400"
               >
                 {posting ? "Posting..." : replyTarget ? "Reply" : "Post"}
               </button>
             </div>
+            {imageKey && (
+              <div className="relative w-24">
+                <img src={mediaUrl(imageKey)} alt="Photo to attach" className="h-24 w-24 rounded-xl object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setImageKey(null)}
+                  aria-label="Remove photo"
+                  className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/75 text-sm text-white shadow"
+                >
+                  ×
+                </button>
+              </div>
+            )}
           </form>
           {!isLoading && comments.length > 3 && (
             <button

@@ -50,6 +50,7 @@ model User {
   notificationsSent Notification[] @relation("NotificationActor")
   commentLikes     CommentLike[]
   pushSubscriptions WebPushSubscription[]
+  momentPosts       MomentPost[]
   notificationPreferences NotificationPreference?
   circles           Circle[]
   circleMemberships CircleMember[]
@@ -123,6 +124,7 @@ model Comment {
   authorId        String
   parentCommentId String?
   text            String
+  imageKey        String?
   createdAt       DateTime @default(now())
 
   post          Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
@@ -134,6 +136,35 @@ model Comment {
 
   @@index([postId, createdAt])
   @@index([parentCommentId, createdAt])
+  @@index([imageKey])
+}
+
+// One surprise photo/video window per UTC day; "day" is yyyy-mm-dd.
+model Moment {
+  id         String    @id @default(cuid())
+  day        String    @unique
+  startsAt   DateTime
+  notifiedAt DateTime?
+
+  posts MomentPost[]
+}
+
+model MomentPost {
+  id        String   @id @default(cuid())
+  momentId  String
+  userId    String
+  imageKey  String
+  mediaType String   @default("image")
+  caption   String?
+  late      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([momentId, userId])
+  @@index([userId, createdAt])
+  @@index([imageKey])
 }
 
 model CommentLike {

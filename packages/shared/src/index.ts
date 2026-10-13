@@ -244,8 +244,12 @@ export interface FactCheckSummary {
 }
 
 export const createCommentSchema = z.object({
-  text: z.string().min(1).max(1000),
+  text: z.string().max(1000),
   parentCommentId: z.string().optional(),
+  imageKey: z.string().min(1).max(200).optional(),
+}).refine((value) => value.text.trim().length > 0 || !!value.imageKey, {
+  message: "Write something or attach a photo",
+  path: ["text"],
 });
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 
@@ -253,6 +257,7 @@ export interface Comment {
   id: string;
   author: PublicUser;
   text: string;
+  imageKey: string | null;
   parentCommentId: string | null;
   replyCount: number;
   likeCount: number;
@@ -457,6 +462,45 @@ export interface SnapStreakSummary {
 export const LIVE_ROOM_AUDIENCES = ["invited", "close_friends", "friends", "everyone"] as const;
 export type LiveRoomAudience = (typeof LIVE_ROOM_AUDIENCES)[number];
 export const MAX_LIVE_ROOM_PARTICIPANTS = 16;
+
+// Moments: one surprise capture window per day.
+export const MOMENT_WINDOW_SECONDS = 180;
+export const MOMENT_MEDIA_TYPES = ["image", "video"] as const;
+
+export const createMomentPostSchema = z.object({
+  imageKey: z.string().min(1).max(200),
+  mediaType: z.enum(MOMENT_MEDIA_TYPES).default("image"),
+  caption: z.string().trim().max(200).optional(),
+});
+export type CreateMomentPostInput = z.infer<typeof createMomentPostSchema>;
+
+export interface MomentPostItem {
+  id: string;
+  user: PublicUser;
+  imageKey: string;
+  mediaType: (typeof MOMENT_MEDIA_TYPES)[number];
+  caption: string | null;
+  late: boolean;
+  lateBySeconds: number;
+  createdAt: string;
+}
+
+// "waiting": the time is still a secret; "open": inside the on-time window; "late": window over, posting still allowed today.
+export interface MomentSummary {
+  status: "none" | "waiting" | "open" | "late";
+  serverNow: string;
+  startsAt: string | null;
+  windowEndsAt: string | null;
+  myPost: MomentPostItem | null;
+  currentStreak: number;
+  bestStreak: number;
+}
+
+export interface MomentFeed {
+  locked: boolean;
+  friendPostCount: number;
+  posts: MomentPostItem[];
+}
 
 export interface LiveRoom {
   callId: string;

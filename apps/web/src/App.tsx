@@ -22,6 +22,7 @@ const ApiUnavailablePage = lazy(() => import("./pages/ApiUnavailablePage.js"));
 import { MobileNav } from "./components/NavBar.js";
 import { CameraProvider } from "./components/camera/CameraProvider.js";
 import DeviceSetupPrompt from "./components/DeviceSetupPrompt.js";
+import MomentLivePill from "./components/MomentLivePill.js";
 import LocalMeetupReminderProvider from "./components/LocalMeetupReminderProvider.js";
 import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
 import { AppBootSkeleton } from "./components/LoadingSkeleton.js";
@@ -189,6 +190,7 @@ function AppRoutes() {
     </div>
     {showMobileNav && <MobileNav />}
     {showMobileNav && <DeviceSetupPrompt />}
+    {showMobileNav && <MomentLivePill />}
     </>
   );
 }

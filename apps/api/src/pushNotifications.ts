@@ -62,6 +62,20 @@ export async function sendWebPushNotification(input: PushInput): Promise<void> {
   await deliver(subscriptions, payload, 60);
 }
 
+// One push to every subscribed device when the daily Moment opens; carries no user content.
+export async function sendMomentPushToEveryone(): Promise<void> {
+  if (!configureWebPush()) return;
+  const subscriptions = await prisma.webPushSubscription.findMany();
+  if (subscriptions.length === 0) return;
+  const payload = JSON.stringify({
+    title: "It's Moment time!",
+    body: "Capture what you're up to right now. You have 3 minutes.",
+    url: "/?moment=1",
+    tag: "moment",
+  });
+  await deliver(subscriptions, payload, 180);
+}
+
 // One summary push for everything held back during quiet hours; carries no content.
 export async function sendQuietHoursDigest(userId: string, count: number): Promise<void> {
   if (count <= 0 || !configureWebPush()) return;

@@ -16,7 +16,7 @@ import AudiencePicker from "../AudiencePicker.js";
 import CameraCapture from "./CameraCapture.js";
 import Avatar from "../Avatar.js";
 
-type ShareTarget = "post" | "story" | "snap";
+type ShareTarget = "post" | "story" | "snap" | "moment";
 
 const NEW_FRIEND_WINDOW_MS = 48 * 60 * 60 * 1000;
 
@@ -66,7 +66,7 @@ function ShareTargetButton({
   dark,
   onClick,
 }: {
-  target: ShareTarget;
+  target: Exclude<ShareTarget, "moment">;
   selected: boolean;
   dark: boolean;
   onClick: () => void;
@@ -89,14 +89,14 @@ function ShareTargetButton({
   );
 }
 
-export default function CameraStudio({ onClose }: { onClose: () => void }) {
+export default function CameraStudio({ onClose, momentMode = false }: { onClose: () => void; momentMode?: boolean }) {
   const { user } = useAuth();
   const [theme] = useThemePreference();
   const dark = theme === "dark";
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [target, setTarget] = useState<ShareTarget>("post");
+  const [target, setTarget] = useState<ShareTarget>(momentMode ? "moment" : "post");
   const [caption, setCaption] = useState("");
   const [audience, setAudience] = useState<Audience>(PUBLIC_AUDIENCE);
   const [friendSearch, setFriendSearch] = useState("");
@@ -196,7 +196,13 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
           });
         }
       } else {
-        if (target === "post") {
+        if (target === "moment") {
+          const imageKey = await uploadMedia(resized, { resize: false });
+          await apiFetch("/moments/today/post", {
+            method: "POST",
+            body: JSON.stringify({ imageKey, mediaType: isVideo ? "video" : "image", caption: caption.trim() || undefined }),
+          });
+        } else if (target === "post") {
           const imageKey = await uploadMedia(resized, { resize: false });
           await apiFetch("/posts", {
             method: "POST",
@@ -223,6 +229,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
         queryClient.invalidateQueries({ queryKey: ["stories"] }),
         queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
         queryClient.invalidateQueries({ queryKey: ["snap-streaks"] }),
+        queryClient.invalidateQueries({ queryKey: ["moment"] }),
       ]);
       setFile(null);
       setCaption("");
@@ -263,7 +270,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
         <button type="button" onClick={() => setFile(null)} disabled={sending} className={`flex h-10 w-10 items-center justify-center rounded-full text-xl disabled:opacity-40 ${dark ? "text-white/75 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"}`} aria-label="Retake">
           ‹
         </button>
-        <h2 className="text-sm font-semibold">Share your moment</h2>
+        <h2 className="text-sm font-semibold">{momentMode ? "Today's Moment" : "Share your moment"}</h2>
         <button type="button" onClick={closeStudio} disabled={sending} className={`flex h-10 w-10 items-center justify-center rounded-full text-xl disabled:opacity-40 ${dark ? "text-white/75 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"}`} aria-label="Close camera">
           ×
         </button>
@@ -278,6 +285,11 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className={`mx-auto mt-4 w-full ${target === "snap" ? "max-w-2xl" : "max-w-sm"}`}>
+          {momentMode ? (
+            <p className={`rounded-2xl px-4 py-3 text-center text-xs leading-5 ${dark ? "bg-fuchsia-500/15 text-fuchsia-100" : "bg-fuchsia-50 text-fuchsia-900"}`}>
+              Your friends who also shared today's Moment will see this. Post it as it is, no retakes needed.
+            </p>
+          ) : (
           <div className={`shrink-0 rounded-2xl p-1 ${dark ? "bg-white/10" : "bg-gray-200"}`}>
             <div role="tablist" aria-label="Share to" className="flex gap-1">
               {(["post", "story", "snap"] as const).map((option) => (
@@ -285,8 +297,9 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           </div>
+          )}
 
-          {target !== "snap" ? (
+          {target === "moment" ? null : target !== "snap" ? (
             <div className={`mt-3 flex items-center justify-between gap-3 rounded-xl border px-3 py-1.5 ${dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white"}`}>
               <span className={`shrink-0 text-xs font-medium leading-none ${dark ? "text-white/65" : "text-gray-500"}`}>Visible to</span>
               <AudiencePicker value={audience} onChange={setAudience} tone={dark ? "dark" : "light"} showHint={false} className="flex-nowrap justify-end" />
@@ -363,7 +376,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
             <textarea
               value={caption}
               onChange={(event) => setCaption(event.target.value)}
-              maxLength={target === "post" ? 2000 : 500}
+              maxLength={target === "post" ? 2000 : target === "moment" ? 200 : 500}
               rows={2}
               placeholder="Add a caption…"
               className={`resize-none rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-4 ${dark ? "border-white/15 bg-white/5 text-white placeholder:text-white/35 focus:border-fuchsia-400 focus:ring-fuchsia-400/15" : "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-fuchsia-500 focus:ring-fuchsia-500/10"}`}
@@ -398,7 +411,7 @@ export default function CameraStudio({ onClose }: { onClose: () => void }) {
               <path d="m5 12 4.5 4.5L19 7" />
             </svg>
           )}
-          {sending ? "Sharing…" : target === "post" ? (isVideo ? "Post video" : "Post photo") : target === "story" ? "Share story" : "Send Snap"}
+          {sending ? "Sharing…" : target === "post" ? (isVideo ? "Post video" : "Post photo") : target === "moment" ? "Share Moment" : target === "story" ? "Share story" : "Send Snap"}
         </button>
       </footer>
     </div>

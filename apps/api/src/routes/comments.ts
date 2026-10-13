@@ -7,6 +7,8 @@ import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { createMentionNotifications, createUserNotification } from "../notifications.js";
 import { canViewContent, canViewPostById } from "../visibility.js";
+import { ownsMedia } from "../mediaAccess.js";
+import { deleteMediaIfUnreferenced } from "../storage.js";
 
 interface CommentRow {
   id: string;
@@ -14,6 +16,7 @@ interface CommentRow {
   authorId: string;
   parentCommentId: string | null;
   text: string;
+  imageKey: string | null;
   createdAt: Date;
   author: User;
   _count: { likes: number; replies: number };
@@ -25,6 +28,7 @@ function toComment(comment: CommentRow): Comment {
     id: comment.id,
     author: toPublicUser(comment.author),
     text: comment.text,
+    imageKey: comment.imageKey,
     parentCommentId: comment.parentCommentId,
     replyCount: comment._count.replies,
     likeCount: comment._count.likes,
@@ -71,6 +75,9 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
       if (!post || !(await canViewContent(request.userId!, post))) {
         return reply.code(404).send({ error: "Post not found" });
       }
+      if (parsed.data.imageKey && !(await ownsMedia(request.userId!, parsed.data.imageKey))) {
+        return reply.code(403).send({ error: "You can only attach your own uploads" });
+      }
       let parentComment: { id: string; postId: string; authorId: string; parentCommentId: string | null } | null = null;
       if (parsed.data.parentCommentId) {
         parentComment = await prisma.comment.findUnique({
@@ -87,7 +94,8 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
           postId: post.id,
           authorId: request.userId!,
           parentCommentId: parentComment?.id,
-          text: parsed.data.text,
+          text: parsed.data.text.trim(),
+          imageKey: parsed.data.imageKey,
         },
         include: {
           author: true,
@@ -134,6 +142,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "Comment not found" });
       }
       await prisma.comment.delete({ where: { id: comment.id } });
+      if (comment.imageKey) await deleteMediaIfUnreferenced(comment.imageKey);
       return reply.code(204).send();
     }
   );

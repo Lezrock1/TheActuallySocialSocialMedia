@@ -7,9 +7,10 @@ const CameraStudio = lazy(() => import("./CameraStudio.js"));
 
 interface CameraContextValue {
   open: () => void;
+  openMoment: () => void;
 }
 
-const CameraContext = createContext<CameraContextValue>({ open: () => undefined });
+const CameraContext = createContext<CameraContextValue>({ open: () => undefined, openMoment: () => undefined });
 
 export function useCamera(): CameraContextValue {
   return useContext(CameraContext);
@@ -21,9 +22,17 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [momentMode, setMomentMode] = useState(false);
 
-  const openCamera = useCallback(() => setOpen(true), []);
-  const value = useMemo(() => ({ open: openCamera }), [openCamera]);
+  const openCamera = useCallback(() => {
+    setMomentMode(false);
+    setOpen(true);
+  }, []);
+  const openMoment = useCallback(() => {
+    setMomentMode(true);
+    setOpen(true);
+  }, []);
+  const value = useMemo(() => ({ open: openCamera, openMoment }), [openCamera, openMoment]);
 
   useEffect(() => {
     if (!user) return;
@@ -32,9 +41,13 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     idle(() => { void import("./CameraStudio.js"); });
   }, [user]);
 
-  // Older links and push targets still use /snaps?camera=1.
+  // Older links and push targets still use /snaps?camera=1; the Moment push opens /?moment=1.
   useEffect(() => {
-    if (!user || new URLSearchParams(location.search).get("camera") !== "1") return;
+    if (!user) return;
+    const params = new URLSearchParams(location.search);
+    const wantsMoment = params.get("moment") === "1";
+    if (params.get("camera") !== "1" && !wantsMoment) return;
+    setMomentMode(wantsMoment);
     setOpen(true);
     navigate(location.pathname, { replace: true });
   }, [location.pathname, location.search, navigate, user]);
@@ -44,7 +57,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
       {children}
       {open && user && (
         <Suspense fallback={<div className="fixed inset-0 z-[60] bg-black" />}>
-          <CameraStudio onClose={() => setOpen(false)} />
+          <CameraStudio momentMode={momentMode} onClose={() => setOpen(false)} />
         </Suspense>
       )}
     </CameraContext.Provider>
