@@ -53,6 +53,8 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
   const [microphoneMuted, setMicrophoneMuted] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [remoteMuted, setRemoteMuted] = useState<Record<string, boolean>>({});
+  const [remoteCameraOff, setRemoteCameraOff] = useState<Record<string, boolean>>({});
+  const cameraEnabledRef = useRef(true);
   const microphoneMutedRef = useRef(false);
   const [callError, setCallError] = useState<string | null>(null);
   const activeCallRef = useRef<ActiveCall | null>(null);
@@ -82,6 +84,8 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
     setMicrophoneMuted(false);
     microphoneMutedRef.current = false;
     setRemoteMuted({});
+    setRemoteCameraOff({});
+    cameraEnabledRef.current = true;
     setCameraEnabled(true);
     updateActiveCall(null);
   }, [updateActiveCall]);
@@ -183,11 +187,22 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
         : current);
       createPeer(payload.userId, payload.callId, currentUserId.localeCompare(payload.userId) < 0);
       // Newcomers can't know who is already muted, so repeat our state for them.
-      if (microphoneMutedRef.current) socket.emit("call:media-state", { callId: payload.callId, microphoneMuted: true });
+      if (microphoneMutedRef.current || !cameraEnabledRef.current) {
+        socket.emit("call:media-state", {
+          callId: payload.callId,
+          microphoneMuted: microphoneMutedRef.current,
+          cameraEnabled: cameraEnabledRef.current,
+        });
+      }
     }
-    function onMediaState(payload: { callId: string; userId: string; microphoneMuted: boolean }) {
+    function onMediaState(payload: { callId: string; userId: string; microphoneMuted?: boolean; cameraEnabled?: boolean }) {
       if (activeCallRef.current?.callId !== payload.callId) return;
-      setRemoteMuted((current) => ({ ...current, [payload.userId]: payload.microphoneMuted === true }));
+      if (typeof payload.microphoneMuted === "boolean") {
+        setRemoteMuted((current) => ({ ...current, [payload.userId]: payload.microphoneMuted === true }));
+      }
+      if (typeof payload.cameraEnabled === "boolean") {
+        setRemoteCameraOff((current) => ({ ...current, [payload.userId]: payload.cameraEnabled === false }));
+      }
     }
     function onSignal(message: CallSignalMessage) {
       void receiveSignal(message);
@@ -199,6 +214,11 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
       peersRef.current.delete(payload.userId);
       pendingCandidatesRef.current.delete(payload.userId);
       setRemoteMuted((current) => {
+        const next = { ...current };
+        delete next[payload.userId];
+        return next;
+      });
+      setRemoteCameraOff((current) => {
         const next = { ...current };
         delete next[payload.userId];
         return next;
@@ -369,6 +389,9 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
     const nextEnabled = !cameraEnabled;
     localStreamRef.current?.getVideoTracks().forEach((track) => { track.enabled = nextEnabled; });
     setCameraEnabled(nextEnabled);
+    cameraEnabledRef.current = nextEnabled;
+    const call = activeCallRef.current;
+    if (call) getSocket().emit("call:media-state", { callId: call.callId, cameraEnabled: nextEnabled });
   }
 
   return {
@@ -378,6 +401,7 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
     remoteStreams,
     microphoneMuted,
     remoteMuted,
+    remoteCameraOff,
     cameraEnabled,
     callError,
     startCall,

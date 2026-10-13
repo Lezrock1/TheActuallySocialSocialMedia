@@ -330,14 +330,18 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
       }).catch(() => undefined);
     });
 
-    socket.on("call:media-state", (payload: { callId: string; microphoneMuted: boolean }) => {
+    socket.on("call:media-state", (payload: { callId: string; microphoneMuted?: boolean; cameraEnabled?: boolean }) => {
       const userId = socket.data.userId as string;
       const call = activeCalls.get(payload?.callId);
-      if (!call || !call.participantIds.has(userId) || typeof payload.microphoneMuted !== "boolean") return;
+      if (!call || !call.participantIds.has(userId)) return;
+      const state: { microphoneMuted?: boolean; cameraEnabled?: boolean } = {};
+      if (typeof payload.microphoneMuted === "boolean") state.microphoneMuted = payload.microphoneMuted;
+      if (typeof payload.cameraEnabled === "boolean") state.cameraEnabled = payload.cameraEnabled;
+      if (Object.keys(state).length === 0) return;
       emitToUsers(io, [...call.participantIds].filter((id) => id !== userId), "call:media-state", {
         callId: payload.callId,
         userId,
-        microphoneMuted: payload.microphoneMuted,
+        ...state,
       });
     });
 

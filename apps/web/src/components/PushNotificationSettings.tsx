@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api.js";
 import { btnPrimary, card } from "../lib/ui.js";
+import {
+  decodeApplicationServerKey,
+  getActiveServiceWorkerRegistration,
+  isIos,
+  isStandalone,
+  saveSubscription,
+} from "../lib/push.js";
+import type { PushConfig } from "../lib/push.js";
 
 type PushState =
   | "checking"
@@ -11,46 +19,6 @@ type PushState =
   | "unsupported"
   | "not-configured"
   | "error";
-
-interface PushConfig {
-  enabled: boolean;
-  publicKey: string | null;
-}
-
-function isIos(): boolean {
-  return /iPhone|iPad|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-}
-
-function isStandalone(): boolean {
-  return window.matchMedia("(display-mode: standalone)").matches;
-}
-
-function decodeApplicationServerKey(value: string): ArrayBuffer {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const binary = window.atob(normalized + "=".repeat((4 - normalized.length % 4) % 4));
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes.buffer as ArrayBuffer;
-}
-
-async function getActiveServiceWorkerRegistration(): Promise<ServiceWorkerRegistration> {
-  await navigator.serviceWorker.register("/sw.js");
-  return navigator.serviceWorker.ready;
-}
-
-async function saveSubscription(subscription: PushSubscription): Promise<void> {
-  const value = subscription.toJSON();
-  if (!value.endpoint || !value.keys?.p256dh || !value.keys.auth) {
-    throw new Error("The browser returned an incomplete push subscription.");
-  }
-  await apiFetch("/notifications/push/subscription", {
-    method: "PUT",
-    body: JSON.stringify(value),
-  });
-}
 
 export default function PushNotificationSettings() {
   const [status, setStatus] = useState<PushState>("checking");

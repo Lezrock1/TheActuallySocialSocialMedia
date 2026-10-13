@@ -105,6 +105,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
       remoteStreams={call.remoteStreams}
       microphoneMuted={call.microphoneMuted}
       remoteMuted={call.remoteMuted}
+      remoteCameraOff={call.remoteCameraOff}
       cameraEnabled={call.cameraEnabled}
       error={call.callError}
       onAccept={call.acceptCall}

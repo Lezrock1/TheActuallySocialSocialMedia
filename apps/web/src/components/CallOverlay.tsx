@@ -19,6 +19,7 @@ function MediaTile({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const videoVisible = showVideo && !!stream?.getVideoTracks().some((track) => track.enabled);
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.srcObject = stream;
@@ -30,12 +31,13 @@ function MediaTile({
       if (videoRef.current) videoRef.current.srcObject = null;
       if (audioRef.current) audioRef.current.srcObject = null;
     };
-  }, [stream]);
+    // The <video> element is remounted when the camera is switched back on, so it needs the stream again.
+  }, [stream, videoVisible]);
 
   return (
     <div className="relative flex aspect-video min-h-36 items-center justify-center overflow-hidden rounded-lg bg-gray-900">
       <audio ref={audioRef} autoPlay muted={muted} className="hidden" />
-      {showVideo && stream?.getVideoTracks().some((track) => track.enabled) ? (
+      {videoVisible ? (
         <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
       ) : (
         <Avatar avatarKey={user?.avatarKey ?? null} username={user?.username ?? "Call"} size={64} />
@@ -64,6 +66,7 @@ export default function CallOverlay({
   remoteStreams,
   microphoneMuted,
   remoteMuted = {},
+  remoteCameraOff = {},
   cameraEnabled,
   error,
   onAccept,
@@ -81,6 +84,7 @@ export default function CallOverlay({
   remoteStreams: Record<string, MediaStream>;
   microphoneMuted: boolean;
   remoteMuted?: Record<string, boolean>;
+  remoteCameraOff?: Record<string, boolean>;
   cameraEnabled: boolean;
   error: string | null;
   onAccept: () => void;
@@ -138,7 +142,7 @@ export default function CallOverlay({
                 key={id}
                 user={users.find((person) => person.id === id) ?? null}
                 stream={remoteStreams[id] ?? null}
-                showVideo={callType === "video"}
+                showVideo={callType === "video" && remoteCameraOff[id] !== true}
                 muted={false}
                 micMuted={remoteMuted[id] === true}
               />
