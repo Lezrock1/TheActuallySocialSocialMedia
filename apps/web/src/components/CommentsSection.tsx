@@ -6,6 +6,7 @@ import type { Comment } from "@app/shared";
 import { ApiError, apiFetch } from "../lib/api.js";
 import { mediaUrl, uploadMedia } from "../lib/upload.js";
 import ProgressiveImage from "./ProgressiveImage.js";
+import ImageLightbox from "./ImageLightbox.js";
 import Avatar from "./Avatar.js";
 import LinkedMentions from "./LinkedMentions.js";
 import { InlineSkeletonText } from "./LoadingSkeleton.js";
@@ -26,6 +27,7 @@ function CommentItem({
   onToggleLike: () => void;
   liking: boolean;
 }) {
+  const [zoomed, setZoomed] = useState(false);
   return (
     <div className="flex items-start gap-2">
       <Link to={`/u/${comment.author.username}`} className="shrink-0">
@@ -39,9 +41,17 @@ function CommentItem({
           <LinkedMentions text={comment.text} />
         </p>
         {comment.imageKey && (
-          <div className="mt-2 w-52 max-w-full overflow-hidden rounded-xl">
-            <ProgressiveImage mediaKey={comment.imageKey} className="rounded-xl" />
-          </div>
+          <>
+            <button
+              type="button"
+              onClick={() => setZoomed(true)}
+              aria-label="View photo full size"
+              className="mt-2 block w-52 max-w-full cursor-zoom-in overflow-hidden rounded-xl transition-transform active:scale-[0.98]"
+            >
+              <ProgressiveImage mediaKey={comment.imageKey} className="rounded-xl" />
+            </button>
+            {zoomed && <ImageLightbox mediaKey={comment.imageKey} onClose={() => setZoomed(false)} />}
+          </>
         )}
         <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
           <time dateTime={comment.createdAt}>
