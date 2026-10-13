@@ -154,7 +154,7 @@ export default function DMsPage() {
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const scrolledConversationRef = useRef<string | null>(null);
   const wasAtBottomRef = useRef(true);
-  const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number; count: number } | null>(null);
   const lastVisibleMessageIdRef = useRef<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -286,7 +286,7 @@ export default function DMsPage() {
       return;
     }
 
-    if (prependScrollAnchorRef.current) {
+    if (prependScrollAnchorRef.current && messages.length > prependScrollAnchorRef.current.count) {
       const { scrollHeight, scrollTop } = prependScrollAnchorRef.current;
       const delta = container.scrollHeight - scrollHeight;
       container.scrollTop = scrollTop + delta;
@@ -324,6 +324,7 @@ export default function DMsPage() {
     const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
     wasAtBottomRef.current = distance <= 120;
     setShowJumpToLatest(distance > 320);
+    if (container.scrollTop < 60) loadOlderMessages();
   }
 
   function jumpToLatest() {
@@ -496,6 +497,7 @@ export default function DMsPage() {
     prependScrollAnchorRef.current = {
       scrollHeight: container.scrollHeight,
       scrollTop: container.scrollTop,
+      count: messages.length,
     };
     void messagesQuery.fetchNextPage();
   }
@@ -944,7 +946,7 @@ export default function DMsPage() {
             {encryptionKeysError && (
               <p role="alert" className="mx-4 mt-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
-            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-3 py-3 sm:px-[max(0.75rem,calc((100%-42rem)/2))]">
+            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-3 sm:px-[max(0.75rem,calc((100%-42rem)/2))]">
               {messagesQuery.hasNextPage && (
                 <div className="self-center pb-1 pt-0.5">
                   <button
