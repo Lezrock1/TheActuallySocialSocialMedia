@@ -501,31 +501,15 @@ export default function DMsPage() {
     });
 
     return filtered.sort((a, b) => {
-      const aTime = a.lastMessage ? Date.parse(a.lastMessage.createdAt) : 0;
-      const bTime = b.lastMessage ? Date.parse(b.lastMessage.createdAt) : 0;
-      const aDay = a.lastMessage ? new Date(a.lastMessage.createdAt).setHours(0, 0, 0, 0) : 0;
-      const bDay = b.lastMessage ? new Date(b.lastMessage.createdAt).setHours(0, 0, 0, 0) : 0;
-      if (aDay !== bDay) return bDay - aDay;
       const aPinned = pinnedSet.has(a.id);
       const bPinned = pinnedSet.has(b.id);
       if (aPinned !== bPinned) return aPinned ? -1 : 1;
       if (unreadFirst && a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
+      const aTime = a.lastMessage ? Date.parse(a.lastMessage.createdAt) : 0;
+      const bTime = b.lastMessage ? Date.parse(b.lastMessage.createdAt) : 0;
       return bTime - aTime;
     });
   }, [chatFilter, conversations, normalizedChatSearch, pinnedSet, unreadFirst]);
-  const timelineDayStarts = useMemo(() => {
-    const starts = new Map<string, string>();
-    let previousDay: string | null = null;
-    for (const conversation of visibleConversations) {
-      if (!conversation.lastMessage) continue;
-      const currentDay = dayKey(conversation.lastMessage.createdAt);
-      if (currentDay !== previousDay) {
-        starts.set(conversation.id, formatDayLabel(conversation.lastMessage.createdAt));
-        previousDay = currentDay;
-      }
-    }
-    return starts;
-  }, [visibleConversations]);
   const membersWithKeys = new Set(encryptionKeys.map((key) => key.userId));
   const allMembersHaveKeys = !!activeConversation &&
     activeConversation.members.length > 0 &&
@@ -993,7 +977,7 @@ export default function DMsPage() {
               onClick={() => setMessageView("live_rooms")}
               className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${messageView === "live_rooms" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
             >
-              <span className={hasJoinableLiveRoom ? "live-tab-pulse" : ""}>Live Rooms</span>
+              <span className={hasJoinableLiveRoom ? "live-tab-pulse" : "live-tab-red"}>Live Rooms</span>
             </button>
           </div>
           {messageView !== "live_rooms" && (groupMode || friendPickerOpen) && <form
@@ -1143,14 +1127,7 @@ export default function DMsPage() {
           )}
           {messageView === "chats" && <div className={`${activityList} ${activeId ? "lg:max-h-[calc(100dvh-19rem)] lg:overflow-y-auto lg:overscroll-contain" : ""}`}>
             {visibleConversations.map((c) => (
-              <Fragment key={c.id}>
-              {timelineDayStarts.has(c.id) && (
-                <div className="flex items-center gap-2 px-4 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-gray-400 lg:hidden">
-                  <span>{timelineDayStarts.get(c.id)}</span>
-                  <span className="h-px flex-1 bg-gray-100" />
-                </div>
-              )}
-              <div className={`${activityRow} relative ${!activeId ? "before:absolute before:bottom-0 before:left-10 before:top-0 before:w-px before:bg-gray-100 before:content-[''] lg:before:hidden" : ""} ${activeId === c.id ? "bg-emerald-50/70" : ""}`}>
+              <div key={c.id} className={`${activityRow} relative ${!activeId ? "before:absolute before:bottom-0 before:left-10 before:top-0 before:w-px before:bg-gray-100 before:content-[''] lg:before:hidden" : ""} ${activeId === c.id ? "bg-emerald-50/70" : ""}`}>
                 <button
                   type="button"
                   onClick={() => setActiveId(c.id)}
@@ -1215,7 +1192,6 @@ export default function DMsPage() {
                   </svg>
                 </button>
               </div>
-              </Fragment>
             ))}
             {visibleConversations.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-gray-500">No conversations yet.</p>

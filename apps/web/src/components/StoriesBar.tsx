@@ -9,6 +9,7 @@ import { apiFetch } from "../lib/api.js";
 import { mediaPosterUrl, mediaUrl, preloadMediaKeys } from "../lib/upload.js";
 import Avatar from "./Avatar.js";
 import LiveRoomsBar from "./LiveRoomsBar.js";
+import RadioRoomsBar from "./music/RadioRoomsBar.js";
 import StoryComposer from "./StoryComposer.js";
 import AudioPlayer from "./AudioPlayer.js";
 import MeetupCard from "./chat/MeetupCard.js";
@@ -501,6 +502,7 @@ export default function StoriesBar() {
           <span className="text-[11px] text-gray-500">Story</span>
         </button>
         <LiveRoomsBar compact />
+        <RadioRoomsBar compact />
         {momentSummary && momentStatus !== "none" && (
           <button
             type="button"

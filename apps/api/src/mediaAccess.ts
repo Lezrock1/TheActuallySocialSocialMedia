@@ -21,7 +21,7 @@ export async function canReadMedia(
   key: string
 ): Promise<MediaAccess> {
   const now = new Date();
-  const [asset, posts, stories, snaps, avatarOwners, messages, comments, momentPosts] = await Promise.all([
+  const [asset, posts, stories, snaps, avatarOwners, messages, comments, momentPosts, musicMixes] = await Promise.all([
     prisma.mediaAsset.findUnique({
       where: { key },
       select: { ownerId: true },
@@ -68,11 +68,15 @@ export async function canReadMedia(
       where: { imageKey: key },
       select: { userId: true, momentId: true },
     }),
+    prisma.musicMix.findMany({
+      where: { audioKey: key },
+      select: { ownerId: true, visibility: true },
+    }),
   ]);
 
   const hasReferences =
     posts.length > 0 || stories.length > 0 || snaps.length > 0 || avatarOwners.length > 0 ||
-    messages.length > 0 || comments.length > 0 || momentPosts.length > 0;
+    messages.length > 0 || comments.length > 0 || momentPosts.length > 0 || musicMixes.length > 0;
   if (asset?.ownerId === viewerId && !hasReferences) {
     return { allowed: true, maxAgeSeconds: 30 };
   }
@@ -105,6 +109,16 @@ export async function canReadMedia(
     !blockedIds.includes(comment.authorId) &&
     canSeeAuthor(comment.post.authorId, comment.post.visibility, comment.post.circleId)
   );
+  const followerMixOwners = musicMixes
+    .filter((mix) => mix.visibility === "followers" && !blockedIds.includes(mix.ownerId))
+    .map((mix) => mix.ownerId);
+  const followsMixOwner = followerMixOwners.length > 0 && !!(await prisma.follow.findFirst({
+    where: { followerId: viewerId, followeeId: { in: followerMixOwners } },
+    select: { id: true },
+  }));
+  const canReadMix = musicMixes.some((mix) =>
+    mix.ownerId === viewerId || (!blockedIds.includes(mix.ownerId) && mix.visibility === "public")
+  ) || followsMixOwner;
 
   // Moments are only visible to friends who posted that same Moment themselves.
   let canReadMoment = momentPosts.some((moment) => moment.userId === viewerId);
@@ -132,8 +146,12 @@ export async function canReadMedia(
     );
   }
   const allowed = canReadPost || canReadStory || canReadSnap || canReadAvatar || canReadMessage ||
-    canReadComment || canReadMoment;
+    canReadComment || canReadMoment || canReadMix;
   if (!allowed || canReadSnap) return { allowed, maxAgeSeconds: 0 };
+
+  const onlyMusicMix = musicMixes.length > 0 && posts.length === 0 && stories.length === 0 &&
+    avatarOwners.length === 0 && messages.length === 0 && comments.length === 0 && momentPosts.length === 0;
+  if (onlyMusicMix) return { allowed: canReadMix, maxAgeSeconds: canReadMix ? AVATAR_MAX_AGE_SECONDS : 0 };
 
   // Voice messages are immutable ciphertext, so members may cache them.
   const onlyMessage = messages.length > 0 && posts.length === 0 && stories.length === 0 && !canReadAvatar;

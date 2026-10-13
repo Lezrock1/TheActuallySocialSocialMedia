@@ -6,7 +6,7 @@ import { prisma } from "./db.js";
 import { toPublicUser } from "./serializers.js";
 import { getBlockedUserIds, isBlocked } from "./visibility.js";
 import { LIVE_ROOM_AUDIENCES, MAX_LIVE_ROOM_PARTICIPANTS } from "@app/shared";
-import type { LiveRoomAudience } from "@app/shared";
+import type { LiveRoomAudience, RadioMessage, RadioRoom } from "@app/shared";
 import { createUserNotification } from "./notifications.js";
 import { createRateLimiter } from "./rateLimit.js";
 
@@ -29,6 +29,22 @@ interface ActiveCall {
   memberIds: string[];
   isRoom: boolean;
   audience: LiveRoomAudience;
+}
+
+interface ActiveRadio {
+  radioId: string;
+  conversationId: string;
+  hostUserId: string;
+  participantIds: Set<string>;
+  memberIds: string[];
+  audience: LiveRoomAudience;
+  mixId: string;
+  durationMs: number;
+  title: string;
+  positionMs: number;
+  isPlaying: boolean;
+  syncedAt: number;
+  messages: RadioMessage[];
 }
 
 const MAX_CALL_PARTICIPANTS = MAX_LIVE_ROOM_PARTICIPANTS;
@@ -115,6 +131,30 @@ async function notifyLiveRoomStarted(callId: string, call: ActiveCall): Promise<
   })));
 }
 
+async function canViewRadio(userId: string, radio: ActiveRadio): Promise<boolean> {
+  return canViewLiveRoom(userId, {
+    conversationId: radio.conversationId,
+    hostUserId: radio.hostUserId,
+    participantIds: radio.participantIds,
+    memberIds: radio.memberIds,
+    isRoom: true,
+    audience: radio.audience,
+  });
+}
+
+async function notifyRadioListChanged(io: SocketIOServer, radio: ActiveRadio): Promise<void> {
+  const callLikeRoom: ActiveCall = {
+    conversationId: radio.conversationId,
+    hostUserId: radio.hostUserId,
+    participantIds: radio.participantIds,
+    memberIds: radio.memberIds,
+    isRoom: true,
+    audience: radio.audience,
+  };
+  if (radio.audience === "everyone") io.emit("radio:rooms:changed", {});
+  else emitToUsers(io, await getLiveRoomAudienceUserIds(callLikeRoom), "radio:rooms:changed", {});
+}
+
 export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
     cors: { origin: env.corsOrigin, credentials: true },
@@ -142,6 +182,7 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
   });
 
   const activeCalls = new Map<string, ActiveCall>();
+  const activeRadios = new Map<string, ActiveRadio>();
   const onlineSocketCounts = new Map<string, number>();
 
   async function emitContactPresence(userId: string, isOnline: boolean): Promise<void> {
@@ -215,6 +256,211 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
       })().catch(() => acknowledge([]));
     });
 
+    socket.on("radio:start", (payload: {
+      radioId: string;
+      conversationId: string;
+      mixId: string;
+      audience?: LiveRoomAudience;
+      title?: string;
+    }, acknowledge: (result: { ok: boolean; error?: string }) => void) => {
+      void (async () => {
+        if (!payload || typeof payload.radioId !== "string" || typeof payload.mixId !== "string" ||
+          typeof payload.conversationId !== "string" ||
+          !LIVE_ROOM_AUDIENCES.includes(payload.audience ?? "invited") || payload.audience === "invited") {
+          acknowledge({ ok: false, error: "Choose a valid mix and audience" });
+          return;
+        }
+        if (activeCalls.has(payload.radioId) || activeRadios.has(payload.radioId) ||
+          [...activeCalls.values()].some((call) => call.participantIds.has(userId)) ||
+          [...activeRadios.values()].some((radio) => radio.participantIds.has(userId))) {
+          acknowledge({ ok: false, error: "Leave your current call or radio first" });
+          return;
+        }
+        const [mix, members] = await Promise.all([
+          prisma.musicMix.findUnique({ where: { id: payload.mixId } }),
+          prisma.conversationMember.findMany({
+            where: { conversationId: payload.conversationId },
+            select: { userId: true },
+          }),
+        ]);
+        if (!mix || mix.ownerId !== userId) {
+          acknowledge({ ok: false, error: "Choose one of your own mixes to host" });
+          return;
+        }
+        if (!members.some((member) => member.userId === userId)) {
+          acknowledge({ ok: false, error: "Radio room not found" });
+          return;
+        }
+        const radio: ActiveRadio = {
+          radioId: payload.radioId,
+          conversationId: payload.conversationId,
+          hostUserId: userId,
+          participantIds: new Set([userId]),
+          memberIds: members.map((member) => member.userId),
+          audience: payload.audience ?? "invited",
+          mixId: mix.id,
+          durationMs: mix.durationMs,
+          title: payload.title?.trim().slice(0, 80) || mix.title,
+          positionMs: 0,
+          isPlaying: false,
+          syncedAt: Date.now(),
+          messages: [],
+        };
+        activeRadios.set(radio.radioId, radio);
+        void notifyRadioListChanged(io, radio).catch(() => undefined);
+        acknowledge({ ok: true });
+      })().catch(() => acknowledge({ ok: false, error: "Could not start radio" }));
+    });
+
+    socket.on("radio:rooms:list", (acknowledge: (rooms: RadioRoom[]) => void) => {
+      void (async () => {
+        const visibleRadios = (await Promise.all([...activeRadios.values()].map(async (radio) =>
+          await canViewRadio(userId, radio) ? radio : null
+        ))).filter((radio): radio is ActiveRadio => radio !== null);
+        if (visibleRadios.length === 0) {
+          acknowledge([]);
+          return;
+        }
+        const [mixes, participants] = await Promise.all([
+          prisma.musicMix.findMany({
+            where: { id: { in: visibleRadios.map((radio) => radio.mixId) } },
+            include: { owner: true, _count: { select: { comments: true } } },
+          }),
+          prisma.user.findMany({
+            where: { id: { in: visibleRadios.flatMap((radio) => [...radio.participantIds]) } },
+          }),
+        ]);
+        const mixesById = new Map(mixes.map((mix) => [mix.id, mix]));
+        const usersById = new Map(participants.map((participant) => [participant.id, participant]));
+        acknowledge(visibleRadios.flatMap((radio) => {
+          const mix = mixesById.get(radio.mixId);
+          if (!mix) return [];
+          const mixData: RadioRoom["mix"] = {
+            id: mix.id,
+            title: mix.title,
+            description: mix.description,
+            audioKey: mix.audioKey,
+            durationMs: mix.durationMs,
+            waveform: Array.isArray(mix.waveform) ? mix.waveform.filter((peak): peak is number => typeof peak === "number") : [],
+            tracklist: Array.isArray(mix.tracklist) ? mix.tracklist as RadioRoom["mix"]["tracklist"] : [],
+            createdAt: mix.createdAt.toISOString(),
+            owner: toPublicUser(mix.owner),
+            commentCount: mix._count.comments,
+          };
+          return [{
+            radioId: radio.radioId,
+            mixId: radio.mixId,
+            mix: mixData,
+            title: radio.title,
+            hostUserId: radio.hostUserId,
+            audience: radio.audience,
+            participantIds: [...radio.participantIds],
+            members: [...radio.participantIds].flatMap((participantId) => {
+              const participant = usersById.get(participantId);
+              return participant ? [toPublicUser(participant)] : [];
+            }),
+            isPlaying: radio.isPlaying,
+            positionMs: Math.min(radio.durationMs, radio.positionMs + (radio.isPlaying ? Date.now() - radio.syncedAt : 0)),
+            syncedAt: new Date(radio.syncedAt).toISOString(),
+          } satisfies RadioRoom];
+        }));
+      })().catch(() => acknowledge([]));
+    });
+
+    socket.on("radio:join", (payload: { radioId: string }, acknowledge: (result: {
+      ok: boolean;
+      error?: string;
+      positionMs?: number;
+      isPlaying?: boolean;
+      syncedAt?: string;
+      participantIds?: string[];
+      messages?: RadioMessage[];
+    }) => void) => {
+      void (async () => {
+        const radio = activeRadios.get(payload.radioId);
+        if (!radio || [...activeCalls.values()].some((call) => call.participantIds.has(userId)) ||
+          [...activeRadios.values()].some((active) => active.radioId !== radio.radioId && active.participantIds.has(userId)) ||
+          !(await canViewRadio(userId, radio))) {
+          acknowledge({ ok: false, error: "This radio is no longer available" });
+          return;
+        }
+        if (!radio.participantIds.has(userId) && radio.participantIds.size >= MAX_CALL_PARTICIPANTS) {
+          acknowledge({ ok: false, error: "This radio is full" });
+          return;
+        }
+        radio.participantIds.add(userId);
+        const currentPosition = Math.min(radio.durationMs, radio.positionMs + (radio.isPlaying ? Date.now() - radio.syncedAt : 0));
+        const result = {
+          ok: true,
+          positionMs: currentPosition,
+          isPlaying: radio.isPlaying,
+          syncedAt: new Date(radio.syncedAt).toISOString(),
+          participantIds: [...radio.participantIds],
+          messages: radio.messages.slice(-50),
+        };
+        emitToUsers(io, [...radio.participantIds], "radio:participants", { radioId: radio.radioId, participantIds: result.participantIds });
+        void notifyRadioListChanged(io, radio).catch(() => undefined);
+        acknowledge(result);
+      })().catch(() => acknowledge({ ok: false, error: "Could not join radio" }));
+    });
+
+    function leaveRadio(leavingUserId: string, radioId: string): void {
+      const radio = activeRadios.get(radioId);
+      if (!radio || !radio.participantIds.has(leavingUserId)) return;
+      radio.participantIds.delete(leavingUserId);
+      const participantIds = [...radio.participantIds];
+      if (leavingUserId === radio.hostUserId || participantIds.length === 0) {
+        activeRadios.delete(radioId);
+        emitToUsers(io, participantIds, "radio:ended", { radioId });
+        void notifyRadioListChanged(io, radio).catch(() => undefined);
+        return;
+      }
+      emitToUsers(io, participantIds, "radio:participants", { radioId, participantIds });
+      void notifyRadioListChanged(io, radio).catch(() => undefined);
+    }
+
+    socket.on("radio:leave", (payload: { radioId: string }) => {
+      leaveRadio(userId, payload.radioId);
+    });
+
+    socket.on("radio:playback", (payload: { radioId: string; positionMs: number; isPlaying: boolean }) => {
+      const radio = activeRadios.get(payload.radioId);
+      if (!radio || radio.hostUserId !== userId || !radio.participantIds.has(userId)) return;
+      if (!Number.isFinite(payload.positionMs) || payload.positionMs < 0 || typeof payload.isPlaying !== "boolean") return;
+      radio.positionMs = Math.min(radio.durationMs, Math.floor(payload.positionMs));
+      radio.isPlaying = payload.isPlaying;
+      radio.syncedAt = Date.now();
+      emitToUsers(io, [...radio.participantIds], "radio:playback", {
+        radioId: radio.radioId,
+        positionMs: radio.positionMs,
+        isPlaying: radio.isPlaying,
+        syncedAt: new Date(radio.syncedAt).toISOString(),
+      });
+    });
+
+    socket.on("radio:message", (payload: { radioId: string; kind: "text" | "emoji"; content: string }) => {
+      if (!payload || typeof payload.radioId !== "string" || typeof payload.content !== "string") return;
+      const radio = activeRadios.get(payload.radioId);
+      if (!radio || !radio.participantIds.has(userId)) return;
+      const content = payload.content.trim();
+      if (payload.kind === "text" ? content.length === 0 || content.length > 400 :
+        payload.kind === "emoji" ? content.length === 0 || content.length > 32 : true) return;
+      void prisma.user.findUnique({ where: { id: userId } }).then((author) => {
+        if (!author || !radio.participantIds.has(userId)) return;
+        const message: RadioMessage = {
+          id: crypto.randomUUID(),
+          radioId: radio.radioId,
+          user: toPublicUser(author),
+          kind: payload.kind,
+          content,
+          createdAt: new Date().toISOString(),
+        };
+        radio.messages.push(message);
+        if (radio.messages.length > 100) radio.messages.splice(0, radio.messages.length - 100);
+        emitToUsers(io, [...radio.participantIds], "radio:message", message);
+      }).catch(() => undefined);
+    });
+
     socket.on("call:start", (payload: {
       callId: string;
       conversationId: string;
@@ -246,7 +492,8 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
           return;
         }
         if (activeCalls.has(payload.callId) ||
-          [...activeCalls.values()].some((call) => call.participantIds.has(userId))) {
+          [...activeCalls.values()].some((call) => call.participantIds.has(userId)) ||
+          [...activeRadios.values()].some((radio) => radio.participantIds.has(userId))) {
           acknowledge({ ok: false, error: "You are already in a call" });
           return;
         }
@@ -411,6 +658,7 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
         onlineSocketCounts.set(userId, remainingSockets);
       }
       for (const callId of activeCalls.keys()) leaveCall(userId, callId);
+      for (const radioId of activeRadios.keys()) leaveRadio(userId, radioId);
     });
 
     function leaveCall(userId: string, callId: string) {

@@ -9,6 +9,7 @@ import { getSocket } from "../lib/socket.js";
 import { btnPrimary, btnSecondary, input } from "../lib/ui.js";
 import Avatar from "./Avatar.js";
 import CallOverlay from "./CallOverlay.js";
+import RadioRoomsBar from "./music/RadioRoomsBar.js";
 
 async function fetchFriends(username: string): Promise<PublicUser[]> {
   const result = await apiFetch<{ users: PublicUser[] }>(`/users/${username}/following`);
@@ -280,6 +281,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
             {roomError && <p role="alert" className="mt-2 text-xs text-red-600">{roomError}</p>}
           </div>
         )}
+        {!compact && <RadioRoomsBar />}
         {!compact && <p className="mt-2 border-t border-gray-100 pt-2 text-[10px] leading-4 text-gray-400">
           A room stays live until the last person leaves, even if the host steps out.
         </p>}

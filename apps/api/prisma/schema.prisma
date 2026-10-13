@@ -56,6 +56,10 @@ model User {
   circleMemberships CircleMember[]
   meetupResponses   MeetupResponse[]
   meetups           Meetup[]
+  nowPlaying       MusicNowPlaying?
+  musicTaste       MusicTaste?
+  musicMixes       MusicMix[]
+  mixComments      MusicMixComment[]
 }
 
 model Follow {
@@ -323,6 +327,64 @@ model MeetupResponse {
 
   @@unique([meetupId, userId])
   @@index([userId])
+}
+
+model MusicNowPlaying {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  provider  String
+  title     String
+  artist    String
+  url       String
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([updatedAt])
+}
+
+model MusicTaste {
+  userId         String   @id
+  genres         String[] @default([])
+  favoriteTracks String[] @default([])
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MusicMix {
+  id          String   @id @default(cuid())
+  ownerId     String
+  title       String
+  description String?  @db.VarChar(500)
+  audioKey    String   @unique
+  durationMs  Int
+  waveform    Json
+  tracklist   Json
+  visibility  String   @default("public")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  comments MusicMixComment[]
+
+  @@index([ownerId, createdAt])
+  @@index([visibility, createdAt])
+}
+
+model MusicMixComment {
+  id          String   @id @default(cuid())
+  mixId       String
+  userId      String
+  timestampMs Int
+  text        String   @db.VarChar(500)
+  createdAt   DateTime @default(now())
+
+  mix  MusicMix @relation(fields: [mixId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([mixId, timestampMs])
+  @@index([userId, createdAt])
 }
 
 model UsageMetricBucket {

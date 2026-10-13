@@ -22,12 +22,13 @@ const MAX_CONCURRENT_TRANSCODES = 2;
 let activeTranscodes = 0;
 
 const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
-const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+const MAX_AUDIO_BYTES = MAX_MEDIA_BYTES;
 const MAX_RAW_UPLOAD_BYTES = 500 * 1024 * 1024 + 16;
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg", "image/png", "image/webp", "image/gif",
   "video/mp4", "video/webm", "video/quicktime",
   "audio/webm", "audio/mp4", "audio/mpeg", "audio/ogg", "audio/aac", "audio/x-m4a",
+  "audio/wav", "audio/x-wav", "audio/flac",
 ]);
 
 export async function mediaRoutes(app: FastifyInstance): Promise<void> {
@@ -63,7 +64,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
 
       const isVideo = mimeType.startsWith("video/");
       if (mimeType.startsWith("audio/") && originalSize > MAX_AUDIO_BYTES) {
-        return reply.code(413).send({ error: "Audio must be 10 MB or smaller" });
+        return reply.code(413).send({ error: "Audio must be 50 MB or smaller" });
       }
       if (!isVideo && originalSize > MAX_MEDIA_BYTES) {
         return reply.code(413).send({ error: "Images must be 50 MB or smaller" });

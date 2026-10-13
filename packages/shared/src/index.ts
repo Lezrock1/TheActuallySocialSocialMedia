@@ -502,6 +502,114 @@ export interface MomentFeed {
   posts: MomentPostItem[];
 }
 
+export const MUSIC_PROVIDERS = ["spotify", "apple_music", "soundcloud"] as const;
+export type MusicProvider = (typeof MUSIC_PROVIDERS)[number];
+
+export const setNowPlayingSchema = z.object({
+  provider: z.enum(MUSIC_PROVIDERS),
+  title: z.string().trim().min(1).max(120),
+  artist: z.string().trim().min(1).max(120),
+  url: z.string().url().max(2048),
+});
+export type SetNowPlayingInput = z.infer<typeof setNowPlayingSchema>;
+
+export interface MusicNowPlaying {
+  id: string;
+  provider: MusicProvider;
+  title: string;
+  artist: string;
+  url: string;
+  updatedAt: string;
+  user: PublicUser;
+}
+
+export const musicTrackSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  artist: z.string().trim().max(120).default(""),
+  startMs: z.number().int().min(0).max(10_800_000),
+});
+export type MusicTrack = z.infer<typeof musicTrackSchema>;
+
+export const createMusicMixSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500).optional(),
+  audioKey: z.string().min(1).max(200),
+  durationMs: z.number().int().min(30_000).max(10_800_000),
+  waveform: z.array(z.number().min(0).max(1)).min(16).max(256),
+  tracklist: z.array(musicTrackSchema).max(80),
+}).refine((mix) => mix.tracklist.every((track) => track.startMs < mix.durationMs), {
+  message: "Track markers must be within the mix duration",
+  path: ["tracklist"],
+});
+export type CreateMusicMixInput = z.infer<typeof createMusicMixSchema>;
+
+export const createMusicMixCommentSchema = z.object({
+  timestampMs: z.number().int().min(0).max(10_800_000),
+  text: z.string().trim().min(1).max(500),
+});
+export type CreateMusicMixCommentInput = z.infer<typeof createMusicMixCommentSchema>;
+
+export const updateMusicTasteSchema = z.object({
+  genres: z.array(z.string().trim().min(1).max(40)).max(20),
+  favoriteTracks: z.array(z.string().trim().min(1).max(160)).max(20),
+}).strict();
+export type UpdateMusicTasteInput = z.infer<typeof updateMusicTasteSchema>;
+
+export interface MusicTaste {
+  genres: string[];
+  favoriteTracks: string[];
+}
+
+export interface MusicTasteMatch {
+  score: number;
+  sharedGenres: string[];
+  sharedTracks: string[];
+}
+
+export interface MusicMixComment {
+  id: string;
+  timestampMs: number;
+  text: string;
+  createdAt: string;
+  user: PublicUser;
+}
+
+export interface MusicMix {
+  id: string;
+  title: string;
+  description: string | null;
+  audioKey: string;
+  durationMs: number;
+  waveform: number[];
+  tracklist: MusicTrack[];
+  createdAt: string;
+  owner: PublicUser;
+  commentCount: number;
+}
+
+export interface RadioRoom {
+  radioId: string;
+  mixId: string;
+  mix: MusicMix;
+  title: string;
+  hostUserId: string;
+  audience: LiveRoomAudience;
+  participantIds: string[];
+  members: PublicUser[];
+  isPlaying: boolean;
+  positionMs: number;
+  syncedAt: string;
+}
+
+export interface RadioMessage {
+  id: string;
+  radioId: string;
+  user: PublicUser;
+  kind: "text" | "emoji";
+  content: string;
+  createdAt: string;
+}
+
 export interface LiveRoom {
   callId: string;
   conversationId: string;

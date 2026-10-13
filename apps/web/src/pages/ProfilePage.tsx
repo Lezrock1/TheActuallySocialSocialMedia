@@ -19,6 +19,8 @@ import type { PublicEncryptionKey } from "../lib/encryption.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 import { InlineSkeletonText } from "../components/LoadingSkeleton.js";
 import { card, input, btnPrimary, btnSecondary } from "../lib/ui.js";
+import { MusicTastePanel, NowPlayingProfile } from "../components/music/MusicProfile.js";
+import { MusicMixesProfile } from "../components/music/Mixes.js";
 
 async function fetchProfile(username: string): Promise<UserProfile> {
   const res = await apiFetch<{ profile: UserProfile }>(`/users/${username}`);
@@ -353,6 +355,12 @@ export default function ProfilePage() {
               </div>
             )}
           </div>
+
+          <div className="mb-6 grid gap-3 sm:grid-cols-2">
+            <NowPlayingProfile username={profile.username} isOwnProfile={profile.isMe} canViewStatus={profile.isFollowedByMe} />
+            <MusicTastePanel username={profile.username} isOwnProfile={profile.isMe} />
+          </div>
+          <MusicMixesProfile username={profile.username} isOwnProfile={profile.isMe} />
 
           {reportStatus && <p role="status" className="mb-3 text-sm text-green-700">{reportStatus}</p>}          {profileActionError && <p role="alert" className="mb-3 text-sm text-red-600">{profileActionError}</p>}
 
