@@ -1087,7 +1087,7 @@ export default function DMsPage() {
           )}
           {messageView === "chats" && <div className={activityList}>
             {visibleConversations.map((c) => (
-              <div key={c.id} className={`${activityRow} relative ${pinnedSet.has(c.id) ? "bg-amber-50/60" : ""}`}>
+              <div key={c.id} className={`${activityRow} relative`}>
                 <button
                   type="button"
                   onClick={() => setActiveId(c.id)}
@@ -1111,7 +1111,6 @@ export default function DMsPage() {
                           ? c.name ?? c.members.map((member) => `@${member.username}`).join(", ")
                           : `@${c.otherMember?.username ?? "Unknown"}`}
                       </span>
-                      {pinnedSet.has(c.id) && <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Pinned</span>}
                       {c.lastMessage && (
                         <time className={`shrink-0 text-[11px] ${c.unreadCount > 0 ? "font-semibold text-green-600" : "text-gray-400"}`}>
                           {formatActivityTime(c.lastMessage.createdAt)}
@@ -1142,10 +1141,12 @@ export default function DMsPage() {
                   type="button"
                   onClick={() => togglePinnedChat(c.id)}
                   aria-label={pinnedSet.has(c.id) ? "Unpin chat" : "Pin chat"}
-                  className={`ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${pinnedSet.has(c.id) ? "bg-amber-100 text-amber-800" : "text-gray-400 hover:bg-gray-100 hover:text-gray-700"}`}
+                  aria-pressed={pinnedSet.has(c.id)}
+                  title={pinnedSet.has(c.id) ? "Unpin chat" : "Pin chat"}
+                  className={`ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-1 ${pinnedSet.has(c.id) ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-transparent text-gray-400 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-700"}`}
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
-                    <path d="m14 3 7 7-2.2 2.2-1.4-1.4-4.7 4.7v5.3L11 22v-5.4L6.4 12l-1.6 1.6L3 11.8 10 5h4Z" />
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 3.5h8l-1 5 3 3v2h-5v6.5L12 22l-1-2v-6.5H6v-2l3-3-1-5Z" />
                   </svg>
                 </button>
               </div>

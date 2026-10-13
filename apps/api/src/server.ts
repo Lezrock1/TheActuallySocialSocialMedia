@@ -28,6 +28,7 @@ import { closeFriendRoutes } from "./routes/closeFriends.js";
 import { notificationRoutes } from "./routes/notifications.js";
 import { encryptionRoutes } from "./routes/encryption.js";
 import { pollRoutes } from "./routes/polls.js";
+import { deploymentRoutes } from "./routes/deployment.js";
 import { BusyError } from "./auth/passwords.js";
 import { createRateLimiter, sendRateLimited } from "./rateLimit.js";
 
@@ -88,6 +89,7 @@ async function main(): Promise<void> {
   await app.register(notificationRoutes);
   await app.register(encryptionRoutes);
   await app.register(pollRoutes);
+  await app.register(deploymentRoutes);
 
   await app.listen({ port: env.port, host: "0.0.0.0" });
 }

@@ -136,7 +136,7 @@ The repository includes a single-server Docker Compose deployment for a small in
 	docker compose --env-file .env.production -f compose.production.yaml up -d --force-recreate api
 	```
 
-5. Before inviting friends, configure automated off-server backups for both PostgreSQL and uploaded media, test restoring them, and monitor disk space and container health. Docker volumes survive container replacement but are not backups. Deploy updates with `git pull` followed by the same `up -d --build` command; take a database backup before releases that change Prisma migrations.
+5. Before inviting friends, configure automated off-server backups for both PostgreSQL and uploaded media, test restoring them, and monitor disk space and container health. Docker volumes survive container replacement but are not backups. Deploy pushed `main` updates with `./scripts/deploy-production.sh`; it announces the update to connected users, rebuilds API/Web, waits for health checks, and announces completion. The first rollout of this announcement feature necessarily bootstraps without a notice. Take a database backup before releases that change Prisma migrations.
 
 The frontend is built with `PUBLIC_API_URL` (default `https://api.intouchsocial.com`) and the API allows `CORS_ORIGIN` (default `https://intouchsocial.com`). If you use different hostnames, update both values and the site names in `Caddyfile`, then rebuild. The example deployment is a single VPS; it does not provide redundancy, automated off-site backups, or an admin/moderation UI.
 

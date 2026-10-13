@@ -411,9 +411,6 @@ export default function FeedPage() {
           </div>
         )}
         {composerError && <p role="alert" className="text-xs text-red-600">{composerError}</p>}
-        {!composerOpen && (
-          <p className="-mt-1 mb-0.5 text-[11px] text-gray-500">Tip: tap the text field to reveal audience, poll, and media options.</p>
-        )}
         <div
           className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out ${composerOpen ? "grid-rows-[1fr] opacity-100" : "-mt-2.5 grid-rows-[0fr] opacity-0"}`}
           aria-hidden={!composerOpen}

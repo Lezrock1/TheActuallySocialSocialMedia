@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 const LoginPage = lazy(() => import("./pages/LoginPage.js"));
@@ -25,6 +25,84 @@ import DeviceSetupPrompt from "./components/DeviceSetupPrompt.js";
 import LocalMeetupReminderProvider from "./components/LocalMeetupReminderProvider.js";
 import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
 import { AppBootSkeleton } from "./components/LoadingSkeleton.js";
+import { getSocket } from "./lib/socket.js";
+
+type DeploymentNoticeStatus = "started" | "complete" | "failed";
+
+const deploymentNoticeCopy: Record<DeploymentNoticeStatus, { title: string; detail: string }> = {
+  started: {
+    title: "Updating InTouch",
+    detail: "We're deploying a new version. Some actions may pause briefly.",
+  },
+  complete: {
+    title: "Update complete",
+    detail: "Everything should be back to normal.",
+  },
+  failed: {
+    title: "Update taking longer than expected",
+    detail: "Please wait a moment and try again.",
+  },
+};
+
+function DeploymentNotice() {
+  const { user } = useAuth();
+  const [status, setStatus] = useState<DeploymentNoticeStatus | null>(null);
+  const hideTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const socket = getSocket();
+    function onDeploymentStatus(payload: { status?: unknown }) {
+      if (payload.status !== "started" && payload.status !== "complete" && payload.status !== "failed") return;
+      const nextStatus = payload.status;
+      setStatus(nextStatus);
+      if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = window.setTimeout(() => {
+        setStatus(null);
+        hideTimerRef.current = null;
+      }, nextStatus === "started" ? 120_000 : 5_000);
+    }
+
+    socket.on("deployment:status", onDeploymentStatus);
+    return () => {
+      socket.off("deployment:status", onDeploymentStatus);
+      if (hideTimerRef.current !== null) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+    };
+  }, [user?.id]);
+
+  if (!status) return null;
+  const copy = deploymentNoticeCopy[status];
+  const colors = status === "started"
+    ? "border-amber-300 bg-amber-50 text-amber-950"
+    : status === "failed"
+      ? "border-red-300 bg-red-50 text-red-950"
+      : "border-emerald-300 bg-emerald-50 text-emerald-950";
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`fixed inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] z-[80] mx-auto flex max-w-xl items-start gap-3 rounded-xl border px-4 py-3 shadow-lg ${colors}`}
+    >
+      <span aria-hidden="true" className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-current" />
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">{copy.title}</span>
+        <span className="mt-0.5 block text-xs leading-5 opacity-85">{copy.detail}</span>
+      </span>
+      <button
+        type="button"
+        onClick={() => setStatus(null)}
+        aria-label="Dismiss update notice"
+        className="-mr-1 -mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg leading-none opacity-70 transition-opacity hover:opacity-100"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading, bootError, retryBootstrap } = useAuth();
@@ -66,6 +144,7 @@ function AppRoutes() {
   const showMobileNav = !!user && location.pathname !== "/login" && location.pathname !== "/register";
   return (
     <>
+    <DeploymentNotice />
     <div key={location.pathname} className="route-enter">
       <Suspense fallback={<AppBootSkeleton />}>
         <Routes>
