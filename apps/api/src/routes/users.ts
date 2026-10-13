@@ -16,11 +16,31 @@ import { ownsMedia } from "../mediaAccess.js";
 
 const DEFAULT_LIMIT = 20;
 const USER_DIRECTORY_LIMIT = 20;
+const CURRENT_UPDATE_NOTICE_VERSION = 1;
 const updateUserPreferencesSchema = z.object({
   translationLanguage: z.enum(TRANSLATION_LANGUAGE_CODES),
 }).strict();
 
 export async function userRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/users/me/update-notice", { preHandler: requireAuth }, async (request, reply) => {
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: request.userId! },
+      select: { updateNoticeVersion: true },
+    });
+    return reply.send({ shouldShow: user.updateNoticeVersion < CURRENT_UPDATE_NOTICE_VERSION });
+  });
+
+  app.post("/users/me/update-notice/acknowledge", { preHandler: requireAuth }, async (_request, reply) => {
+    await prisma.user.updateMany({
+      where: { id: _request.userId!, updateNoticeVersion: { lt: CURRENT_UPDATE_NOTICE_VERSION } },
+      data: { updateNoticeVersion: CURRENT_UPDATE_NOTICE_VERSION },
+    });
+    app.io.to(`user:${_request.userId!}`).emit("update-notice:acknowledged", {
+      version: CURRENT_UPDATE_NOTICE_VERSION,
+    });
+    return reply.code(204).send();
+  });
+
   app.get("/users/me/preferences", { preHandler: requireAuth }, async (request, reply) => {
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: request.userId! },

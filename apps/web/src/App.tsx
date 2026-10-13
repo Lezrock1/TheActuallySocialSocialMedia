@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 const LoginPage = lazy(() => import("./pages/LoginPage.js"));
 const RegisterPage = lazy(() => import("./pages/RegisterPage.js"));
@@ -27,6 +28,7 @@ import LocalMeetupReminderProvider from "./components/LocalMeetupReminderProvide
 import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
 import { AppBootSkeleton } from "./components/LoadingSkeleton.js";
 import { getSocket } from "./lib/socket.js";
+import { apiFetch } from "./lib/api.js";
 
 type DeploymentNoticeStatus = "started" | "complete" | "failed";
 
@@ -105,6 +107,84 @@ function DeploymentNotice() {
   );
 }
 
+function NewUpdateNotice() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const queryKey = ["update-notice", user?.id, 1];
+  const { data } = useQuery({
+    queryKey,
+    queryFn: () => apiFetch<{ shouldShow: boolean }>("/users/me/update-notice"),
+    enabled: !!user,
+    staleTime: Infinity,
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.id;
+    const socket = getSocket();
+    function onAcknowledged(payload: { version?: unknown }) {
+      if (payload.version === 1) queryClient.setQueryData(["update-notice", userId, 1], { shouldShow: false });
+    }
+    socket.on("update-notice:acknowledged", onAcknowledged);
+    return () => {
+      socket.off("update-notice:acknowledged", onAcknowledged);
+    };
+  }, [user?.id, queryClient]);
+
+  async function acknowledge() {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await apiFetch("/users/me/update-notice/acknowledge", { method: "POST" });
+      queryClient.setQueryData(queryKey, { shouldShow: false });
+    } catch {
+      setError("Could not save this yet. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!user || !data?.shouldShow) return null;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-gray-950/40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-[2px] sm:items-center sm:px-4 sm:py-6">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-update-title"
+        className="menu-enter w-full max-w-md overflow-hidden rounded-xl border border-gray-200 bg-white shadow-[0_24px_70px_-20px_rgba(15,23,42,0.45)]"
+      >
+        <div className="border-b border-emerald-100 bg-emerald-50/70 px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
+          <span aria-hidden="true" className="mb-3 flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-white text-lg">🍒</span>
+          <h2 id="new-update-title" className="text-xl font-bold text-gray-950">New Update🍒</h2>
+          <p className="mt-1 text-sm text-gray-600">A few new ways to stay connected.</p>
+        </div>
+        <div className="px-5 py-4 sm:px-6">
+          <ul className="space-y-3">
+            <li className="flex gap-3 text-sm leading-5 text-gray-700"><span className="mt-0.5 text-emerald-700">•</span><span><b className="text-gray-900">Messages</b> — A cleaner layout on mobile and desktop.</span></li>
+            <li className="flex gap-3 text-sm leading-5 text-gray-700"><span className="mt-0.5 text-emerald-700">•</span><span><b className="text-gray-900">Online status</b> — A green ring shows when chat contacts are online.</span></li>
+            <li className="flex gap-3 text-sm leading-5 text-gray-700"><span className="mt-0.5 text-emerald-700">•</span><span><b className="text-gray-900">Snaps</b> — Streaks that need your reply show first.</span></li>
+            <li className="flex gap-3 text-sm leading-5 text-gray-700"><span className="mt-0.5 text-emerald-700">•</span><span><b className="text-gray-900">Moments</b> — Daily Moments now live in Stories.</span></li>
+            <li className="flex gap-3 text-sm leading-5 text-gray-700"><span className="mt-0.5 text-emerald-700">•</span><span><b className="text-gray-900">Music</b> — Share a track, drop a mix, listen together and compare taste.</span></li>
+          </ul>
+          {error && <p role="alert" className="mt-3 text-xs text-red-600">{error}</p>}
+          <button
+            type="button"
+            onClick={() => void acknowledge()}
+            disabled={saving}
+            className="mt-5 min-h-11 w-full rounded-full bg-emerald-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Got it"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading, bootError, retryBootstrap } = useAuth();
   if (loading) return <AppBootSkeleton />;
@@ -146,6 +226,7 @@ function AppRoutes() {
   const showMobileNav = !!user && location.pathname !== "/login" && location.pathname !== "/register";
   return (
     <>
+    <NewUpdateNotice />
     <DeploymentNotice />
     <div key={location.pathname} className="route-enter">
       <Suspense fallback={<AppBootSkeleton />}>

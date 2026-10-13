@@ -22,6 +22,7 @@ model User {
   // last post the user has scrolled to -> drives the "you're all caught up" marker
   lastSeenPostId        String?
   lastSeenPostCreatedAt DateTime?
+  updateNoticeVersion  Int      @default(0)
 
   posts             Post[]
   comments          Comment[]
