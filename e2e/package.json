@@ -1,0 +1,14 @@
+{
+  "name": "intouch-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install:browsers": "playwright install chromium webkit",
+    "shots": "playwright test",
+    "shots:iphone": "playwright test --project=iphone",
+    "seed": "node seed.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

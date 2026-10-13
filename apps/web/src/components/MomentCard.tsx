@@ -187,7 +187,7 @@ export default function MomentCard() {
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold text-gray-900">Today's Moment</h2>
-          <p className="text-xs leading-5 text-gray-500">Could happen any minute. We'll ping you when it's time.</p>
+          <p className="text-xs leading-5 text-gray-500">A surprise, any minute now.</p>
         </div>
         <Flame count={summary.currentStreak} />
       </section>

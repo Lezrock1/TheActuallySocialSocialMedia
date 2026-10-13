@@ -415,7 +415,7 @@ export default function FeedPage() {
         )}
         {composerError && <p role="alert" className="text-xs text-red-600">{composerError}</p>}
         <div
-          className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${composerOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+          className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out ${composerOpen ? "grid-rows-[1fr] opacity-100" : "-mt-2.5 grid-rows-[0fr] opacity-0"}`}
           aria-hidden={!composerOpen}
         >
           <div className="min-h-0 overflow-hidden">

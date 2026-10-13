@@ -15,3 +15,4 @@ backups
 !.env.production.example
 *.log
 *.tsbuildinfo
+e2e
