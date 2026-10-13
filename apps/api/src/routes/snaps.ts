@@ -197,18 +197,44 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
   // Snaps sent to the current user that haven't been viewed or expired yet -
   // true view-once: once opened, a snap disappears from the inbox for good.
   app.get("/snaps/inbox", { preHandler: requireAuth }, async (request, reply) => {
+    const now = new Date();
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
     const recipientRows = await prisma.snapRecipient.findMany({
       where: {
         userId: request.userId!,
         viewedAt: null,
-        snap: { expiresAt: { gt: new Date() } },
+        snap: { expiresAt: { gt: now } },
       },
       include: { snap: { include: { sender: true } } },
       orderBy: { snap: { createdAt: "desc" } },
     });
 
+    const recentViewedRows = await prisma.snapRecipient.findMany({
+      where: {
+        userId: request.userId!,
+        viewedAt: { gte: dayStart },
+        snap: { expiresAt: { gt: now } },
+      },
+      include: { snap: { include: { sender: true } } },
+      orderBy: { viewedAt: "desc" },
+      take: 40,
+    });
+
     return reply.send({
       snaps: recipientRows.map((r) => ({
+        id: r.snap.id,
+        sender: toPublicUser(r.snap.sender),
+        imageKey: r.snap.imageKey,
+        text: r.snap.isEncrypted ? null : r.snap.text,
+        isEncrypted: r.snap.isEncrypted,
+        encryptedPayload: r.snap.isEncrypted && r.snap.text
+          ? encryptedSnapPayloadSchema.parse(JSON.parse(r.snap.text))
+          : null,
+        createdAt: r.snap.createdAt.toISOString(),
+        viewedAt: r.viewedAt?.toISOString() ?? null,
+      })),
+      recentlyViewed: recentViewedRows.map((r) => ({
         id: r.snap.id,
         sender: toPublicUser(r.snap.sender),
         imageKey: r.snap.imageKey,

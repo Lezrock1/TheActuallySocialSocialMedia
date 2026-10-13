@@ -549,7 +549,6 @@ export default function StoriesBar() {
           </button>
         ))}
       </div>
-
       {viewing && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 px-3"

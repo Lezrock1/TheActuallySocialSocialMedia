@@ -244,7 +244,6 @@ export default function ProfilePage() {
       {profile && (
         <>
           <div className={`${card} mb-6 overflow-hidden !p-5`}>
-            <div aria-hidden="true" className="-mx-5 -mt-5 mb-4 h-14 rounded-b-2xl bg-[radial-gradient(120%_140%_at_0%_0%,#dbeafe_0%,#eff6ff_45%,#ffffff_100%)]" />
             <div className="flex items-center gap-4">
               <div className="shrink-0">
                 {profile.isMe && editing ? (

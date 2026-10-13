@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InboxSnap, PublicUser, SnapStreakSummary } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
@@ -17,9 +17,13 @@ import PullToRefresh from "../components/PullToRefresh.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
 import { activityList, activityRow, card, formatActivityTime } from "../lib/ui.js";
 
-async function fetchInbox(): Promise<InboxSnap[]> {
-  const res = await apiFetch<{ snaps: InboxSnap[] }>("/snaps/inbox");
-  return res.snaps;
+interface SnapInboxData {
+  snaps: InboxSnap[];
+  recentlyViewed: InboxSnap[];
+}
+
+async function fetchInbox(): Promise<SnapInboxData> {
+  return apiFetch<SnapInboxData>("/snaps/inbox");
 }
 
 async function fetchFollowing(username: string): Promise<PublicUser[]> {
@@ -32,25 +36,45 @@ async function fetchStreaks(): Promise<SnapStreakSummary[]> {
   return res.streaks;
 }
 
+function waitingWindowLabel(lastExchangeAt: string | null, nowMs: number): string | null {
+  if (!lastExchangeAt) return null;
+  const remainingMs = Date.parse(lastExchangeAt) + 24 * 60 * 60 * 1000 - nowMs;
+  if (remainingMs <= 0) return "now";
+  const totalMinutes = Math.ceil(remainingMs / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}h ${String(minutes).padStart(2, "0")}m` : `${minutes}m`;
+}
+
 export default function SnapsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [viewing, setViewing] = useState<InboxSnap | null>(null);
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
   const [viewingText, setViewingText] = useState("");
   const [viewingIsVideo, setViewingIsVideo] = useState(false);
+  const [viewerRevealed, setViewerRevealed] = useState(false);
   const [snapClosing, setSnapClosing] = useState(false);
   const closeTimerRef = useRef<number | null>(null);
   const [openingSnapId, setOpeningSnapId] = useState<string | null>(null);
   const [dragY, setDragY] = useState(0);
-  const dragRef = useRef<{ startY: number; moved: boolean } | null>(null);
+  const [dragX, setDragX] = useState(0);
+  const dragRef = useRef<{ startY: number; startX: number; moved: boolean; mode: "x" | "y" | null } | null>(null);
   const suppressClickRef = useRef(false);
   const [snapError, setSnapError] = useState<string | null>(null);
+  const [quickReplyText, setQuickReplyText] = useState("");
+  const [quickReplyBusy, setQuickReplyBusy] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
 
-  const { data: snaps = [] } = useQuery({
+  const { data: inbox } = useQuery({
     queryKey: ["snaps-inbox"],
     queryFn: fetchInbox,
   });
+  const snaps = inbox?.snaps ?? [];
+  const seenToday = inbox?.recentlyViewed ?? [];
   const { data: following = [] } = useQuery({
     queryKey: ["following", user?.username],
     queryFn: () => fetchFollowing(user!.username),
@@ -75,6 +99,15 @@ export default function SnapsPage() {
       return (aEntry.friend.displayName || aEntry.friend.username)
         .localeCompare(bEntry.friend.displayName || bEntry.friend.username);
     });
+  const dedupedSeenToday = useMemo(() => {
+    const unreadIds = new Set(snaps.map((snap) => snap.id));
+    return seenToday.filter((snap) => !unreadIds.has(snap.id));
+  }, [seenToday, snaps]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -121,9 +154,13 @@ export default function SnapsPage() {
       setViewingImageUrl(URL.createObjectURL(image));
       setViewingIsVideo(image.type.startsWith("video/"));
       setViewingText(caption);
+      setViewerRevealed(false);
       setSnapClosing(false);
       setDragY(0);
+      setDragX(0);
+      setQuickReplyText("");
       setViewing(snap);
+      window.setTimeout(() => setViewerRevealed(true), 180);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
         queryClient.invalidateQueries({ queryKey: ["snaps", "unread-count"] }),
@@ -143,23 +180,56 @@ export default function SnapsPage() {
       setViewingText("");
       setViewingIsVideo(false);
       setViewing(null);
+      setViewerRevealed(false);
       setSnapClosing(false);
       setDragY(0);
+      setDragX(0);
+      setQuickReplyText("");
       closeTimerRef.current = null;
     }, 220);
   }
 
+  async function quickReply(message: string) {
+    if (!viewing || !message.trim() || quickReplyBusy) return;
+    setQuickReplyBusy(true);
+    try {
+      const result = await apiFetch<{ conversationId: string }>("/conversations", {
+        method: "POST",
+        body: JSON.stringify({ username: viewing.sender.username }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      closeSnap();
+      navigate(`/dms?conversation=${result.conversationId}`, {
+        state: { draftMessage: message.trim() },
+      });
+    } catch {
+      setSnapError("Could not open quick reply. Please try again.");
+    } finally {
+      setQuickReplyBusy(false);
+    }
+  }
+
   function onViewerPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (snapClosing) return;
-    dragRef.current = { startY: event.clientY, moved: false };
+    dragRef.current = { startY: event.clientY, startX: event.clientX, moved: false, mode: null };
   }
 
   function onViewerPointerMove(event: React.PointerEvent<HTMLDivElement>) {
     const drag = dragRef.current;
     if (!drag) return;
-    const delta = event.clientY - drag.startY;
-    if (Math.abs(delta) > 8) drag.moved = true;
-    if (drag.moved) setDragY(Math.max(0, delta));
+    const deltaY = event.clientY - drag.startY;
+    const deltaX = event.clientX - drag.startX;
+    if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) drag.moved = true;
+    if (!drag.moved) return;
+
+    if (!drag.mode) drag.mode = Math.abs(deltaX) > Math.abs(deltaY) ? "x" : "y";
+    if (drag.mode === "x") {
+      setDragX(Math.max(0, deltaX));
+      setDragY(0);
+    } else {
+      setDragY(Math.max(0, deltaY));
+      setDragX(0);
+    }
   }
 
   function onViewerPointerEnd() {
@@ -168,13 +238,40 @@ export default function SnapsPage() {
     if (!drag?.moved) return;
     suppressClickRef.current = true;
     window.setTimeout(() => { suppressClickRef.current = false; }, 0);
-    if (dragY > 110) closeSnap();
-    else setDragY(0);
+    if (drag.mode === "x" && dragX > 95) {
+      setDragX(0);
+      void quickReply(quickReplyText.trim() || "👋");
+      return;
+    }
+    if (drag.mode === "y" && dragY > 110) closeSnap();
+    else {
+      setDragY(0);
+      setDragX(0);
+    }
   }
 
-  const dragStyle: React.CSSProperties | undefined = dragY > 0 && !snapClosing
-    ? { transform: `translateY(${dragY}px) scale(${Math.max(0.85, 1 - dragY / 1200)})`, animation: "none" }
+  const dragStyle: React.CSSProperties | undefined = (dragY > 0 || dragX > 0) && !snapClosing
+    ? {
+        transform: `translate(${dragX}px, ${dragY}px) scale(${Math.max(0.85, 1 - Math.max(dragY, dragX) / 1400)})`,
+        animation: "none",
+      }
     : undefined;
+
+  function startFriendLongPress(username: string) {
+    if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current);
+    longPressTriggeredRef.current = false;
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      navigate(`/snaps?camera=1&snapTo=${encodeURIComponent(username)}`);
+    }, 500);
+  }
+
+  function cancelFriendLongPress() {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-4 pb-28 sm:py-8 sm:pb-8">
@@ -195,11 +292,14 @@ export default function SnapsPage() {
         <aside className="flex min-w-0 flex-col gap-4">
           <section aria-label="Received Snaps" className={activityList}>
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-              <h2 className="text-sm font-bold text-gray-900">Received</h2>
+              <h2 className="text-sm font-bold text-gray-900">Snaps inbox</h2>
               <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-900">{snaps.length}</span>
             </div>
             {snapError && <p role="alert" className="px-4 pt-3 text-sm text-red-600">{snapError}</p>}
             <div className="max-h-80 overflow-y-auto">
+              <div className="px-4 pb-1 pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">New for you</p>
+              </div>
               {snaps.map((snap) => (
                 <button
                   key={snap.id}
@@ -224,7 +324,24 @@ export default function SnapsPage() {
                 </button>
               ))}
               {snaps.length === 0 && (
-                <p className="px-4 py-6 text-sm text-gray-500">You’re all caught up. New Snaps show up here.</p>
+                <p className="px-4 py-4 text-sm text-gray-500">You’re all caught up. New Snaps show up here.</p>
+              )}
+
+              <div className="px-4 pb-1 pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">Today’s activity</p>
+              </div>
+              {dedupedSeenToday.map((snap) => (
+                <div key={`seen-${snap.id}`} className="flex min-h-[58px] items-center gap-3 border-t border-gray-100 px-4 py-2.5">
+                  <Avatar avatarKey={snap.sender.avatarKey} username={snap.sender.username} size={40} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-gray-800">{snap.sender.displayName || `@${snap.sender.username}`}</span>
+                    <span className="block text-xs text-gray-500">Seen {formatActivityTime(snap.viewedAt || snap.createdAt)} · streak-relevant</span>
+                  </span>
+                  <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-500">Seen</span>
+                </div>
+              ))}
+              {dedupedSeenToday.length === 0 && (
+                <p className="px-4 pb-5 pt-1 text-xs text-gray-500">Seen Snaps from today appear here to keep streak context clear.</p>
               )}
             </div>
           </section>
@@ -241,9 +358,20 @@ export default function SnapsPage() {
             </div>
             <div>
               {friendsWithStreaks.map(({ friend, streak }) => (
-                <Link
+                <button
                   key={friend.id}
-                  to={`/u/${friend.username}`}
+                  type="button"
+                  onPointerDown={() => startFriendLongPress(friend.username)}
+                  onPointerUp={cancelFriendLongPress}
+                  onPointerCancel={cancelFriendLongPress}
+                  onPointerLeave={cancelFriendLongPress}
+                  onClick={() => {
+                    if (longPressTriggeredRef.current) {
+                      longPressTriggeredRef.current = false;
+                      return;
+                    }
+                    navigate(`/u/${friend.username}`);
+                  }}
                   className={activityRow}
                 >
                   <Avatar avatarKey={friend.avatarKey} username={friend.username} size={38} />
@@ -253,7 +381,7 @@ export default function SnapsPage() {
                     </span>
                     <span className="block truncate text-xs text-gray-500">
                       {streak?.waitingForYou
-                        ? "They sent a Snap. Send one back!"
+                        ? `They sent a Snap. Reply in ${waitingWindowLabel(streak.lastExchangeAt, nowMs) ?? "time"}.`
                         : streak?.waitingForThem
                           ? "Your turn is done. Waiting for them."
                           : streak?.currentStreak
@@ -266,7 +394,7 @@ export default function SnapsPage() {
                   <span className={`shrink-0 text-sm font-bold ${streak?.currentStreak ? "text-orange-600" : "text-gray-400"}`}>
                     🔥 {streak?.currentStreak ?? 0}
                   </span>
-                </Link>
+                </button>
               ))}
               {friendsWithStreaks.length === 0 && (
                 <p className="px-4 py-5 text-sm text-gray-500">Follow friends to see them here and start a Snap streak.</p>
@@ -287,8 +415,8 @@ export default function SnapsPage() {
       {viewing && (
         <div
           className={`fixed inset-0 z-50 flex touch-none select-none flex-col items-center justify-center bg-black ${snapClosing ? "snap-viewer-exit" : "snap-viewer-enter"}`}
-          style={dragY > 0 && !snapClosing
-            ? { backgroundColor: `rgba(0,0,0,${Math.max(0.35, 1 - dragY / 500)})`, animation: "none" }
+          style={(dragY > 0 || dragX > 0) && !snapClosing
+            ? { backgroundColor: `rgba(0,0,0,${Math.max(0.35, 1 - Math.max(dragY, dragX) / 500)})`, animation: "none" }
             : undefined}
           role="dialog"
           aria-modal="true"
@@ -313,6 +441,11 @@ export default function SnapsPage() {
               ×
             </button>
           </div>
+          {dragX > 0 && !snapClosing && (
+            <div className="pointer-events-none absolute right-4 top-1/2 z-20 -translate-y-1/2 rounded-full bg-white/18 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
+              Swipe right to reply
+            </div>
+          )}
           {viewingIsVideo ? (
             <video
               src={viewingImageUrl ?? undefined}
@@ -322,7 +455,7 @@ export default function SnapsPage() {
               loop
               onClick={(event) => event.stopPropagation()}
               style={dragStyle}
-              className={`max-h-screen max-w-full object-contain ${snapClosing ? "snap-media-exit" : "snap-media-enter"}`}
+              className={`max-h-screen max-w-full object-contain transition-[filter,opacity,transform] duration-200 ${viewerRevealed ? "opacity-100 blur-0" : "opacity-85 blur-sm"} ${snapClosing ? "snap-media-exit" : "snap-media-enter"}`}
             />
           ) : (
           <img
@@ -330,7 +463,7 @@ export default function SnapsPage() {
             alt=""
             onClick={(event) => event.stopPropagation()}
             style={dragStyle}
-            className={`max-h-screen max-w-full object-contain ${snapClosing ? "snap-media-exit" : "snap-media-enter"}`}
+            className={`max-h-screen max-w-full object-contain transition-[filter,opacity,transform] duration-200 ${viewerRevealed ? "opacity-100 blur-0" : "opacity-85 blur-sm"} ${snapClosing ? "snap-media-exit" : "snap-media-enter"}`}
           />
           )}
           {viewing.isEncrypted && (
@@ -340,10 +473,51 @@ export default function SnapsPage() {
             </div>
           )}
           {viewingText && (
-            <p className="absolute bottom-10 max-w-[90vw] rounded-full bg-black/60 px-4 py-2 text-center text-white">
+            <p className="absolute bottom-[9.25rem] max-w-[90vw] rounded-full bg-black/60 px-4 py-2 text-center text-white">
               {viewingText}
             </p>
           )}
+          <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-14" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {[
+                "Bin dabei",
+                "Später",
+                "😂",
+              ].map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => void quickReply(chip)}
+                  disabled={quickReplyBusy}
+                  className="min-h-8 rounded-full border border-white/35 bg-white/10 px-3 text-xs font-semibold text-white backdrop-blur transition-colors hover:bg-white/20 disabled:opacity-50"
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void quickReply(quickReplyText);
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                value={quickReplyText}
+                onChange={(event) => setQuickReplyText(event.target.value)}
+                placeholder="Quick reply"
+                maxLength={4000}
+                className="min-h-10 min-w-0 flex-1 rounded-full border border-white/35 bg-black/25 px-4 text-sm text-white placeholder:text-white/70 focus:border-white focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!quickReplyText.trim() || quickReplyBusy}
+                className="min-h-10 rounded-full bg-white px-4 text-xs font-semibold text-black disabled:opacity-50"
+              >
+                {quickReplyBusy ? "..." : "Reply"}
+              </button>
+            </form>
+          </div>
         </div>
       )}
     </div>

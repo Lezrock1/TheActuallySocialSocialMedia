@@ -571,6 +571,8 @@ export interface ConversationMessage {
   createdAt: string;
   // ciphertext attachment of a voice message
   mediaKey?: string | null;
+  // sender-visible transport state; pending is local-only in the web app.
+  deliveryState?: "pending" | "sent" | "delivered" | "read";
 }
 
 export interface ConversationMessagesPage {

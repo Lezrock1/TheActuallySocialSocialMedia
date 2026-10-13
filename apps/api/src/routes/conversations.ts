@@ -17,6 +17,12 @@ import { ownsMedia } from "../mediaAccess.js";
 const DEFAULT_MESSAGES_LIMIT = 40;
 const MAX_MESSAGES_LIMIT = 100;
 
+function messageIdFromDedupeKey(dedupeKey: string): string | null {
+  if (!dedupeKey.startsWith("message:")) return null;
+  const parts = dedupeKey.split(":");
+  return parts.length >= 3 ? parts[1] : null;
+}
+
 export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     "/conversations",
@@ -192,6 +198,31 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       const nextCursor = hasMore ? pageRows[pageRows.length - 1]?.id ?? null : null;
       const messages = [...pageRows].reverse();
 
+      const memberIds = await prisma.conversationMember.findMany({
+        where: { conversationId: request.params.id },
+        select: { userId: true },
+      });
+      const messageIds = messages.map((message) => message.id);
+      const receipts = messageIds.length
+        ? await prisma.notification.findMany({
+            where: {
+              conversationId: request.params.id,
+              type: "message",
+              OR: messageIds.map((id) => ({ dedupeKey: { startsWith: `message:${id}:` } })),
+            },
+            select: { dedupeKey: true, readAt: true },
+          })
+        : [];
+      const receiptByMessage = new Map<string, { delivered: number; read: number }>();
+      for (const receipt of receipts) {
+        const messageId = messageIdFromDedupeKey(receipt.dedupeKey);
+        if (!messageId) continue;
+        const state = receiptByMessage.get(messageId) ?? { delivered: 0, read: 0 };
+        state.delivered += 1;
+        if (receipt.readAt) state.read += 1;
+        receiptByMessage.set(messageId, state);
+      }
+
       return reply.send({
         messages: messages.map((m) => ({
           id: m.id,
@@ -203,6 +234,14 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
             : null,
           createdAt: m.createdAt.toISOString(),
           mediaKey: m.mediaKey,
+          deliveryState: (() => {
+            const recipientCount = memberIds.filter((member) => member.userId !== m.senderId).length;
+            if (recipientCount <= 0) return "sent" as const;
+            const receipt = receiptByMessage.get(m.id);
+            if (receipt?.read === recipientCount) return "read" as const;
+            if (receipt?.delivered === recipientCount) return "delivered" as const;
+            return "sent" as const;
+          })(),
         })),
         nextCursor,
       });
@@ -310,6 +349,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         encryptedPayload,
         createdAt: message.createdAt.toISOString(),
         mediaKey,
+        deliveryState: "sent" as const,
       };
 
       const members = await prisma.conversationMember.findMany({

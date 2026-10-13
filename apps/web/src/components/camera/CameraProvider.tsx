@@ -23,9 +23,11 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [momentMode, setMomentMode] = useState(false);
+  const [initialSnapRecipient, setInitialSnapRecipient] = useState<string | null>(null);
 
   const openCamera = useCallback(() => {
     setMomentMode(false);
+    setInitialSnapRecipient(null);
     setOpen(true);
   }, []);
   const openMoment = useCallback(() => {
@@ -46,8 +48,10 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     const params = new URLSearchParams(location.search);
     const wantsMoment = params.get("moment") === "1";
+    const snapTo = params.get("snapTo");
     if (params.get("camera") !== "1" && !wantsMoment) return;
     setMomentMode(wantsMoment);
+    setInitialSnapRecipient(!wantsMoment && snapTo ? snapTo.replace(/^@/, "") : null);
     setOpen(true);
     navigate(location.pathname, { replace: true });
   }, [location.pathname, location.search, navigate, user]);
@@ -57,7 +61,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
       {children}
       {open && user && (
         <Suspense fallback={<div className="fixed inset-0 z-[60] bg-black" />}>
-          <CameraStudio momentMode={momentMode} onClose={() => setOpen(false)} />
+          <CameraStudio initialSnapRecipient={initialSnapRecipient} momentMode={momentMode} onClose={() => setOpen(false)} />
         </Suspense>
       )}
     </CameraContext.Provider>

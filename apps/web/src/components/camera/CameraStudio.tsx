@@ -26,6 +26,51 @@ interface SnapFriendEntry {
   isNew: boolean;
 }
 
+interface SnapQueueItem {
+  id: string;
+  body: {
+    imageKey: string;
+    text?: string;
+    encryptedPayload?: unknown;
+    recipientUsernames: string[];
+  };
+  queuedAt: string;
+  retries: number;
+}
+
+const SNAP_QUEUE_KEY = "intouch:snap-send-queue";
+
+function loadSnapQueue(): SnapQueueItem[] {
+  try {
+    const raw = localStorage.getItem(SNAP_QUEUE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSnapQueue(queue: SnapQueueItem[]): void {
+  localStorage.setItem(SNAP_QUEUE_KEY, JSON.stringify(queue.slice(0, 50)));
+}
+
+function enqueueSnap(body: SnapQueueItem["body"]): void {
+  const next = [...loadSnapQueue(), {
+    id: crypto.randomUUID(),
+    body,
+    queuedAt: new Date().toISOString(),
+    retries: 0,
+  }];
+  saveSnapQueue(next);
+}
+
+function isLikelyNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const text = error.message.toLocaleLowerCase();
+  return text.includes("failed to fetch") || text.includes("network") || text.includes("load failed");
+}
+
 // Top 3 = most recent Snap contacts; new friends follow right after; slots 4-5 are sometimes shuffled.
 function orderSnapFriends(
   friends: PublicUser[],
@@ -89,7 +134,15 @@ function ShareTargetButton({
   );
 }
 
-export default function CameraStudio({ onClose, momentMode = false }: { onClose: () => void; momentMode?: boolean }) {
+export default function CameraStudio({
+  onClose,
+  momentMode = false,
+  initialSnapRecipient = null,
+}: {
+  onClose: () => void;
+  momentMode?: boolean;
+  initialSnapRecipient?: string | null;
+}) {
   const { user } = useAuth();
   const [theme] = useThemePreference();
   const dark = theme === "dark";
@@ -104,6 +157,8 @@ export default function CameraStudio({ onClose, momentMode = false }: { onClose:
   const [missingKeys, setMissingKeys] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [queueInfo, setQueueInfo] = useState<string | null>(null);
+  const [queueSize, setQueueSize] = useState(() => loadSnapQueue().length);
   const isVideo = !!file?.type.startsWith("video/");
 
   const { data: followingData } = useQuery({
@@ -140,6 +195,56 @@ export default function CameraStudio({ onClose, momentMode = false }: { onClose:
     friend.displayName?.toLocaleLowerCase().includes(normalizedSearch)
   );
 
+  useEffect(() => {
+    if (!initialSnapRecipient || momentMode) return;
+    setTarget("snap");
+    setRecipients([initialSnapRecipient]);
+    setFriendSearch("");
+  }, [initialSnapRecipient, momentMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function flushSnapQueue() {
+      const queue = loadSnapQueue();
+      if (queue.length === 0) {
+        if (!cancelled) setQueueSize(0);
+        return;
+      }
+      const remaining: SnapQueueItem[] = [];
+      for (const item of queue) {
+        try {
+          await apiFetch("/snaps", { method: "POST", body: JSON.stringify(item.body) });
+        } catch (caught) {
+          if (isLikelyNetworkError(caught)) {
+            remaining.push({ ...item, retries: item.retries + 1 });
+            break;
+          }
+        }
+      }
+      saveSnapQueue(remaining);
+      if (!cancelled) {
+        setQueueSize(remaining.length);
+        if (remaining.length === 0) {
+          setQueueInfo("Queued Snaps have been sent.");
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
+            queryClient.invalidateQueries({ queryKey: ["snap-streaks"] }),
+          ]);
+        }
+      }
+    }
+
+    void flushSnapQueue();
+    const interval = window.setInterval(() => { void flushSnapQueue(); }, 20_000);
+    const onOnline = () => { void flushSnapQueue(); };
+    window.addEventListener("online", onOnline);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [queryClient]);
+
   function closeStudio() {
     if (sending) return;
     setFile(null);
@@ -160,8 +265,10 @@ export default function CameraStudio({ onClose, momentMode = false }: { onClose:
     if (!file || (target === "snap" && recipients.length === 0)) return;
     setSending(true);
     setError(null);
+    setQueueInfo(null);
     setMissingKeys([]);
     try {
+      let queued = false;
       const resized = isVideo ? file : await resizeImageForUpload(file);
       if (target === "snap") {
         if (!user) throw new Error("Sign in to send a Snap.");
@@ -183,17 +290,35 @@ export default function CameraStudio({ onClose, momentMode = false }: { onClose:
         }
         if (allowUnencrypted) {
           const imageKey = await uploadMedia(resized, { resize: false });
-          await apiFetch("/snaps", {
-            method: "POST",
-            body: JSON.stringify({ imageKey, text: caption.trim() || undefined, recipientUsernames: recipients }),
-          });
+          const body = { imageKey, text: caption.trim() || undefined, recipientUsernames: recipients };
+          try {
+            await apiFetch("/snaps", {
+              method: "POST",
+              body: JSON.stringify(body),
+            });
+          } catch (caught) {
+            if (!isLikelyNetworkError(caught)) throw caught;
+            enqueueSnap(body);
+            setQueueSize(loadSnapQueue().length);
+            setQueueInfo("No connection right now. Your Snap was queued and will retry automatically.");
+            queued = true;
+          }
         } else {
           const { encryptedImage, payload } = await encryptSnap(resized, caption, keyResponse.keys);
           const imageKey = await uploadMedia(encryptedImage, { resize: false });
-          await apiFetch("/snaps", {
-            method: "POST",
-            body: JSON.stringify({ imageKey, encryptedPayload: payload, recipientUsernames: recipients }),
-          });
+          const body = { imageKey, encryptedPayload: payload, recipientUsernames: recipients };
+          try {
+            await apiFetch("/snaps", {
+              method: "POST",
+              body: JSON.stringify(body),
+            });
+          } catch (caught) {
+            if (!isLikelyNetworkError(caught)) throw caught;
+            enqueueSnap(body);
+            setQueueSize(loadSnapQueue().length);
+            setQueueInfo("No connection right now. Your encrypted Snap was queued and will retry automatically.");
+            queued = true;
+          }
         }
       } else {
         if (target === "moment") {
@@ -237,7 +362,7 @@ export default function CameraStudio({ onClose, momentMode = false }: { onClose:
       setFriendSearch("");
       setMissingKeys([]);
       setError(null);
-      onClose();
+      if (!queued) onClose();
     } catch (caught) {
       setError(caught instanceof Error ? `${caught.message} · Try again.` : "Could not share this photo or video.");
     } finally {
@@ -391,6 +516,12 @@ export default function CameraStudio({ onClose, momentMode = false }: { onClose:
                 <button type="button" onClick={() => setMissingKeys([])} className={`min-h-9 rounded-xl border px-2 font-semibold ${dark ? "border-amber-100/25" : "border-amber-300 bg-white"}`}>Wait for keys</button>
                 <button type="button" onClick={() => void share(true)} disabled={sending} className="min-h-9 rounded-xl bg-amber-300 px-2 font-semibold text-amber-950 disabled:opacity-50">Send unencrypted</button>
               </div>
+            </div>
+          )}
+          {(queueInfo || queueSize > 0) && (
+            <div role="status" className={`mt-3 shrink-0 rounded-2xl border p-3 text-xs leading-5 ${dark ? "border-cyan-300/30 bg-cyan-500/10 text-cyan-100" : "border-cyan-200 bg-cyan-50 text-cyan-900"}`}>
+              <p className="font-semibold">{queueInfo || `${queueSize} queued Snap${queueSize === 1 ? "" : "s"} waiting for connection.`}</p>
+              {queueSize > 0 && <p className="mt-1">They retry automatically while this screen is open and when you come back online.</p>}
             </div>
           )}
           {error && <p role="alert" className={`mt-3 shrink-0 text-sm ${dark ? "text-red-300" : "text-red-700"}`}>{error}</p>}

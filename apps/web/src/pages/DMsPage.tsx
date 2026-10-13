@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -66,6 +66,37 @@ import type { AudioRecording } from "../lib/useAudioRecorder.js";
 import { MAX_VOICE_MESSAGE_MS } from "@app/shared";
 
 const MESSAGE_PAGE_LIMIT = 40;
+const PINNED_CHATS_KEY = "intouch:pinned-chats";
+const UNREAD_FIRST_KEY = "intouch:unread-first";
+
+interface PendingMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  text: string;
+  createdAt: string;
+  mediaKey?: string | null;
+}
+
+interface ReplyTarget {
+  id: string;
+  senderUsername: string;
+  text: string;
+}
+
+function extractLinks(text: string): string[] {
+  const matches = text.match(/https?:\/\/[^\s]+/g);
+  if (!matches) return [];
+  return [...new Set(matches)].slice(0, 6);
+}
+
+function labelForDeliveryState(state: ConversationMessage["deliveryState"] | undefined): string {
+  if (!state) return "Sent";
+  if (state === "read") return "Read";
+  if (state === "delivered") return "Delivered";
+  if (state === "pending") return "Pending";
+  return "Sent";
+}
 
 function formatClock(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -158,12 +189,28 @@ export default function DMsPage() {
   const topAutoLoadReadyRef = useRef(true);
   const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number; count: number } | null>(null);
   const lastVisibleMessageIdRef = useRef<string | null>(null);
+  const unreadAnchoredConversationRef = useRef<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeId, setActiveId] = useState<string | null>(() => searchParams.get("conversation"));
   const [chatSearch, setChatSearch] = useState("");
   const [chatFilter, setChatFilter] = useState<"all" | "unread" | "groups">("all");
+  const [pinnedChatIds, setPinnedChatIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(PINNED_CHATS_KEY);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [unreadFirst, setUnreadFirst] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(UNREAD_FIRST_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [friendSearch, setFriendSearch] = useState("");
   const [friendPickerOpen, setFriendPickerOpen] = useState(false);
   const [selectedGroupUsernames, setSelectedGroupUsernames] = useState<string[]>([]);
@@ -187,6 +234,15 @@ export default function DMsPage() {
   const [safetyVersion, setSafetyVersion] = useState(0);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [rsvpBusy, setRsvpBusy] = useState<string | null>(null);
+  const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  const [initialUnreadCount, setInitialUnreadCount] = useState(0);
+  const [actionMessageId, setActionMessageId] = useState<string | null>(null);
+  const [messageReactions, setMessageReactions] = useState<Record<string, string>>({});
+  const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
+  const replySwipeRef = useRef<{ id: string; startX: number; startY: number; mode: "x" | "y" | null } | null>(null);
+  const longPressRef = useRef<number | null>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const recorder = useAudioRecorder({ maxMs: MAX_VOICE_MESSAGE_MS, onFinished: (recording) => void sendVoice(recording) });
 
   useEffect(() => {
@@ -194,6 +250,14 @@ export default function DMsPage() {
     setActiveId(null);
     setMessageView("live_rooms");
   }, [searchParams]);
+
+  useEffect(() => {
+    localStorage.setItem(PINNED_CHATS_KEY, JSON.stringify(pinnedChatIds.slice(0, 30)));
+  }, [pinnedChatIds]);
+
+  useEffect(() => {
+    localStorage.setItem(UNREAD_FIRST_KEY, unreadFirst ? "1" : "0");
+  }, [unreadFirst]);
 
   useEffect(() => {
     const state = location.state as {
@@ -271,11 +335,15 @@ export default function DMsPage() {
   const messages = [...messagePages].reverse().flatMap((page) => page.messages);
   const messagesLoaded = messagesQuery.isSuccess;
   const newestMessageId = messages[messages.length - 1]?.id ?? null;
+  const unreadAnchorMessageId = initialUnreadCount > 0
+    ? messages[Math.max(0, messages.length - initialUnreadCount)]?.id ?? null
+    : null;
 
   useLayoutEffect(() => {
     if (!activeId) {
       // Reopening the same chat must pin to the newest message again.
       scrolledConversationRef.current = null;
+      unreadAnchoredConversationRef.current = null;
       return;
     }
     if (!messagesLoaded || !messageScrollRef.current) return;
@@ -309,6 +377,16 @@ export default function DMsPage() {
       container.scrollTop = container.scrollHeight;
     }
   }, [activeId, decryptedMessages, messages.length, messagesLoaded, newestMessageId]);
+
+  useLayoutEffect(() => {
+    if (!activeId || !messagesLoaded || !messageScrollRef.current) return;
+    if (initialUnreadCount <= 0 || !unreadAnchorMessageId) return;
+    if (unreadAnchoredConversationRef.current === activeId) return;
+    const target = messageRefs.current[unreadAnchorMessageId];
+    if (!target) return;
+    unreadAnchoredConversationRef.current = activeId;
+    target.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [activeId, initialUnreadCount, messagesLoaded, unreadAnchorMessageId]);
 
   // Late layout changes (decryption, thumbnails) keep the view on the newest message until the user scrolls.
   function pinToBottomFor(durationMs: number) {
@@ -350,6 +428,15 @@ export default function DMsPage() {
   useEffect(() => {
     if (!messageText && composerInputRef.current) composerInputRef.current.style.height = "";
   }, [messageText]);
+
+  useEffect(() => {
+    if (!activeId) {
+      setInitialUnreadCount(0);
+      return;
+    }
+    const unread = conversations.find((conversation) => conversation.id === activeId)?.unreadCount ?? 0;
+    setInitialUnreadCount(unread);
+  }, [activeId, conversations]);
   const { data: encryptionKeys = [], isError: encryptionKeysError } = useQuery({
     queryKey: ["conversation-encryption-keys", activeId],
     queryFn: () => fetchEncryptionKeys(activeId!),
@@ -360,19 +447,32 @@ export default function DMsPage() {
   const callConversation = conversations.find((conversation) => conversation.id === callConversationId);
   const canCall = !!activeConversation && activeConversation.members.length >= 2 && activeConversation.members.length <= MAX_LIVE_ROOM_PARTICIPANTS;
   const normalizedChatSearch = chatSearch.trim().replace(/^@/, "").toLocaleLowerCase();
-  const visibleConversations = conversations.filter((conversation) => {
-    if (chatFilter === "unread" && conversation.unreadCount === 0) return false;
-    if (chatFilter === "groups" && !conversation.isGroup) return false;
-    if (!normalizedChatSearch) return true;
-    const conversationText = [
-      conversation.name ?? "",
-      conversation.otherMember?.username ?? "",
-      conversation.otherMember?.displayName ?? "",
-      conversation.members.map((member) => member.username).join(" "),
-      conversation.lastMessage && !conversation.lastMessage.isEncrypted ? conversation.lastMessage.text ?? "" : "",
-    ].join(" ").toLocaleLowerCase();
-    return conversationText.includes(normalizedChatSearch);
-  });
+  const pinnedSet = useMemo(() => new Set(pinnedChatIds), [pinnedChatIds]);
+  const visibleConversations = useMemo(() => {
+    const filtered = conversations.filter((conversation) => {
+      if (chatFilter === "unread" && conversation.unreadCount === 0) return false;
+      if (chatFilter === "groups" && !conversation.isGroup) return false;
+      if (!normalizedChatSearch) return true;
+      const conversationText = [
+        conversation.name ?? "",
+        conversation.otherMember?.username ?? "",
+        conversation.otherMember?.displayName ?? "",
+        conversation.members.map((member) => member.username).join(" "),
+        conversation.lastMessage && !conversation.lastMessage.isEncrypted ? conversation.lastMessage.text ?? "" : "",
+      ].join(" ").toLocaleLowerCase();
+      return conversationText.includes(normalizedChatSearch);
+    });
+
+    return filtered.sort((a, b) => {
+      const aPinned = pinnedSet.has(a.id);
+      const bPinned = pinnedSet.has(b.id);
+      if (aPinned !== bPinned) return aPinned ? -1 : 1;
+      if (unreadFirst && a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
+      const aTime = a.lastMessage ? Date.parse(a.lastMessage.createdAt) : 0;
+      const bTime = b.lastMessage ? Date.parse(b.lastMessage.createdAt) : 0;
+      return bTime - aTime;
+    });
+  }, [chatFilter, conversations, normalizedChatSearch, pinnedSet, unreadFirst]);
   const membersWithKeys = new Set(encryptionKeys.map((key) => key.userId));
   const allMembersHaveKeys = !!activeConversation &&
     activeConversation.members.length > 0 &&
@@ -382,6 +482,30 @@ export default function DMsPage() {
     parsed: parseMessageContent(message.isEncrypted ? decryptedMessages[message.id] ?? "" : message.text ?? ""),
     decrypting: message.isEncrypted && decryptedMessages[message.id] === undefined,
   }));
+  const visibleParsedMessages = parsedMessages.filter(({ message }) => !hiddenMessageIds.has(message.id));
+  const visiblePendingMessages = pendingMessages
+    .filter((pending) => pending.conversationId === activeId)
+    .map((pending) => ({
+      message: pending,
+      parsed: parseMessageContent(pending.text),
+      decrypting: false,
+      pending: true,
+    }));
+  const sharedLinkTargets = useMemo(() => {
+    const links: string[] = [];
+    for (const { parsed } of visibleParsedMessages) {
+      if (parsed.kind !== "text") continue;
+      links.push(...extractLinks(parsed.text));
+    }
+    return [...new Set(links)].slice(0, 4);
+  }, [visibleParsedMessages]);
+  const sharedMediaKeys = useMemo(() => {
+    return visibleParsedMessages
+      .map(({ parsed }) => parsed.kind === "voice" ? parsed.voice.mediaKey : null)
+      .filter((item): item is string => Boolean(item))
+      .slice(-3)
+      .reverse();
+  }, [visibleParsedMessages]);
   const attendance = computeMeetupAttendance(
     parsedMessages.map(({ message, parsed }) => ({ senderId: message.senderId, parsed }))
   );
@@ -467,6 +591,13 @@ export default function DMsPage() {
     document.addEventListener("pointerdown", closeOnOutsidePointer);
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, [friendPickerOpen]);
+
+  useEffect(() => () => {
+    if (longPressRef.current !== null) {
+      window.clearTimeout(longPressRef.current);
+      longPressRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -583,21 +714,44 @@ export default function DMsPage() {
     setMessageError(null);
     const draft = messageText;
     const replyContext = storyReplyContext;
+    const activeReplyTarget = replyTarget;
+    const wrappedReply = activeReplyTarget
+      ? `↪ @${activeReplyTarget.senderUsername}: ${activeReplyTarget.text}\n${draft.trim()}`
+      : draft.trim();
+    const pendingId = `pending-${crypto.randomUUID()}`;
+    const pendingText = replyContext
+      ? JSON.stringify({
+          type: "story_reply",
+          story: replyContext,
+          text: wrappedReply,
+        })
+      : wrappedReply;
+    setPendingMessages((current) => [...current, {
+      id: pendingId,
+      conversationId: activeId,
+      senderId: user?.id ?? "",
+      text: pendingText,
+      createdAt: new Date().toISOString(),
+    }]);
     // Clear right away so the next message can be typed while this one is still being sent.
     setMessageText("");
     setStoryReplyContext(null);
+    setReplyTarget(null);
     try {
       const messageContent = replyContext
         ? JSON.stringify({
             type: "story_reply",
             story: replyContext,
-            text: draft.trim(),
+            text: wrappedReply,
           })
-        : draft.trim();
+        : wrappedReply;
       await sendEncrypted(messageContent);
+      setPendingMessages((current) => current.filter((message) => message.id !== pendingId));
     } catch (error) {
+      setPendingMessages((current) => current.filter((message) => message.id !== pendingId));
       setMessageText((current) => current || draft);
       setStoryReplyContext(replyContext);
+      setReplyTarget(activeReplyTarget);
       setMessageError(error instanceof Error ? error.message : "Could not encrypt this message");
     }
   }
@@ -687,6 +841,56 @@ export default function DMsPage() {
       setRsvpBusy(null);
     }
   }
+
+  function togglePinnedChat(conversationId: string) {
+    setPinnedChatIds((current) => current.includes(conversationId)
+      ? current.filter((id) => id !== conversationId)
+      : [conversationId, ...current]);
+  }
+
+  function onMessagePointerDown(messageId: string, event: React.PointerEvent<HTMLDivElement>) {
+    if (!activeConversation) return;
+    replySwipeRef.current = { id: messageId, startX: event.clientX, startY: event.clientY, mode: null };
+    if (longPressRef.current !== null) window.clearTimeout(longPressRef.current);
+    longPressRef.current = window.setTimeout(() => {
+      setActionMessageId(messageId);
+      replySwipeRef.current = null;
+    }, 420);
+  }
+
+  function onMessagePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const swipe = replySwipeRef.current;
+    if (!swipe) return;
+    const deltaX = event.clientX - swipe.startX;
+    const deltaY = event.clientY - swipe.startY;
+    if (!swipe.mode && (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10)) {
+      swipe.mode = Math.abs(deltaX) > Math.abs(deltaY) ? "x" : "y";
+      if (longPressRef.current !== null) {
+        window.clearTimeout(longPressRef.current);
+        longPressRef.current = null;
+      }
+    }
+  }
+
+  function onMessagePointerUp(messageId: string, senderUsername: string, text: string, event: React.PointerEvent<HTMLDivElement>) {
+    const swipe = replySwipeRef.current;
+    replySwipeRef.current = null;
+    if (longPressRef.current !== null) {
+      window.clearTimeout(longPressRef.current);
+      longPressRef.current = null;
+    }
+    if (!swipe || swipe.id !== messageId || swipe.mode !== "x") return;
+    const deltaX = event.clientX - swipe.startX;
+    if (deltaX > 72) {
+      setReplyTarget({ id: messageId, senderUsername, text: text.trim().slice(0, 120) || "message" });
+      composerInputRef.current?.focus();
+    }
+  }
+
+  const renderedMessages = [
+    ...visibleParsedMessages.map((entry) => ({ ...entry, pending: false })),
+    ...visiblePendingMessages,
+  ];
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
@@ -871,60 +1075,80 @@ export default function DMsPage() {
                 >
                   Groups
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setUnreadFirst((value) => !value)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${unreadFirst ? "border-emerald-700 bg-emerald-700 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                >
+                  Unread first
+                </button>
               </div>
             </div>
           )}
           {messageView === "chats" && <div className={activityList}>
             {visibleConversations.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setActiveId(c.id)}
-                className={`${activityRow} relative`}
-              >
-                {c.isGroup ? (
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700">
-                    {c.members.length}
-                  </span>
-                ) : (
-                  <Avatar
-                    avatarKey={c.otherMember?.avatarKey ?? null}
-                    username={c.otherMember?.username ?? "?"}
-                    size={44}
-                  />
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <span className={`min-w-0 flex-1 truncate text-sm text-gray-900 ${c.unreadCount > 0 ? "font-bold" : "font-semibold"}`}>
-                      {c.isGroup
-                        ? c.name ?? c.members.map((member) => `@${member.username}`).join(", ")
-                        : `@${c.otherMember?.username ?? "Unknown"}`}
+              <div key={c.id} className={`${activityRow} relative ${pinnedSet.has(c.id) ? "bg-amber-50/60" : ""}`}>
+                <button
+                  type="button"
+                  onClick={() => setActiveId(c.id)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  {c.isGroup ? (
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700">
+                      {c.members.length}
                     </span>
-                    {c.lastMessage && (
-                      <time className={`shrink-0 text-[11px] ${c.unreadCount > 0 ? "font-semibold text-green-600" : "text-gray-400"}`}>
-                        {formatActivityTime(c.lastMessage.createdAt)}
-                      </time>
-                    )}
-                  </span>
-                  <span className="mt-0.5 flex min-w-0 items-center gap-2">
-                    {c.lastMessage?.isEncrypted && (
-                      <span aria-hidden="true" className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500">
-                        <svg viewBox="0 0 24 24" fill="none" className="h-2.5 w-2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+                  ) : (
+                    <Avatar
+                      avatarKey={c.otherMember?.avatarKey ?? null}
+                      username={c.otherMember?.username ?? "?"}
+                      size={44}
+                    />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className={`min-w-0 flex-1 truncate text-sm text-gray-900 ${c.unreadCount > 0 ? "font-bold" : "font-semibold"}`}>
+                        {c.isGroup
+                          ? c.name ?? c.members.map((member) => `@${member.username}`).join(", ")
+                          : `@${c.otherMember?.username ?? "Unknown"}`}
                       </span>
-                    )}
-                    <span className={`min-w-0 flex-1 truncate text-[13px] leading-5 ${c.unreadCount > 0 ? "font-medium text-gray-800" : "text-gray-500"}`}>
-                      {c.lastMessage ? (c.lastMessage.isEncrypted ? "End-to-end encrypted message" : c.lastMessage.text) : "No messages yet"}
+                      {pinnedSet.has(c.id) && <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Pinned</span>}
+                      {c.lastMessage && (
+                        <time className={`shrink-0 text-[11px] ${c.unreadCount > 0 ? "font-semibold text-green-600" : "text-gray-400"}`}>
+                          {formatActivityTime(c.lastMessage.createdAt)}
+                        </time>
+                      )}
                     </span>
-                    {c.unreadCount > 0 && (
-                      <span
-                        aria-label={`${c.unreadCount} unread messages`}
-                        className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-green-600 px-1.5 text-[11px] font-bold text-white"
-                      >
-                        {c.unreadCount > 99 ? "99+" : c.unreadCount}
+                    <span className="mt-0.5 flex min-w-0 items-center gap-2">
+                      {c.lastMessage?.isEncrypted && (
+                        <span aria-hidden="true" className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500">
+                          <svg viewBox="0 0 24 24" fill="none" className="h-2.5 w-2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+                        </span>
+                      )}
+                      <span className={`min-w-0 flex-1 truncate text-[13px] leading-5 ${c.unreadCount > 0 ? "font-medium text-gray-800" : "text-gray-500"}`}>
+                        {c.lastMessage ? (c.lastMessage.isEncrypted ? "End-to-end encrypted message" : c.lastMessage.text) : "No messages yet"}
                       </span>
-                    )}
+                      {c.unreadCount > 0 && (
+                        <span
+                          aria-label={`${c.unreadCount} unread messages`}
+                          className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-green-600 px-1.5 text-[11px] font-bold text-white"
+                        >
+                          {c.unreadCount > 99 ? "99+" : c.unreadCount}
+                        </span>
+                      )}
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => togglePinnedChat(c.id)}
+                  aria-label={pinnedSet.has(c.id) ? "Unpin chat" : "Pin chat"}
+                  className={`ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${pinnedSet.has(c.id) ? "bg-amber-100 text-amber-800" : "text-gray-400 hover:bg-gray-100 hover:text-gray-700"}`}
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                    <path d="m14 3 7 7-2.2 2.2-1.4-1.4-4.7 4.7v5.3L11 22v-5.4L6.4 12l-1.6 1.6L3 11.8 10 5h4Z" />
+                  </svg>
+                </button>
+              </div>
             ))}
             {visibleConversations.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-gray-500">No conversations yet.</p>
@@ -1035,6 +1259,31 @@ export default function DMsPage() {
             {encryptionKeysError && (
               <p role="alert" className="mx-4 mt-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
+            {(sharedMediaKeys.length > 0 || sharedLinkTargets.length > 0) && (
+              <div className="mx-auto flex w-full max-w-2xl items-center gap-2 overflow-x-auto border-b border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-600 sm:px-[max(0.75rem,calc((100%-42rem)/2))]">
+                {sharedMediaKeys.map((mediaKey) => (
+                  <button
+                    key={mediaKey}
+                    type="button"
+                    onClick={() => setMessageText((current) => `${current ? `${current}\n` : ""}${mediaUrl(mediaKey)}`)}
+                    className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 hover:bg-gray-100"
+                  >
+                    Voice clip
+                  </button>
+                ))}
+                {sharedLinkTargets.map((link) => (
+                  <a
+                    key={link}
+                    href={link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="max-w-[210px] shrink-0 truncate rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 hover:bg-gray-100"
+                  >
+                    {link.replace(/^https?:\/\//, "")}
+                  </a>
+                ))}
+              </div>
+            )}
             <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-3 sm:px-[max(0.75rem,calc((100%-42rem)/2))]">
               {messagesQuery.isPending && (
                 <div aria-hidden="true" className="space-y-2 px-1 py-2">
@@ -1055,11 +1304,12 @@ export default function DMsPage() {
                   </button>
                 </div>
               )}
-              {parsedMessages.map(({ message, parsed, decrypting }, messageIndex) => {
+              {renderedMessages.map(({ message, parsed, decrypting, pending }, messageIndex) => {
                 if (parsed.kind === "rsvp" || parsed.kind === "meetup_cancel") return null;
                 const mine = message.senderId === user?.id;
+                const isPending = pending;
                 const sender = activeConversation?.members.find((member) => member.id === message.senderId);
-                const previousMessage = parsedMessages[messageIndex - 1]?.message;
+                const previousMessage = renderedMessages[messageIndex - 1]?.message;
                 const startsNewDay = !previousMessage || dayKey(previousMessage.createdAt) !== dayKey(message.createdAt);
                 const startsGroup = startsNewDay || previousMessage.senderId !== message.senderId;
                 const dayDivider = startsNewDay ? (
@@ -1068,7 +1318,7 @@ export default function DMsPage() {
                   </div>
                 ) : null;
 
-                if (parsed.kind === "meetup") {
+                if (parsed.kind === "meetup" && !isPending) {
                   const state = meetupStates.get(parsed.meetup.id);
                   if (parsed.event === "updated" && state?.sourceMessageId !== message.id) return null;
                   if (state && state.sourceMessageId !== message.id) return null;
@@ -1112,12 +1362,36 @@ export default function DMsPage() {
                   );
                 }
 
+                const replyPreview = parsed.kind === "text"
+                  ? parsed.text.slice(0, 180)
+                  : parsed.kind === "voice"
+                    ? "Voice message"
+                    : "Message";
+
                 return (
                   <Fragment key={message.id}>
                   {dayDivider}
                   <div
-                    className={`chat-bubble ${startsGroup ? "mt-2" : ""} ${mine ? "chat-bubble-mine self-end" : "chat-bubble-theirs self-start"}`}
+                    ref={(node) => {
+                      messageRefs.current[message.id] = node;
+                    }}
+                    onPointerDown={(event) => onMessagePointerDown(message.id, event)}
+                    onPointerMove={onMessagePointerMove}
+                    onPointerUp={(event) => onMessagePointerUp(message.id, sender?.username ?? "someone", replyPreview, event)}
+                    onPointerCancel={() => {
+                      replySwipeRef.current = null;
+                      if (longPressRef.current !== null) {
+                        window.clearTimeout(longPressRef.current);
+                        longPressRef.current = null;
+                      }
+                    }}
+                    className={`chat-bubble transition-transform ${startsGroup ? "mt-2" : ""} ${mine ? "chat-bubble-mine self-end" : "chat-bubble-theirs self-start"} ${isPending ? "opacity-75" : ""}`}
                   >
+                    {unreadAnchorMessageId === message.id && (
+                      <div className="-mt-1 mb-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                        New messages
+                      </div>
+                    )}
                     {!mine && startsGroup && activeConversation?.isGroup && (
                       <span className="mb-0.5 block text-[12px] font-semibold text-emerald-700">@{sender?.username ?? "someone"}</span>
                     )}
@@ -1144,18 +1418,90 @@ export default function DMsPage() {
                     )}
                     {parsed.kind === "voice" ? (
                       <VoiceMessage voice={parsed.voice} tone="light" />
-                    ) : (
+                    ) : parsed.kind === "text" ? (
                       <p className="whitespace-pre-wrap">{decrypting ? "Decrypting message..." : parsed.text}</p>
+                    ) : parsed.kind === "meetup" ? (
+                      <p className="whitespace-pre-wrap">Meetup: {parsed.meetup.title}</p>
+                    ) : (
+                      <p className="whitespace-pre-wrap">Message</p>
+                    )}
+                    {messageReactions[message.id] && (
+                      <div className="mt-1 inline-flex rounded-full bg-black/8 px-2 py-0.5 text-xs">
+                        {messageReactions[message.id]}
+                      </div>
                     )}
                     <div className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] leading-4 opacity-60">
-                      {!message.isEncrypted && <span className="font-semibold text-red-600">Not encrypted</span>}
+                      {"isEncrypted" in message && !message.isEncrypted && <span className="font-semibold text-red-600">Not encrypted</span>}
+                      {mine && (
+                        <span className="font-semibold text-gray-600">{isPending ? "Pending" : labelForDeliveryState((message as ConversationMessage).deliveryState)}</span>
+                      )}
                       <time dateTime={message.createdAt}>{formatClock(message.createdAt)}</time>
                     </div>
+                    {actionMessageId === message.id && (
+                      <div className="mt-2 flex flex-wrap gap-1.5 rounded-xl border border-black/10 bg-white/95 p-1.5 text-xs text-gray-700 shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(replyPreview).catch(() => undefined);
+                            setActionMessageId(null);
+                          }}
+                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
+                        >
+                          Copy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReplyTarget({ id: message.id, senderUsername: sender?.username ?? "someone", text: replyPreview.slice(0, 120) });
+                            setActionMessageId(null);
+                            composerInputRef.current?.focus();
+                          }}
+                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
+                        >
+                          Reply
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessageText((current) => `${current ? `${current}\n` : ""}Fwd: ${replyPreview}`);
+                            setActionMessageId(null);
+                            composerInputRef.current?.focus();
+                          }}
+                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
+                        >
+                          Forward
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHiddenMessageIds((current) => {
+                              const next = new Set(current);
+                              next.add(message.id);
+                              return next;
+                            });
+                            setActionMessageId(null);
+                          }}
+                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
+                        >
+                          Delete for me
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessageReactions((current) => ({ ...current, [message.id]: "❤️" }));
+                            setActionMessageId(null);
+                          }}
+                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
+                        >
+                          React ❤️
+                        </button>
+                      </div>
+                    )}
                   </div>
                   </Fragment>
                 );
               })}
-              {messages.length === 0 && (
+              {renderedMessages.length === 0 && (
                 <p className="self-center rounded-full bg-white/90 px-3 py-1 text-xs text-gray-500 shadow-sm">No messages yet. Say hi!</p>
               )}
               {showJumpToLatest && (
@@ -1200,6 +1546,26 @@ export default function DMsPage() {
               style={{ paddingBottom: keyboardOffset > 0 ? "0.5rem" : "max(0.5rem, env(safe-area-inset-bottom))" }}
             >
               <div className="mx-auto w-full max-w-2xl">
+              {replyTarget && (
+                <div className="mb-2 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                  <span className="min-w-0 flex-1 truncate">
+                    Replying to @{replyTarget.senderUsername}: {replyTarget.text}
+                  </span>
+                  <button type="button" onClick={() => setReplyTarget(null)} className="rounded-full px-2 py-0.5 text-emerald-800 hover:bg-emerald-100">Cancel</button>
+                </div>
+              )}
+              <div className="mb-2 flex gap-1.5 overflow-x-auto pb-0.5 text-xs">
+                {["On my way", "Seen", "Call you in 5", "😂"].map((chip) => (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => setMessageText((current) => current ? `${current} ${chip}` : chip)}
+                    className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-gray-700 hover:bg-gray-100"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
               {recorder.recording ? (
                 <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2">
                   <span className="record-pulse h-3 w-3 shrink-0 rounded-full bg-red-500" />
