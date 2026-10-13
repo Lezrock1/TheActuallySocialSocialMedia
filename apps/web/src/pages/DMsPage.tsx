@@ -331,6 +331,14 @@ export default function DMsPage() {
   }
 
   useEffect(() => {
+    if (!activeId) return;
+    document.body.dataset.chatOpen = "1";
+    return () => {
+      delete document.body.dataset.chatOpen;
+    };
+  }, [activeId]);
+
+  useEffect(() => {
     if (!messageText && composerInputRef.current) composerInputRef.current.style.height = "";
   }, [messageText]);
   const { data: encryptionKeys = [], isError: encryptionKeysError } = useQuery({
@@ -549,18 +557,23 @@ export default function DMsPage() {
     e.preventDefault();
     if (!messageText.trim() || !activeId || !deviceKeyReady) return;
     setMessageError(null);
+    const draft = messageText;
+    const replyContext = storyReplyContext;
+    // Clear right away so the next message can be typed while this one is still being sent.
+    setMessageText("");
+    setStoryReplyContext(null);
     try {
-      const messageContent = storyReplyContext
+      const messageContent = replyContext
         ? JSON.stringify({
             type: "story_reply",
-            story: storyReplyContext,
-            text: messageText.trim(),
+            story: replyContext,
+            text: draft.trim(),
           })
-        : messageText.trim();
+        : draft.trim();
       await sendEncrypted(messageContent);
-      setMessageText("");
-      setStoryReplyContext(null);
     } catch (error) {
+      setMessageText((current) => current || draft);
+      setStoryReplyContext(replyContext);
       setMessageError(error instanceof Error ? error.message : "Could not encrypt this message");
     }
   }
@@ -653,7 +666,7 @@ export default function DMsPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
-      <PullToRefresh enabled={!call.activeCall && !call.incomingCall} onRefresh={async () => {
+      <PullToRefresh enabled={!activeId && !call.activeCall && !call.incomingCall} onRefresh={async () => {
         const refreshes = [
           queryClient.invalidateQueries({ queryKey: ["conversations"] }),
           queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] }),
@@ -705,7 +718,7 @@ export default function DMsPage() {
               if (groupMode) void startGroup();
               else if (matchingFriends[0]) void startConversation(matchingFriends[0].username);
             }}
-            className={`${card} mb-4 flex flex-col gap-3`}
+            className="mb-3 flex flex-col gap-3"
           >
             {groupMode && (
               <input
@@ -724,7 +737,7 @@ export default function DMsPage() {
                   setFriendPickerOpen(true);
                 }}
                 placeholder={groupMode ? "Search friends to add" : "Search friends by name or @username"}
-                className={`${input} w-full`}
+                className={`${input} w-full rounded-full px-4`}
                 role="combobox"
                 aria-expanded={friendPickerOpen}
                 aria-controls="message-friend-results"
@@ -841,45 +854,61 @@ export default function DMsPage() {
             )}
           </div>}
           {messageView === "chats" && (
-            <div className="mt-4 border-t border-gray-100 pt-3 text-[11px] leading-5 text-gray-500">
-              <p>{deviceKeyReady ? "This device is ready for encrypted messages." : "Preparing encrypted messaging for this device."}</p>
-              <p>Device keys stay in this browser; clearing its data can make encrypted history unreadable.</p>
-            </div>
+            <p className="mt-4 flex items-center justify-center gap-1.5 px-4 text-center text-[11px] leading-5 text-gray-500">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-3 w-3 shrink-0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+              {deviceKeyReady ? "Your messages are end-to-end encrypted on this device." : "Preparing encrypted messaging for this device."}
+            </p>
           )}
           {messageView === "live_rooms" && <LiveRoomsBar />}
         </div>}
 
         {activeId && (
-          <section key={activeId} className="message-conversation-enter w-full" aria-label="Conversation">
-            <div className="mb-3 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveId(null);
-                  setSearchParams({});
-                }}
-                className="flex h-10 shrink-0 items-center gap-1 rounded-full px-2 text-sm font-medium text-gray-600 transition-[background-color,transform] hover:bg-gray-100 hover:text-black active:scale-95"
-              >
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6M9 12h11" /></svg>
-                <span className="hidden min-[380px]:inline">Messages</span>
-              </button>
-              {!activeConversation?.isGroup && activeConversation?.otherMember && (
-                <Avatar avatarKey={activeConversation.otherMember.avatarKey} username={activeConversation.otherMember.username} size={36} />
-              )}
-              <h2 className="min-w-0 truncate text-sm font-semibold">
-                {activeConversation?.isGroup
-                  ? activeConversation.name ?? activeConversation.members.map((member) => `@${member.username}`).join(", ")
-                  : `@${activeConversation?.otherMember?.username ?? "Conversation"}`}
-              </h2>
-              <div className="ml-auto flex shrink-0 items-center gap-1">
+          <section
+            key={activeId}
+            className="message-conversation-enter fixed inset-x-0 top-0 z-[56] flex flex-col bg-gray-50"
+            style={{ bottom: keyboardOffset }}
+            aria-label="Conversation"
+          >
+            <div className="shrink-0 border-b border-gray-200 bg-white/95 backdrop-blur-xl">
+              <div className="mx-auto flex w-full max-w-2xl items-center gap-1.5 px-1.5 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveId(null);
+                    setSearchParams({});
+                  }}
+                  aria-label="Back to Messages"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-700 transition-[background-color,transform] hover:bg-gray-100 active:scale-90"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-6 w-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+                </button>
+                {activeConversation?.isGroup ? (
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-700">
+                    {activeConversation.members.length}
+                  </span>
+                ) : activeConversation?.otherMember ? (
+                  <Avatar avatarKey={activeConversation.otherMember.avatarKey} username={activeConversation.otherMember.username} size={40} />
+                ) : null}
+                <div className="min-w-0 flex-1 pl-1">
+                  <h2 className="truncate text-[15px] font-semibold leading-5 text-gray-900">
+                    {activeConversation?.isGroup
+                      ? activeConversation.name ?? activeConversation.members.map((member) => `@${member.username}`).join(", ")
+                      : `@${activeConversation?.otherMember?.username ?? "Conversation"}`}
+                  </h2>
+                  <p className={`truncate text-[11px] leading-4 ${deviceKeyReady && allMembersHaveKeys && !encryptionKeysError ? "text-green-700" : "text-amber-700"}`}>
+                    {deviceKeyReady && allMembersHaveKeys && !encryptionKeysError
+                      ? (activeConversation?.isGroup ? `${activeConversation.members.length} members · end-to-end encrypted` : "End-to-end encrypted")
+                      : "Not ready for encryption yet"}
+                  </p>
+                </div>
                 <button
                   type="button"
                   onClick={() => setSecurityOpen(true)}
                   aria-label="Security code"
                   title={securityStatus === "verified" ? "Security code verified" : securityStatus === "changed" ? "Security code changed" : "Verify security code"}
-                  className={`relative flex h-9 w-9 items-center justify-center rounded-full border hover:bg-gray-50 ${securityStatus === "changed" ? "border-amber-300 text-amber-700" : securityStatus === "verified" ? "border-green-300 text-green-700" : "border-gray-200 text-gray-600"}`}
+                  className={`relative flex h-10 w-10 items-center justify-center rounded-full transition-[background-color,transform] hover:bg-gray-100 active:scale-90 ${securityStatus === "changed" ? "text-amber-700" : securityStatus === "verified" ? "text-green-700" : "text-gray-600"}`}
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[20px] w-[20px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 3 5 6v5.5c0 4.2 2.9 7.6 7 9.5 4.1-1.9 7-5.3 7-9.5V6l-7-3Z" />
                     {securityStatus === "verified" && <path d="m9 12 2.2 2.2L15.5 10" />}
                     {securityStatus === "changed" && <path d="M12 8.5v4M12 15.5h.01" />}
@@ -891,9 +920,9 @@ export default function DMsPage() {
                   disabled={!canCall || !!call.activeCall || !!call.incomingCall}
                   aria-label="Start audio call"
                   title="Audio call"
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-gray-600 transition-[background-color,transform] hover:bg-gray-100 active:scale-90 disabled:opacity-40"
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[20px] w-[20px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M6.6 3.5h3l1.5 4.2-2 1.5a14 14 0 0 0 5.7 5.7l1.5-2 4.2 1.5v3a1.6 1.6 0 0 1-1.8 1.6A16.7 16.7 0 0 1 4.9 5.3 1.6 1.6 0 0 1 6.6 3.5Z" />
                   </svg>
                 </button>
@@ -903,36 +932,19 @@ export default function DMsPage() {
                   disabled={!canCall || !!call.activeCall || !!call.incomingCall}
                   aria-label="Start video call"
                   title="Video call"
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-gray-600 transition-[background-color,transform] hover:bg-gray-100 active:scale-90 disabled:opacity-40"
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[20px] w-[20px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="6" width="12" height="12" rx="2" />
                     <path d="m15 10 6-3v10l-6-3" />
                   </svg>
                 </button>
               </div>
             </div>
-            <EncryptionNotice encrypted={deviceKeyReady && allMembersHaveKeys && !encryptionKeysError}>
-              {deviceKeyReady && allMembersHaveKeys && !encryptionKeysError
-                ? "End-to-end encryption is ready for this conversation."
-                : "This conversation is not ready for end-to-end encryption."}
-            </EncryptionNotice>
-            <details className="mb-3 mt-1 text-[11px] text-gray-600">
-              <summary className="cursor-pointer">Key verification and device limits</summary>
-              <p className="mt-1">
-                Tap the shield above to compare a short security code with each participant. The server distributes public keys, so without that check a malicious server could substitute a key.
-                Keys are stored only in this browser, and newly added devices cannot read earlier messages.
-              </p>
-              {encryptionKeys.map((key) => (
-                <p key={key.fingerprint} className="mt-1 break-all font-mono">
-                  {activeConversation?.members.find((member) => member.id === key.userId)?.username ?? "Device"}: {key.fingerprint}
-                </p>
-              ))}
-            </details>
             {encryptionKeysError && (
-              <p role="alert" className="mb-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
+              <p role="alert" className="mx-4 mt-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
-            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className={`${card} mb-3 flex max-h-[min(68dvh,calc(100dvh-15rem))] min-h-[42dvh] flex-col gap-0.5 overflow-y-auto overscroll-contain sm:max-h-[65vh] sm:min-h-40`}>
+            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-3 py-3 sm:px-[max(0.75rem,calc((100%-42rem)/2))]">
               {messagesQuery.hasNextPage && (
                 <div className="self-center pb-1 pt-0.5">
                   <button
@@ -1059,9 +1071,9 @@ export default function DMsPage() {
                 </button>
               )}
             </div>
-            {messageError && <p role="alert" className="mb-2 text-xs text-red-600">{messageError}</p>}
+            {messageError && <p role="alert" className="shrink-0 bg-red-50 px-4 py-1.5 text-xs text-red-700">{messageError}</p>}
             {storyReplyContext && (
-              <div className="mb-2 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-2">
+              <div className="mx-auto flex w-full max-w-2xl shrink-0 items-center gap-3 border-t border-gray-200 bg-white p-2">
                 <img
                   src={mediaUrl(storyReplyContext.imageKey)}
                   alt={`Story by @${storyReplyContext.authorUsername}`}
@@ -1086,12 +1098,10 @@ export default function DMsPage() {
               </div>
             )}
             <div
-              className="sticky bottom-0 z-20 -mx-1 rounded-xl bg-white/90 px-1 pt-2 backdrop-blur"
-              style={{
-                paddingBottom: "max(0.35rem, env(safe-area-inset-bottom))",
-                transform: keyboardOffset > 0 ? `translateY(-${keyboardOffset}px)` : undefined,
-              }}
+              className="shrink-0 border-t border-gray-200 bg-white/95 px-2 pt-2 backdrop-blur-xl"
+              style={{ paddingBottom: keyboardOffset > 0 ? "0.5rem" : "max(0.5rem, env(safe-area-inset-bottom))" }}
             >
+              <div className="mx-auto w-full max-w-2xl">
               {recorder.recording ? (
                 <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2">
                   <span className="record-pulse h-3 w-3 shrink-0 rounded-full bg-red-500" />
@@ -1209,6 +1219,7 @@ export default function DMsPage() {
                   Voice recording is unavailable in this browser; encrypted text messages still work.
                 </p>
               )}
+              </div>
             </div>
           </section>
         )}

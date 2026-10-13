@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.js";
 import { enablePush, isIos, isStandalone, pushSupported } from "../lib/push.js";
 import { btnPrimary } from "../lib/ui.js";
@@ -11,6 +12,8 @@ interface InstallPromptEvent extends Event {
 type PromptMode = "install" | "notify";
 
 const SHOW_DELAY_MS = 2500;
+// Never cover the chat composer, camera or forms: the reminder only appears on these browse pages.
+const PROMPT_ROUTES = ["/", "/snaps", "/notifications"];
 const REMIND_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 function storageKey(userId: string, mode: PromptMode): string {
@@ -37,6 +40,8 @@ function markShown(userId: string, mode: PromptMode): void {
 // First login and then now and then: nudge to add the app to the home screen and to enable notifications.
 export default function DeviceSetupPrompt() {
   const { user } = useAuth();
+  const { pathname } = useLocation();
+  const allowedHere = PROMPT_ROUTES.includes(pathname);
   const [mode, setMode] = useState<PromptMode | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +57,7 @@ export default function DeviceSetupPrompt() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !allowedHere) return;
     const timeout = window.setTimeout(() => {
       const canInstall = !isStandalone() && (isIos() || !!installEventRef.current);
       if (canInstall && !wasShownRecently(user.id, "install")) {
@@ -63,9 +68,9 @@ export default function DeviceSetupPrompt() {
       if (canAskNotifications && !wasShownRecently(user.id, "notify")) setMode("notify");
     }, SHOW_DELAY_MS);
     return () => window.clearTimeout(timeout);
-  }, [user]);
+  }, [user, allowedHere]);
 
-  if (!user || !mode) return null;
+  if (!user || !mode || !allowedHere) return null;
 
   function dismiss() {
     if (user && mode) markShown(user.id, mode);

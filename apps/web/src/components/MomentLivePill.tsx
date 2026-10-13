@@ -13,6 +13,7 @@ export default function MomentLivePill() {
   return (
     <button
       type="button"
+      data-moment-pill
       onClick={camera.openMoment}
       aria-label={`Moment is live, ${formatCountdown(remainingMs)} left. Capture now`}
       className="menu-enter fixed left-1/2 top-[max(0.5rem,env(safe-area-inset-top))] z-[55] flex -translate-x-1/2 items-center gap-2 rounded-full bg-gradient-to-r from-fuchsia-600 via-pink-500 to-orange-400 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-fuchsia-900/30 transition-transform active:scale-95"

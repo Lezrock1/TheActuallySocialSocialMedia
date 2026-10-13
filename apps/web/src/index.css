@@ -296,6 +296,16 @@ a {
   to { transform: scaleX(0); }
 }
 
+/* An open chat takes over the whole screen, like a messaging app. */
+body[data-chat-open="1"] {
+  overflow: hidden;
+}
+
+body[data-chat-open="1"] nav[aria-label="Primary navigation"],
+body[data-chat-open="1"] [data-moment-pill] {
+  display: none;
+}
+
 .chat-bubble {
   max-width: 85%;
   overflow-wrap: anywhere;

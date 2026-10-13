@@ -56,12 +56,27 @@ async function uploadImage(cookie) {
 }
 
 // Idempotent: creates the demo accounts once and fills them with content when the feed is empty.
+async function seedConversations(sessions) {
+  const existing = await (await call("/conversations", { cookie: sessions.leo })).json();
+  if ((existing.conversations?.length ?? 0) > 0) return;
+  await call("/conversations", { method: "POST", cookie: sessions.leo, body: { username: "mia" } });
+  await call("/conversations", { method: "POST", cookie: sessions.noah, body: { username: "leo" } });
+  await call("/conversations/group", {
+    method: "POST",
+    cookie: sessions.ivy,
+    body: { name: "Weekend plans", usernames: ["leo", "mia", "noah"] },
+  });
+}
+
 export async function seed() {
   const sessions = {};
   if (await login(USERS[0])) {
     for (const username of USERS) sessions[username] = await login(username);
     const feed = await (await call("/feed", { cookie: sessions.leo })).json();
-    if ((feed.items?.length ?? 0) > 0) return;
+    if ((feed.items?.length ?? 0) > 0) {
+      await seedConversations(sessions);
+      return;
+    }
   } else {
     sessions[USERS[0]] = await register(USERS[0], BOOTSTRAP);
     for (const username of USERS.slice(1)) {
@@ -107,6 +122,7 @@ export async function seed() {
       body: { text: "Where is this?", imageKey: leoImage },
     });
   }
+  await seedConversations(sessions);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
