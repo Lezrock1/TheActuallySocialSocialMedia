@@ -296,14 +296,16 @@ a {
   to { transform: scaleX(0); }
 }
 
-/* An open chat takes over the whole screen, like a messaging app. */
-body[data-chat-open="1"] {
-  overflow: hidden;
-}
+/* On mobile, an open chat takes over the screen. Desktop keeps the workspace navigation. */
+@media (max-width: 1023px) {
+  body[data-chat-open="1"] {
+    overflow: hidden;
+  }
 
-body[data-chat-open="1"] nav[aria-label="Primary navigation"],
-body[data-chat-open="1"] [data-moment-pill] {
-  display: none;
+  body[data-chat-open="1"] nav[aria-label="Primary navigation"],
+  body[data-chat-open="1"] [data-moment-pill] {
+    display: none;
+  }
 }
 
 .chat-bubble {

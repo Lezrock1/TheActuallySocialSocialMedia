@@ -284,11 +284,6 @@ export default function SnapsPage() {
       ])} />
       <PageHeader title="Snaps" />
       <NavBar />
-      <div className="mb-4">
-        <p className="text-sm font-medium text-gray-600">
-          Send a Snap, keep a streak going.
-        </p>
-      </div>
 
       <main className="flex min-w-0 flex-col gap-4">
         <aside className="flex min-w-0 flex-col gap-4">
@@ -297,13 +292,17 @@ export default function SnapsPage() {
               <div>
                 <h2 className="text-sm font-bold text-gray-900">Your turn</h2>
                 <p className="mt-0.5 text-xs text-gray-600">
-                  {waitingFriends.length > 0
+                  {streaksLoading || followingLoading
+                    ? "Checking your streaks..."
+                    : waitingFriends.length > 0
                     ? "A quick reply keeps the streak going."
                     : "A little back-and-forth keeps streaks alive."}
                 </p>
               </div>
               <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${waitingFriends.length > 0 ? "bg-emerald-700 text-white" : "border border-emerald-200 bg-white text-emerald-800"}`}>
-                {waitingFriends.length > 0 ? `${waitingFriends.length} waiting` : "On track"}
+                {streaksLoading || followingLoading
+                  ? "Checking"
+                  : waitingFriends.length > 0 ? `${waitingFriends.length} waiting` : "On track"}
               </span>
             </div>
             {streaksLoading || followingLoading ? (
@@ -313,7 +312,7 @@ export default function SnapsPage() {
                 {waitingFriends.slice(0, 3).map(({ friend, streak }) => {
                   const remaining = waitingWindowLabel(streak?.lastExchangeAt ?? null, nowMs);
                   return (
-                    <div key={friend.id} className="flex min-h-[72px] items-center gap-3 border-b border-gray-100 px-3 py-2.5 last:border-b-0 sm:px-4">
+                    <div key={friend.id} className="flex min-h-[66px] items-center gap-3 border-b border-gray-100 px-3 py-2.5 last:border-b-0 sm:px-4">
                       <Avatar avatarKey={friend.avatarKey} username={friend.username} size={42} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold text-gray-900">
@@ -362,10 +361,7 @@ export default function SnapsPage() {
               <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{snaps.length} new</span>
             </div>
             {snapError && <p role="alert" className="px-4 pt-3 text-sm text-red-600">{snapError}</p>}
-            <div className="max-h-80 overflow-y-auto">
-              <div className="px-4 pb-1 pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">New for you</p>
-              </div>
+            <div>
               {snaps.map((snap) => (
                 <button
                   key={snap.id}
@@ -374,7 +370,9 @@ export default function SnapsPage() {
                   aria-busy={openingSnapId === snap.id}
                   className={activityRow}
                 >
-                  <Avatar avatarKey={snap.sender.avatarKey} username={snap.sender.username} size={44} />
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-yellow-400 bg-white p-0.5">
+                    <Avatar avatarKey={snap.sender.avatarKey} username={snap.sender.username} size={40} />
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-gray-900">{snap.sender.displayName || `@${snap.sender.username}`}</span>
                     <span className="block text-xs text-gray-500">New Snap · {formatActivityTime(snap.createdAt)}</span>
@@ -385,7 +383,7 @@ export default function SnapsPage() {
                   {openingSnapId === snap.id ? (
                     <span aria-label="Opening" className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-yellow-500 border-t-transparent" />
                   ) : (
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#FFFC00] ring-1 ring-yellow-500/60" aria-label="Unopened" />
+                    <span className="sr-only">Unopened</span>
                   )}
                 </button>
               ))}
@@ -412,16 +410,19 @@ export default function SnapsPage() {
             </div>
           </section>
 
-          <section aria-label="Snap streaks" className={activityList}>
-            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+          <details aria-label="All Snap streaks" className={`${activityList} group`}>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600 [&::-webkit-details-marker]:hidden">
               <div>
-                <h2 className="text-sm font-bold text-gray-900">Your streaks</h2>
-                <p className="mt-0.5 text-xs text-gray-500">All your contacts · reply to each other within 24 hours</p>
+                <h2 className="text-sm font-bold text-gray-900">All streaks</h2>
+                <p className="mt-0.5 text-xs text-gray-500">Your friends and their current streaks</p>
               </div>
-              <span aria-hidden="true" className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-bold text-orange-700">
+              <span className="flex shrink-0 items-center gap-2">
+                <span aria-hidden="true" className="rounded-full bg-orange-50 px-2 py-0.5 text-xs font-bold text-orange-700">
                 {waitingForYouCount > 0 ? `${waitingForYouCount} waiting` : "🔥 Active"}
+                </span>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
               </span>
-            </div>
+            </summary>
             <div>
               {friendsWithStreaks.map(({ friend, streak }) => (
                 <button
@@ -471,12 +472,15 @@ export default function SnapsPage() {
                 Best streaks are saved even after a current streak ends.
               </p>
             )}
-          </section>
+          </details>
         </aside>
       </main>
-      <p className="mt-4 text-[11px] leading-5 text-gray-500">
-        When all recipient devices have keys, Snap content is encrypted on your device before upload, so the server cannot read it. The server can still see the sender, recipients, and view times.
-      </p>
+      <details className="mt-4 text-[11px] leading-5 text-gray-500">
+        <summary className="w-fit cursor-pointer font-medium text-gray-500 underline decoration-gray-300 underline-offset-2">Snap privacy</summary>
+        <p className="mt-1.5 max-w-2xl">
+          When all recipient devices have keys, Snap content is encrypted on your device before upload, so the server cannot read it. The server can still see the sender, recipients, and view times.
+        </p>
+      </details>
 
       {viewing && (
         <div

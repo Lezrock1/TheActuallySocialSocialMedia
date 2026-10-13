@@ -501,12 +501,15 @@ export default function DMsPage() {
     });
 
     return filtered.sort((a, b) => {
+      const aTime = a.lastMessage ? Date.parse(a.lastMessage.createdAt) : 0;
+      const bTime = b.lastMessage ? Date.parse(b.lastMessage.createdAt) : 0;
+      const aDay = a.lastMessage ? new Date(a.lastMessage.createdAt).setHours(0, 0, 0, 0) : 0;
+      const bDay = b.lastMessage ? new Date(b.lastMessage.createdAt).setHours(0, 0, 0, 0) : 0;
+      if (aDay !== bDay) return bDay - aDay;
       const aPinned = pinnedSet.has(a.id);
       const bPinned = pinnedSet.has(b.id);
       if (aPinned !== bPinned) return aPinned ? -1 : 1;
       if (unreadFirst && a.unreadCount !== b.unreadCount) return b.unreadCount - a.unreadCount;
-      const aTime = a.lastMessage ? Date.parse(a.lastMessage.createdAt) : 0;
-      const bTime = b.lastMessage ? Date.parse(b.lastMessage.createdAt) : 0;
       return bTime - aTime;
     });
   }, [chatFilter, conversations, normalizedChatSearch, pinnedSet, unreadFirst]);
@@ -633,6 +636,7 @@ export default function DMsPage() {
 
   useEffect(() => {
     if (!friendPickerOpen) return;
+    friendSearchInputRef.current?.focus();
     function closeOnOutsidePointer(event: PointerEvent) {
       if (event.target instanceof Node && !friendPickerRef.current?.contains(event.target)) {
         setFriendPickerOpen(false);
@@ -957,7 +961,7 @@ export default function DMsPage() {
       {encryptionError && <p role="alert" className="mb-3 text-xs text-red-600">{encryptionError}</p>}
 
       <div className={activeId
-        ? "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(300px,360px)_minmax(0,1fr)] lg:items-start lg:gap-4"
+        ? "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(300px,340px)_minmax(0,1fr)] lg:items-start lg:gap-5 xl:grid-cols-[360px_minmax(0,1fr)]"
         : "flex flex-col gap-6"}>
         <div className={`w-full min-w-0 ${activeId ? "hidden lg:block" : ""}`}>
           <div role="tablist" aria-label="Messages view" className="mb-3 inline-flex max-w-full rounded-lg bg-gray-100 p-1">
@@ -992,7 +996,7 @@ export default function DMsPage() {
               <span className={hasJoinableLiveRoom ? "live-tab-pulse" : ""}>Live Rooms</span>
             </button>
           </div>
-          {messageView !== "live_rooms" && <form
+          {messageView !== "live_rooms" && (groupMode || friendPickerOpen) && <form
             onSubmit={(event) => {
               event.preventDefault();
               if (groupMode) void startGroup();
@@ -1105,39 +1109,39 @@ export default function DMsPage() {
                   New chat
                 </button>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
                 <button
                   type="button"
                   onClick={() => setChatFilter("all")}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "all" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "all" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
                 >
-                  All
+                  Recent
                 </button>
                 <button
                   type="button"
                   onClick={() => setChatFilter("unread")}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "unread" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "unread" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
                 >
                   Unread
                 </button>
                 <button
                   type="button"
                   onClick={() => setChatFilter("groups")}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "groups" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "groups" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
                 >
                   Groups
                 </button>
                 <button
                   type="button"
                   onClick={() => setUnreadFirst((value) => !value)}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${unreadFirst ? "border-emerald-700 bg-emerald-700 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${unreadFirst ? "border-emerald-700 bg-emerald-700 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
                 >
                   Unread first
                 </button>
               </div>
             </div>
           )}
-          {messageView === "chats" && <div className={activityList}>
+          {messageView === "chats" && <div className={`${activityList} ${activeId ? "lg:max-h-[calc(100dvh-19rem)] lg:overflow-y-auto lg:overscroll-contain" : ""}`}>
             {visibleConversations.map((c) => (
               <Fragment key={c.id}>
               {timelineDayStarts.has(c.id) && (
@@ -1146,7 +1150,7 @@ export default function DMsPage() {
                   <span className="h-px flex-1 bg-gray-100" />
                 </div>
               )}
-              <div className={`${activityRow} relative ${activeId === c.id ? "bg-emerald-50/70" : ""}`}>
+              <div className={`${activityRow} relative ${!activeId ? "before:absolute before:bottom-0 before:left-10 before:top-0 before:w-px before:bg-gray-100 before:content-[''] lg:before:hidden" : ""} ${activeId === c.id ? "bg-emerald-50/70" : ""}`}>
                 <button
                   type="button"
                   onClick={() => setActiveId(c.id)}
@@ -1157,7 +1161,7 @@ export default function DMsPage() {
                       {c.members.length}
                     </span>
                   ) : (
-                    <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${c.otherMember && onlineUserIds.has(c.otherMember.id) ? "ring-2 ring-emerald-500 ring-offset-1" : ""}`}>
+                    <span className={`relative z-[1] flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white ${c.otherMember && onlineUserIds.has(c.otherMember.id) ? "ring-2 ring-emerald-500 ring-offset-1" : ""}`}>
                       <Avatar
                         avatarKey={c.otherMember?.avatarKey ?? null}
                         username={c.otherMember?.username ?? "?"}
@@ -1229,12 +1233,12 @@ export default function DMsPage() {
         {activeId && (
           <section
             key={activeId}
-            className="message-conversation-enter fixed inset-x-0 top-0 z-[56] flex flex-col bg-gray-50 lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-13rem)] lg:min-h-[32rem] lg:rounded-xl lg:border lg:border-gray-200 lg:shadow-sm"
+            className="message-conversation-enter fixed inset-x-0 top-0 z-[56] flex flex-col bg-gray-50 lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-12rem)] lg:min-h-[34rem] lg:overflow-hidden lg:rounded-xl lg:border lg:border-gray-200 lg:bg-white lg:shadow-[0_2px_12px_rgba(15,23,42,0.05)]"
             style={{ bottom: keyboardOffset }}
             aria-label="Conversation"
           >
             <div className="shrink-0 border-b border-gray-200 bg-white/95 backdrop-blur-xl">
-              <div className="mx-auto flex w-full max-w-2xl items-center gap-1.5 px-1.5 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+              <div className="mx-auto flex w-full max-w-2xl items-center gap-1.5 px-1.5 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] lg:max-w-none lg:gap-2.5 lg:px-4 lg:pt-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -1242,7 +1246,7 @@ export default function DMsPage() {
                     setSearchParams({});
                   }}
                   aria-label="Back to Messages"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-700 transition-[background-color,transform] hover:bg-gray-100 active:scale-90"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-700 transition-[background-color,transform] hover:bg-gray-100 active:scale-90 lg:hidden"
                 >
                   <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-6 w-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
                 </button>
@@ -1268,7 +1272,9 @@ export default function DMsPage() {
                         @{activeConversation.otherMember.username}
                       </span>
                       <span className={`block truncate text-[11px] leading-4 ${deviceKeyReady && allMembersHaveKeys && !encryptionKeysError ? "text-green-700" : "text-amber-700"}`}>
-                        {deviceKeyReady && allMembersHaveKeys && !encryptionKeysError ? "End-to-end encrypted" : "Not ready for encryption yet"}
+                        {deviceKeyReady && allMembersHaveKeys && !encryptionKeysError
+                          ? `End-to-end encrypted${onlineUserIds.has(activeConversation.otherMember.id) ? " · Online now" : ""}`
+                          : "Not ready for encryption yet"}
                       </span>
                     </span>
                   </Link>
@@ -1329,7 +1335,7 @@ export default function DMsPage() {
               <p role="alert" className="mx-4 mt-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
             {(sharedMediaKeys.length > 0 || sharedLinkTargets.length > 0) && (
-              <div className="mx-auto flex w-full max-w-2xl items-center gap-2 overflow-x-auto border-b border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-600 sm:px-[max(0.75rem,calc((100%-42rem)/2))]">
+              <div className="mx-auto flex w-full max-w-2xl items-center gap-2 overflow-x-auto border-b border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-600 sm:px-[max(0.75rem,calc((100%-42rem)/2))] lg:max-w-none lg:px-4">
                 {sharedMediaKeys.map((mediaKey) => (
                   <button
                     key={mediaKey}
@@ -1571,7 +1577,9 @@ export default function DMsPage() {
                 );
               })}
               {renderedMessages.length === 0 && (
-                <p className="self-center rounded-full bg-white/90 px-3 py-1 text-xs text-gray-500 shadow-sm">No messages yet. Say hi!</p>
+                <div className="flex flex-1 items-center justify-center px-6 py-12">
+                  <p className="rounded-full bg-white/90 px-4 py-2 text-sm text-gray-500 shadow-sm">No messages yet. Say hi!</p>
+                </div>
               )}
               {showJumpToLatest && (
                 <button
@@ -1586,7 +1594,7 @@ export default function DMsPage() {
             </div>
             {messageError && <p role="alert" className="shrink-0 bg-red-50 px-4 py-1.5 text-xs text-red-700">{messageError}</p>}
             {storyReplyContext && (
-              <div className="mx-auto flex w-full max-w-2xl shrink-0 items-center gap-3 border-t border-gray-200 bg-white p-2">
+              <div className="mx-auto flex w-full max-w-2xl shrink-0 items-center gap-3 border-t border-gray-200 bg-white p-2 lg:max-w-none lg:px-4">
                 <img
                   src={mediaUrl(storyReplyContext.imageKey)}
                   alt={`Story by @${storyReplyContext.authorUsername}`}
@@ -1614,7 +1622,7 @@ export default function DMsPage() {
               className="shrink-0 border-t border-gray-200 bg-white/95 px-2 pt-2 backdrop-blur-xl"
               style={{ paddingBottom: keyboardOffset > 0 ? "0.5rem" : "max(0.5rem, env(safe-area-inset-bottom))" }}
             >
-              <div className="mx-auto w-full max-w-2xl">
+              <div className="mx-auto w-full max-w-2xl lg:max-w-none lg:px-2">
               {replyTarget && (
                 <div className="mb-2 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
                   <span className="min-w-0 flex-1 truncate">
