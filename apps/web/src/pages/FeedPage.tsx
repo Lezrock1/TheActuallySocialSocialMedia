@@ -332,15 +332,6 @@ export default function FeedPage() {
     void queryClient.invalidateQueries({ queryKey: ["feed", "first"] });
   }, [queryClient]);
 
-  const postCount = useMemo(() => allPages.reduce((sum, page) => (
-    sum + page.items.filter((item) => item.type === "post").length
-  ), 0), [allPages]);
-  const followCount = useMemo(() => allPages.reduce((sum, page) => (
-    sum + page.items.filter((item) => item.type === "follow").length
-  ), 0), [allPages]);
-  const boundaryPage = allPages.find((page) => page.boundaryIndex !== null);
-  const newCount = boundaryPage?.boundaryIndex ?? allPages[0]?.items.length ?? 0;
-
   return (
     <div ref={pageRef} className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PullToRefresh onRefresh={async () => {
@@ -353,21 +344,6 @@ export default function FeedPage() {
       }} />
       <PageHeader title="Feed" showSearch />
       <NavBar />
-
-      <section className="mb-4 overflow-hidden rounded-2xl border border-gray-200 bg-[radial-gradient(130%_120%_at_0%_0%,#e0f2fe_0%,#f8fafc_42%,#ffffff_100%)] p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">Today on InTouch</p>
-            <p className="mt-1 text-sm text-gray-700">
-              {newCount > 0 ? `${newCount} new updates since your last visit.` : "You are fully caught up right now."}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="rounded-full border border-sky-200 bg-white/80 px-2.5 py-1 font-semibold text-sky-700">{postCount} posts</span>
-            <span className="rounded-full border border-gray-200 bg-white/80 px-2.5 py-1 font-semibold text-gray-600">{followCount} follows</span>
-          </div>
-        </div>
-      </section>
 
       <MomentCard />
       <StoriesBar />

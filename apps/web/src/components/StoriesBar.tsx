@@ -4,9 +4,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import type { FormEvent } from "react";
 import { STORY_REACTIONS } from "@app/shared";
-import type { StoryGroup, StoryMeetup } from "@app/shared";
+import type { MomentFeed, MomentPostItem, StoryGroup, StoryMeetup } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
-import { mediaUrl, preloadMediaKeys } from "../lib/upload.js";
+import { mediaPosterUrl, mediaUrl, preloadMediaKeys } from "../lib/upload.js";
 import Avatar from "./Avatar.js";
 import LiveRoomsBar from "./LiveRoomsBar.js";
 import StoryComposer from "./StoryComposer.js";
@@ -17,6 +17,8 @@ import type { MeetupDraft } from "./MeetupFields.js";
 import AppDialog from "./AppDialog.js";
 import { useAuth } from "../auth/AuthContext.js";
 import { clearLocalMeetupReminder, getLocalMeetupReminderMinutes, setLocalMeetupReminder } from "../lib/localMeetupReminders.js";
+import { useMoment } from "../lib/useMoment.js";
+import { useCamera } from "./camera/CameraProvider.js";
 
 async function fetchStoryGroups(): Promise<StoryGroup[]> {
   const res = await apiFetch<{ groups: StoryGroup[] }>("/stories");
@@ -96,17 +98,126 @@ function StoryVideo({ src, poster }: { src: string; poster: string }) {
   );
 }
 
+function lateLabel(post: MomentPostItem): string | null {
+  if (!post.late) return null;
+  const minutes = Math.max(1, Math.round(post.lateBySeconds / 60));
+  return minutes >= 60 ? `${Math.round(minutes / 60)}h late` : `${minutes} min late`;
+}
+
+function MomentViewer({ posts, startIndex, onClose }: { posts: MomentPostItem[]; startIndex: number; onClose: () => void }) {
+  const [index, setIndex] = useState(startIndex);
+  const post = posts[index];
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowRight") setIndex((value) => Math.min(posts.length - 1, value + 1));
+      if (event.key === "ArrowLeft") setIndex((value) => Math.max(0, value - 1));
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose, posts.length]);
+
+  if (!post) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Today's Moment"
+      className="snap-viewer-enter fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black"
+      onClick={onClose}
+    >
+      <div className="absolute inset-x-4 top-[max(0.5rem,env(safe-area-inset-top))] z-20 flex gap-1" aria-hidden="true">
+        {posts.map((item, itemIndex) => (
+          <span key={item.id} className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/25">
+            {itemIndex <= index && <span className="block h-full w-full bg-white" />}
+          </span>
+        ))}
+      </div>
+      <div
+        className="absolute inset-x-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-black/70 via-black/30 to-transparent px-4 pb-6 pt-[max(1.25rem,env(safe-area-inset-top))] text-white"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <span className="flex items-center gap-2 text-sm font-medium">
+          <Avatar avatarKey={post.user.avatarKey} username={post.user.username} size={30} />
+          <span>@{post.user.username}</span>
+          {lateLabel(post) && <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-semibold">{lateLabel(post)}</span>}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close Moment"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-xl leading-none hover:bg-white/25"
+        >
+          ×
+        </button>
+      </div>
+
+      {post.mediaType === "video" ? (
+        <video
+          key={post.id}
+          src={mediaUrl(post.imageKey)}
+          poster={mediaPosterUrl(post.imageKey)}
+          autoPlay
+          playsInline
+          controls
+          loop
+          onClick={(event) => event.stopPropagation()}
+          className="max-h-screen max-w-full object-contain"
+        />
+      ) : (
+        <img
+          key={post.id}
+          src={mediaUrl(post.imageKey)}
+          alt={`Moment from @${post.user.username}`}
+          onClick={(event) => event.stopPropagation()}
+          className="snap-media-enter max-h-screen max-w-full object-contain"
+        />
+      )}
+
+      {index > 0 && (
+        <button
+          type="button"
+          aria-label="Previous Moment"
+          onClick={(event) => { event.stopPropagation(); setIndex(index - 1); }}
+          className="absolute inset-y-24 left-0 z-10 w-1/4"
+        />
+      )}
+      {index < posts.length - 1 && (
+        <button
+          type="button"
+          aria-label="Next Moment"
+          onClick={(event) => { event.stopPropagation(); setIndex(index + 1); }}
+          className="absolute inset-y-24 right-0 z-10 w-1/4"
+        />
+      )}
+
+      {post.caption && (
+        <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/75 to-transparent px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-16" onClick={(event) => event.stopPropagation()}>
+          <p className="mx-auto max-w-[90vw] rounded-full bg-black/55 px-4 py-2 text-center text-sm text-white backdrop-blur-md">
+            {post.caption}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StoriesBar() {
   const queryClient = useQueryClient();
+  const camera = useCamera();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
+  const { summary: momentSummary, status: momentStatus } = useMoment();
   const [composerOpen, setComposerOpen] = useState(false);
   const [meetupBusy, setMeetupBusy] = useState(false);
   const [editingMeetup, setEditingMeetup] = useState<{ id: string; draft: MeetupDraft } | null>(null);
   const [cancelMeetupId, setCancelMeetupId] = useState<string | null>(null);
   const [reminderVersion, setReminderVersion] = useState(0);
   const [viewing, setViewing] = useState<StoryGroup | null>(null);
+  const [momentViewerIndex, setMomentViewerIndex] = useState<number | null>(null);
   const [storyIndex, setStoryIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
   const [replySending, setReplySending] = useState(false);
@@ -117,6 +228,15 @@ export default function StoriesBar() {
     queryKey: ["stories"],
     queryFn: fetchStoryGroups,
   });
+  const momentStarted = momentStatus === "open" || momentStatus === "late";
+  const { data: momentFeed } = useQuery({
+    queryKey: ["moment", "stories-bar-feed", momentSummary?.myPost?.id ?? "none"],
+    queryFn: () => apiFetch<MomentFeed>("/moments/today/feed"),
+    enabled: momentStarted,
+    refetchInterval: 30_000,
+  });
+  const myMoment = momentSummary?.myPost ?? null;
+  const momentPosts = momentFeed?.posts ?? (myMoment ? [myMoment] : []);
 
   const requestedStoryId = searchParams.get("story");
   useEffect(() => {
@@ -166,8 +286,29 @@ export default function StoriesBar() {
       );
     }
 
+    if (myMoment) {
+      keysToWarm.push(myMoment.imageKey, myMoment.user.avatarKey);
+    }
+    if (momentViewerIndex !== null) {
+      keysToWarm.push(
+        momentPosts[momentViewerIndex]?.imageKey ?? null,
+        momentPosts[momentViewerIndex - 1]?.imageKey ?? null,
+        momentPosts[momentViewerIndex + 1]?.imageKey ?? null
+      );
+    }
+
     preloadMediaKeys(keysToWarm, { priority: viewing ? "high" : "low" });
-  }, [groups, loadingPolicy.preloadCount, storyIndex, viewing]);
+  }, [groups, loadingPolicy.preloadCount, momentPosts, momentViewerIndex, myMoment, storyIndex, viewing]);
+
+  function openMomentCircle() {
+    if (!momentStarted || !momentSummary) return;
+    if (!myMoment) {
+      camera.openMoment();
+      return;
+    }
+    const mineIndex = momentPosts.findIndex((post) => post.user.id === myMoment.user.id);
+    setMomentViewerIndex(mineIndex >= 0 ? mineIndex : 0);
+  }
 
   function advanceStory(direction: -1 | 1) {
     if (!viewing) return;
@@ -360,6 +501,39 @@ export default function StoriesBar() {
           <span className="text-[11px] text-gray-500">Story</span>
         </button>
         <LiveRoomsBar compact />
+        {momentSummary && momentStatus !== "none" && (
+          <button
+            type="button"
+            onClick={openMomentCircle}
+            aria-label="Open Today's Moment"
+            className="relative flex shrink-0 flex-col items-center gap-1"
+          >
+            {myMoment ? (
+              <span className="rounded-full bg-gradient-to-br from-cyan-400 via-teal-400 to-emerald-500 p-0.5">
+                <span className="block rounded-full border-2 border-white">
+                  <img
+                    src={myMoment.mediaType === "video" ? mediaPosterUrl(myMoment.imageKey) : mediaUrl(myMoment.imageKey)}
+                    alt=""
+                    className="h-[52px] w-[52px] rounded-full object-cover"
+                  />
+                </span>
+              </span>
+            ) : (
+              <span className={`flex h-14 w-14 items-center justify-center rounded-full border-2 text-cyan-700 ${momentStarted ? "border-cyan-300 bg-cyan-50" : "border-cyan-200 border-dashed bg-cyan-50/70"}`}>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-6 w-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="8.5" />
+                  <path d="M12 7.5V12l3 2" />
+                </svg>
+              </span>
+            )}
+            <span className="max-w-[68px] truncate text-[11px] font-semibold text-cyan-700">Moment</span>
+            {!myMoment && momentFeed?.locked && momentFeed.friendPostCount > 0 && (
+              <span className="absolute -right-1 top-0 rounded-full bg-cyan-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {momentFeed.friendPostCount}
+              </span>
+            )}
+          </button>
+        )}
         {groups.map((group) => (
           <button
             key={group.author.id}
@@ -540,6 +714,13 @@ export default function StoriesBar() {
             </div>
           </div>
         </div>
+      )}
+      {momentViewerIndex !== null && momentPosts.length > 0 && (
+        <MomentViewer
+          posts={momentPosts}
+          startIndex={momentViewerIndex}
+          onClose={() => setMomentViewerIndex(null)}
+        />
       )}
       <StoryComposer open={composerOpen} onClose={() => setComposerOpen(false)} />
       <MeetupSheet

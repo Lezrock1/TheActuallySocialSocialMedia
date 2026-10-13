@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import type { Moment } from "@prisma/client";
 import { prisma } from "./db.js";
 import { sendMomentPushToEveryone } from "./pushNotifications.js";
+import { deleteMediaIfUnreferenced } from "./storage.js";
 
 // The surprise lands somewhere in this UTC window (about 10:00-21:00 in Central Europe).
 const MOMENT_EARLIEST_HOUR_UTC = 8;
@@ -42,6 +43,7 @@ export async function ensureTodayMoment(now = new Date()): Promise<Moment | null
 
 async function tick(logger: { error: (error: unknown, message: string) => void }): Promise<void> {
   const now = new Date();
+  await deletePastMoments(now, logger);
   const moment = await ensureTodayMoment(now);
   if (!moment || moment.startsAt > now || moment.notifiedAt) return;
   // Only the process that flips notifiedAt sends the push.
@@ -52,6 +54,25 @@ async function tick(logger: { error: (error: unknown, message: string) => void }
   if (claimed.count === 1) {
     await sendMomentPushToEveryone().catch((error) => logger.error(error, "Moment push failed"));
   }
+}
+
+async function deletePastMoments(
+  now: Date,
+  logger: { error: (error: unknown, message: string) => void }
+): Promise<void> {
+  const today = utcDayKey(now);
+  const oldPosts = await prisma.momentPost.findMany({
+    where: { moment: { day: { lt: today } } },
+    select: { imageKey: true },
+  });
+  if (oldPosts.length === 0) {
+    await prisma.moment.deleteMany({ where: { day: { lt: today } } });
+    return;
+  }
+
+  await prisma.moment.deleteMany({ where: { day: { lt: today } } });
+  const keys = [...new Set(oldPosts.map((post) => post.imageKey))];
+  await Promise.all(keys.map((key) => deleteMediaIfUnreferenced(key).catch((error) => logger.error(error, "Moment cleanup media delete failed"))));
 }
 
 export function startMomentJob(logger: { error: (error: unknown, message: string) => void }): NodeJS.Timeout {
