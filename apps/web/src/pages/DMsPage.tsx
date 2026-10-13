@@ -211,6 +211,7 @@ export default function DMsPage() {
       return false;
     }
   });
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(() => new Set());
   const [friendSearch, setFriendSearch] = useState("");
   const [friendPickerOpen, setFriendPickerOpen] = useState(false);
   const [selectedGroupUsernames, setSelectedGroupUsernames] = useState<string[]>([]);
@@ -306,6 +307,42 @@ export default function DMsPage() {
     queryKey: ["conversations"],
     queryFn: fetchConversations,
   });
+
+  useEffect(() => {
+    if (!user) return;
+    const contactIds = [...new Set(conversations.flatMap((conversation) =>
+      conversation.members
+        .filter((member) => member.id !== user.id)
+        .map((member) => member.id)
+    ))];
+    const socket = getSocket();
+    function onPresenceUpdate(payload: { userId?: unknown; isOnline?: unknown }) {
+      if (typeof payload.userId !== "string" || typeof payload.isOnline !== "boolean") return;
+      setOnlineUserIds((current) => {
+        const next = new Set(current);
+        if (payload.isOnline) next.add(payload.userId as string);
+        else next.delete(payload.userId as string);
+        return next;
+      });
+    }
+    function checkPresence() {
+      socket.emit("presence:check", contactIds, (onlineIds: unknown) => {
+        if (!Array.isArray(onlineIds)) return;
+        const requestedIds = new Set(contactIds);
+        setOnlineUserIds(new Set(onlineIds.filter((id): id is string =>
+          typeof id === "string" && requestedIds.has(id)
+        )));
+      });
+    }
+    socket.on("presence:update", onPresenceUpdate);
+    socket.on("connect", checkPresence);
+    checkPresence();
+    return () => {
+      socket.off("presence:update", onPresenceUpdate);
+      socket.off("connect", checkPresence);
+    };
+  }, [conversations, user?.id]);
+
   const { data: followedUsers = [], isLoading: friendsLoading } = useQuery({
     queryKey: ["following", user?.username],
     queryFn: () => fetchFollowing(user!.username),
@@ -473,6 +510,19 @@ export default function DMsPage() {
       return bTime - aTime;
     });
   }, [chatFilter, conversations, normalizedChatSearch, pinnedSet, unreadFirst]);
+  const timelineDayStarts = useMemo(() => {
+    const starts = new Map<string, string>();
+    let previousDay: string | null = null;
+    for (const conversation of visibleConversations) {
+      if (!conversation.lastMessage) continue;
+      const currentDay = dayKey(conversation.lastMessage.createdAt);
+      if (currentDay !== previousDay) {
+        starts.set(conversation.id, formatDayLabel(conversation.lastMessage.createdAt));
+        previousDay = currentDay;
+      }
+    }
+    return starts;
+  }, [visibleConversations]);
   const membersWithKeys = new Set(encryptionKeys.map((key) => key.userId));
   const allMembersHaveKeys = !!activeConversation &&
     activeConversation.members.length > 0 &&
@@ -893,7 +943,7 @@ export default function DMsPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
+    <div className={`mx-auto w-full px-4 py-4 sm:py-8 ${activeId ? "max-w-7xl" : "max-w-2xl"}`}>
       <PullToRefresh enabled={!activeId && !call.activeCall && !call.incomingCall} onRefresh={async () => {
         const refreshes = [
           queryClient.invalidateQueries({ queryKey: ["conversations"] }),
@@ -906,8 +956,10 @@ export default function DMsPage() {
       <NavBar />
       {encryptionError && <p role="alert" className="mb-3 text-xs text-red-600">{encryptionError}</p>}
 
-      <div className="flex flex-col gap-6">
-        {!activeId && <div className="w-full">
+      <div className={activeId
+        ? "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(300px,360px)_minmax(0,1fr)] lg:items-start lg:gap-4"
+        : "flex flex-col gap-6"}>
+        <div className={`w-full min-w-0 ${activeId ? "hidden lg:block" : ""}`}>
           <div role="tablist" aria-label="Messages view" className="mb-3 inline-flex max-w-full rounded-lg bg-gray-100 p-1">
             <button
               type="button"
@@ -1087,7 +1139,14 @@ export default function DMsPage() {
           )}
           {messageView === "chats" && <div className={activityList}>
             {visibleConversations.map((c) => (
-              <div key={c.id} className={`${activityRow} relative`}>
+              <Fragment key={c.id}>
+              {timelineDayStarts.has(c.id) && (
+                <div className="flex items-center gap-2 px-4 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-gray-400 lg:hidden">
+                  <span>{timelineDayStarts.get(c.id)}</span>
+                  <span className="h-px flex-1 bg-gray-100" />
+                </div>
+              )}
+              <div className={`${activityRow} relative ${activeId === c.id ? "bg-emerald-50/70" : ""}`}>
                 <button
                   type="button"
                   onClick={() => setActiveId(c.id)}
@@ -1098,11 +1157,13 @@ export default function DMsPage() {
                       {c.members.length}
                     </span>
                   ) : (
-                    <Avatar
-                      avatarKey={c.otherMember?.avatarKey ?? null}
-                      username={c.otherMember?.username ?? "?"}
-                      size={44}
-                    />
+                    <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${c.otherMember && onlineUserIds.has(c.otherMember.id) ? "ring-2 ring-emerald-500 ring-offset-1" : ""}`}>
+                      <Avatar
+                        avatarKey={c.otherMember?.avatarKey ?? null}
+                        username={c.otherMember?.username ?? "?"}
+                        size={c.otherMember && onlineUserIds.has(c.otherMember.id) ? 40 : 44}
+                      />
+                    </span>
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-baseline gap-2">
@@ -1150,6 +1211,7 @@ export default function DMsPage() {
                   </svg>
                 </button>
               </div>
+              </Fragment>
             ))}
             {visibleConversations.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-gray-500">No conversations yet.</p>
@@ -1162,12 +1224,12 @@ export default function DMsPage() {
             </p>
           )}
           {messageView === "live_rooms" && <LiveRoomsBar />}
-        </div>}
+        </div>
 
         {activeId && (
           <section
             key={activeId}
-            className="message-conversation-enter fixed inset-x-0 top-0 z-[56] flex flex-col bg-gray-50"
+            className="message-conversation-enter fixed inset-x-0 top-0 z-[56] flex flex-col bg-gray-50 lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-13rem)] lg:min-h-[32rem] lg:rounded-xl lg:border lg:border-gray-200 lg:shadow-sm"
             style={{ bottom: keyboardOffset }}
             aria-label="Conversation"
           >
@@ -1194,7 +1256,13 @@ export default function DMsPage() {
                     aria-label={`Open @${activeConversation.otherMember.username} profile`}
                     className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-1 py-1 transition-colors hover:bg-gray-100"
                   >
-                    <Avatar avatarKey={activeConversation.otherMember.avatarKey} username={activeConversation.otherMember.username} size={40} />
+                    <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${onlineUserIds.has(activeConversation.otherMember.id) ? "ring-2 ring-emerald-500 ring-offset-1" : ""}`}>
+                      <Avatar
+                        avatarKey={activeConversation.otherMember.avatarKey}
+                        username={activeConversation.otherMember.username}
+                        size={onlineUserIds.has(activeConversation.otherMember.id) ? 36 : 40}
+                      />
+                    </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[15px] font-semibold leading-5 text-gray-900">
                         @{activeConversation.otherMember.username}

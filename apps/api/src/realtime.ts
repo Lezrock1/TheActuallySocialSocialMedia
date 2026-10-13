@@ -142,9 +142,30 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
   });
 
   const activeCalls = new Map<string, ActiveCall>();
+  const onlineSocketCounts = new Map<string, number>();
+
+  async function emitContactPresence(userId: string, isOnline: boolean): Promise<void> {
+    const memberships = await prisma.conversationMember.findMany({
+      where: { userId },
+      select: { conversation: { select: { members: { select: { userId: true } } } } },
+    });
+    const contactIds = new Set(memberships.flatMap((membership) =>
+      membership.conversation.members.map((member) => member.userId)
+    ));
+    contactIds.delete(userId);
+    const blockedIds = new Set(await getBlockedUserIds(userId));
+    for (const contactId of blockedIds) contactIds.delete(contactId);
+    emitToUsers(io, [...contactIds], "presence:update", { userId, isOnline });
+  }
 
   io.on("connection", (socket) => {
-    socket.join(`user:${socket.data.userId}`);
+    const userId = socket.data.userId as string;
+    socket.join(`user:${userId}`);
+    const activeSocketCount = onlineSocketCounts.get(userId) ?? 0;
+    onlineSocketCounts.set(userId, activeSocketCount + 1);
+    if (activeSocketCount === 0) {
+      void emitContactPresence(userId, true).catch(() => undefined);
+    }
 
     let windowStart = Date.now();
     let eventCount = 0;
@@ -160,6 +181,38 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
         return;
       }
       next();
+    });
+
+    socket.on("presence:check", (requestedUserIds: unknown, acknowledge: (onlineUserIds: string[]) => void) => {
+      if (!Array.isArray(requestedUserIds) || typeof acknowledge !== "function") return;
+      const targetUserIds = [...new Set(requestedUserIds
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+        .filter((targetId) => targetId !== userId))].slice(0, 100);
+      if (targetUserIds.length === 0) {
+        acknowledge([]);
+        return;
+      }
+
+      void (async () => {
+        const ownMemberships = await prisma.conversationMember.findMany({
+          where: { userId },
+          select: { conversationId: true },
+        });
+        if (ownMemberships.length === 0) {
+          acknowledge([]);
+          return;
+        }
+        const sharedMembers = await prisma.conversationMember.findMany({
+          where: {
+            conversationId: { in: ownMemberships.map((membership) => membership.conversationId) },
+            userId: { in: targetUserIds },
+          },
+          select: { userId: true },
+        });
+        const blockedIds = new Set(await getBlockedUserIds(userId));
+        acknowledge([...new Set(sharedMembers.map((member) => member.userId))]
+          .filter((contactId) => !blockedIds.has(contactId) && (onlineSocketCounts.get(contactId) ?? 0) > 0));
+      })().catch(() => acknowledge([]));
     });
 
     socket.on("call:start", (payload: {
@@ -350,7 +403,13 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
     });
 
     socket.on("disconnect", () => {
-      const userId = socket.data.userId as string;
+      const remainingSockets = (onlineSocketCounts.get(userId) ?? 1) - 1;
+      if (remainingSockets <= 0) {
+        onlineSocketCounts.delete(userId);
+        void emitContactPresence(userId, false).catch(() => undefined);
+      } else {
+        onlineSocketCounts.set(userId, remainingSockets);
+      }
       for (const callId of activeCalls.keys()) leaveCall(userId, callId);
     });
 

@@ -75,12 +75,12 @@ export default function SnapsPage() {
   });
   const snaps = inbox?.snaps ?? [];
   const seenToday = inbox?.recentlyViewed ?? [];
-  const { data: following = [] } = useQuery({
+  const { data: following = [], isLoading: followingLoading } = useQuery({
     queryKey: ["following", user?.username],
     queryFn: () => fetchFollowing(user!.username),
     enabled: !!user,
   });
-  const { data: streaks = [] } = useQuery({
+  const { data: streaks = [], isLoading: streaksLoading } = useQuery({
     queryKey: ["snap-streaks"],
     queryFn: fetchStreaks,
   });
@@ -99,6 +99,8 @@ export default function SnapsPage() {
       return (aEntry.friend.displayName || aEntry.friend.username)
         .localeCompare(bEntry.friend.displayName || bEntry.friend.username);
     });
+  const waitingFriends = friendsWithStreaks.filter(({ streak }) => streak?.waitingForYou);
+  const activeStreakCount = streaks.filter((streak) => streak.currentStreak > 0).length;
   const dedupedSeenToday = useMemo(() => {
     const unreadIds = new Set(snaps.map((snap) => snap.id));
     return seenToday.filter((snap) => !unreadIds.has(snap.id));
@@ -283,17 +285,81 @@ export default function SnapsPage() {
       <PageHeader title="Snaps" />
       <NavBar />
       <div className="mb-4">
-        <p className="w-fit bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text text-sm font-semibold text-transparent">
+        <p className="text-sm font-medium text-gray-600">
           Send a Snap, keep a streak going.
         </p>
       </div>
 
       <main className="flex min-w-0 flex-col gap-4">
         <aside className="flex min-w-0 flex-col gap-4">
+          <section aria-label="Your turn" className={`${activityList} border-emerald-200`}>
+            <div className="flex items-center justify-between border-b border-emerald-100 bg-emerald-50/70 px-4 py-3">
+              <div>
+                <h2 className="text-sm font-bold text-gray-900">Your turn</h2>
+                <p className="mt-0.5 text-xs text-gray-600">
+                  {waitingFriends.length > 0
+                    ? "A quick reply keeps the streak going."
+                    : "A little back-and-forth keeps streaks alive."}
+                </p>
+              </div>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${waitingFriends.length > 0 ? "bg-emerald-700 text-white" : "border border-emerald-200 bg-white text-emerald-800"}`}>
+                {waitingFriends.length > 0 ? `${waitingFriends.length} waiting` : "On track"}
+              </span>
+            </div>
+            {streaksLoading || followingLoading ? (
+              <p className="px-4 py-4 text-sm text-gray-500">Checking your streaks...</p>
+            ) : waitingFriends.length > 0 ? (
+              <div>
+                {waitingFriends.slice(0, 3).map(({ friend, streak }) => {
+                  const remaining = waitingWindowLabel(streak?.lastExchangeAt ?? null, nowMs);
+                  return (
+                    <div key={friend.id} className="flex min-h-[72px] items-center gap-3 border-b border-gray-100 px-3 py-2.5 last:border-b-0 sm:px-4">
+                      <Avatar avatarKey={friend.avatarKey} username={friend.username} size={42} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-gray-900">
+                          {friend.displayName || `@${friend.username}`}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-gray-500">
+                          {remaining === "now" ? "Reply window ending" : `Reply within ${remaining ?? "24h"}`}
+                          {streak?.currentStreak ? ` · 🔥 ${streak.currentStreak} day streak` : ""}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/snaps?camera=1&snapTo=${encodeURIComponent(friend.username)}`)}
+                        aria-label={`Send a Snap to @${friend.username}`}
+                        className="min-h-9 shrink-0 rounded-full bg-emerald-700 px-3 text-xs font-semibold text-white transition-colors hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+                      >
+                        Send Snap
+                      </button>
+                    </div>
+                  );
+                })}
+                {waitingFriends.length > 3 && (
+                  <p className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500">
+                    +{waitingFriends.length - 3} more waiting
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 px-4 py-4">
+                <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-sm font-bold text-emerald-700">✓</span>
+                <p className="min-w-0 text-sm text-gray-700">
+                  You’re all caught up.
+                  <span className="mt-0.5 block text-xs text-gray-500">
+                    {activeStreakCount > 0
+                      ? `${activeStreakCount} active ${activeStreakCount === 1 ? "streak is" : "streaks are"} on track.`
+                      : "No one is waiting for a Snap right now."}
+                  </span>
+                </p>
+              </div>
+            )}
+          </section>
+
           <section aria-label="Received Snaps" className={activityList}>
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-              <h2 className="text-sm font-bold text-gray-900">Snaps inbox</h2>
-              <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-900">{snaps.length}</span>
+              <h2 className="text-sm font-bold text-gray-900">New Snaps</h2>
+              <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{snaps.length} new</span>
             </div>
             {snapError && <p role="alert" className="px-4 pt-3 text-sm text-red-600">{snapError}</p>}
             <div className="max-h-80 overflow-y-auto">
