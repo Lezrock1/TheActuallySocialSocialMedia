@@ -53,6 +53,10 @@ trap on_exit EXIT
 if announce started; then
   deployment_started=1
 else
+  if [[ "$response_code" != "404" ]]; then
+    printf 'Deployment announcement failed (HTTP %s).\n' "$response_code" >&2
+    exit 1
+  fi
   response_code="$(curl --silent --show-error --connect-timeout 5 -o /dev/null -w '%{http_code}' https://api.intouchsocial.com/health)"
   if [[ "$response_code" != "200" ]]; then
     printf 'Deployment announcement failed (HTTP %s).\n' "$response_code" >&2
