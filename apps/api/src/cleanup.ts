@@ -8,6 +8,14 @@ const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 // should replace this with a proper scheduled job (e.g. a cron worker).
 export async function cleanupExpiredMedia(): Promise<void> {
   const now = new Date();
+  const metricRetentionCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  await prisma.usageMetricBucket.deleteMany({
+    where: {
+      bucket: { lt: metricRetentionCutoff },
+      metric: { not: "_tracking_since" },
+    },
+  });
 
   const expiredStories = await prisma.story.findMany({
     where: { expiresAt: { lte: now } },

@@ -512,6 +512,24 @@ export interface LiveRoom {
   members: PublicUser[];
 }
 
+export interface UsageMetricCounts {
+  users: number;
+  posts: number;
+  stories: number;
+  snaps: number;
+  moments: number;
+  messages: number;
+  comments: number;
+  follows: number;
+}
+
+export interface PublicUsageMetrics {
+  asOf: string;
+  trackingSince: string;
+  last24Hours: UsageMetricCounts;
+  last7Days: UsageMetricCounts;
+}
+
 export const encryptedMessagePayloadSchema = z.object({
   version: z.literal(1),
   iv: z.string().min(16).max(32),

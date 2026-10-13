@@ -19,6 +19,7 @@ const SecuritySettingsPage = lazy(() => import("./pages/SecuritySettingsPage.js"
 const AppearanceSettingsPage = lazy(() => import("./pages/AppearanceSettingsPage.js"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage.js"));
 const ApiUnavailablePage = lazy(() => import("./pages/ApiUnavailablePage.js"));
+const UsageDashboardPage = lazy(() => import("./pages/UsageDashboardPage.js"));
 import { MobileNav } from "./components/NavBar.js";
 import { CameraProvider } from "./components/camera/CameraProvider.js";
 import DeviceSetupPrompt from "./components/DeviceSetupPrompt.js";
@@ -115,6 +116,7 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 }
 
 function titleForPath(pathname: string): string {
+  if (pathname === "/dashboard") return "Public Dashboard";
   if (pathname === "/") return "Feed";
   if (pathname.startsWith("/dms")) return "Messages";
   if (pathname.startsWith("/snaps")) return "Snaps";
@@ -150,6 +152,7 @@ function AppRoutes() {
         <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/dashboard" element={<UsageDashboardPage />} />
         <Route
           path="/"
           element={

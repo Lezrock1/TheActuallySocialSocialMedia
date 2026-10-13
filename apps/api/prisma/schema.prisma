@@ -325,6 +325,15 @@ model MeetupResponse {
   @@index([userId])
 }
 
+model UsageMetricBucket {
+  bucket DateTime @db.Timestamptz(3)
+  metric String
+  count  Int      @default(0)
+
+  @@id([bucket, metric])
+  @@index([metric, bucket])
+}
+
 model StoryReaction {
   id        String   @id @default(cuid())
   storyId   String
