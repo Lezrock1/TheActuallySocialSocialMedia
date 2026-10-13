@@ -57,10 +57,20 @@ function notificationText(notification: UserNotification): string {
   }
 }
 
+function isDirectActivity(notification: UserNotification): boolean {
+  return notification.type === "message" ||
+    notification.type === "snap" ||
+    notification.type === "live_room" ||
+    notification.type === "meetup_response" ||
+    notification.type === "meetup_update" ||
+    notification.type === "meetup_cancelled";
+}
+
 export default function NotificationsPage() {
   const queryClient = useQueryClient();
   const notificationsListRef = useRef<HTMLDivElement>(null);
   const [virtualScrollMargin, setVirtualScrollMargin] = useState(0);
+  const [filter, setFilter] = useState<"all" | "unread" | "direct" | "social">("all");
   const query = useInfiniteQuery({
     queryKey: ["notifications", "list"],
     queryFn: ({ pageParam }) => fetchNotifications(pageParam),
@@ -69,6 +79,14 @@ export default function NotificationsPage() {
   });
   const notifications = query.data?.pages.flatMap((page) => page.notifications) ?? [];
   const unreadCount = query.data?.pages[0]?.unreadCount ?? 0;
+  const directUnread = notifications.filter((notification) => isDirectActivity(notification) && !notification.readAt).length;
+  const socialUnread = notifications.filter((notification) => !isDirectActivity(notification) && !notification.readAt).length;
+  const filteredNotifications = notifications.filter((notification) => {
+    if (filter === "unread") return !notification.readAt;
+    if (filter === "direct") return isDirectActivity(notification);
+    if (filter === "social") return !isDirectActivity(notification);
+    return true;
+  });
 
   useEffect(() => {
     function updateScrollMargin() {
@@ -86,9 +104,9 @@ export default function NotificationsPage() {
   }, [notifications.length]);
 
   const rowVirtualizer = useWindowVirtualizer({
-    count: notifications.length,
+    count: filteredNotifications.length,
     estimateSize: () => 92,
-    getItemKey: (index) => notifications[index]?.id ?? index,
+    getItemKey: (index) => filteredNotifications[index]?.id ?? index,
     overscan: 6,
     scrollMargin: virtualScrollMargin,
   });
@@ -97,10 +115,15 @@ export default function NotificationsPage() {
   useEffect(() => {
     const lastVirtual = virtualRows[virtualRows.length - 1];
     if (!lastVirtual || !query.hasNextPage || query.isFetchingNextPage) return;
-    if (lastVirtual.index >= notifications.length - 1) {
+    if (lastVirtual.index >= filteredNotifications.length - 1) {
       void query.fetchNextPage();
     }
-  }, [notifications.length, query, virtualRows]);
+  }, [filteredNotifications.length, query, virtualRows]);
+
+  useEffect(() => {
+    if (filteredNotifications.length > 0 || !query.hasNextPage || query.isFetchingNextPage || query.isLoading) return;
+    void query.fetchNextPage();
+  }, [filteredNotifications.length, query]);
 
   function updateUnreadBadge(delta: number) {
     queryClient.setQueryData<{ unreadCount: number; messageUnreadCount: number; feedUnreadCount: number }>(
@@ -182,23 +205,39 @@ export default function NotificationsPage() {
       <PageHeader title="Notifications" />
       <NavBar />
 
-      <div className="mb-3 flex min-h-10 items-center justify-between gap-3">
-        <p className="text-sm text-gray-500">
-          {unreadCount > 0 ? `${unreadCount} unread` : "You're all caught up"}
-        </p>
-        {unreadCount > 0 && (
-          <button onClick={() => void markAllRead()} className={btnSecondary}>
-            Mark all as read
+      <section className="mb-3 rounded-2xl border border-gray-200 bg-[linear-gradient(140deg,#eef6ff_0%,#f8fafc_50%,#fff_100%)] p-3">
+        <div className="flex min-h-10 items-center justify-between gap-3">
+          <p className="text-sm text-gray-600">
+            {unreadCount > 0 ? `${unreadCount} unread` : "You're all caught up"}
+          </p>
+          {unreadCount > 0 && (
+            <button onClick={() => void markAllRead()} className={btnSecondary}>
+              Mark all as read
+            </button>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button type="button" onClick={() => setFilter("all")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "all" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
+            All
           </button>
-        )}
-      </div>
+          <button type="button" onClick={() => setFilter("unread")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "unread" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
+            Unread ({unreadCount})
+          </button>
+          <button type="button" onClick={() => setFilter("direct")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "direct" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
+            Direct ({directUnread})
+          </button>
+          <button type="button" onClick={() => setFilter("social")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "social" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
+            Social ({socialUnread})
+          </button>
+        </div>
+      </section>
 
       {query.isLoading && <CardListSkeleton rows={3} />}
       {query.isError && <p role="alert" className="py-6 text-center text-sm text-red-600">Could not load notifications.</p>}
 
       <div ref={notificationsListRef} className={activityList} style={{ position: "relative", height: `${rowVirtualizer.getTotalSize()}px` }}>
         {virtualRows.map((virtualRow) => {
-          const notification = notifications[virtualRow.index];
+          const notification = filteredNotifications[virtualRow.index];
           if (!notification) return null;
           const target = notification.type === "live_room"
             ? "/dms?view=live_rooms"
@@ -252,8 +291,10 @@ export default function NotificationsPage() {
         })}
       </div>
 
-      {!query.isLoading && !query.isError && notifications.length === 0 && (
-        <p className="py-12 text-center text-sm text-gray-500">No notifications yet.</p>
+      {!query.isLoading && !query.isError && filteredNotifications.length === 0 && (
+        <p className="py-12 text-center text-sm text-gray-500">
+          {filter === "all" ? "No notifications yet." : "No notifications match this filter."}
+        </p>
       )}
       {query.hasNextPage && (
         <button

@@ -21,14 +21,21 @@ function ThemePreview({ dark, selected }: { dark: boolean; selected: boolean }) 
 
 export default function AppearanceSettingsPage() {
   const [theme, setTheme] = useThemePreference();
+  const isDark = theme === "dark";
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="Appearance" />
       <NavBar />
-      <p className="mb-4 text-sm leading-6 text-gray-500">
-        Set the app-wide theme and customize the backgrounds behind each area.
-      </p>
+      <section className="mb-4 rounded-2xl border border-gray-200 bg-[linear-gradient(140deg,#f8fafc_0%,#ffffff_50%,#ecfeff_100%)] p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700">Look and feel</p>
+        <p className="mt-1 text-sm leading-6 text-gray-700">
+          Set the app-wide theme and customize the backgrounds behind each area.
+        </p>
+        <div className="mt-3 rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-600">
+          Theme preview: <span className="font-semibold text-gray-800">{isDark ? "Dark mode active" : "Light mode active"}</span>
+        </div>
+      </section>
 
       <section aria-labelledby="theme-heading" className={`${card} mb-4`}>
         <div className="mb-3">

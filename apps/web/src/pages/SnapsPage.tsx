@@ -62,6 +62,8 @@ export default function SnapsPage() {
   });
 
   const streakByFriend = new Map(streaks.map((streak) => [streak.friend.id, streak]));
+  const activeStreakCount = streaks.filter((streak) => streak.currentStreak > 0).length;
+  const waitingForYouCount = streaks.filter((streak) => streak.waitingForYou).length;
   const friendsWithStreaks = following
     .map((friend) => ({ friend, streak: streakByFriend.get(friend.id) }))
     .sort((aEntry, bEntry) => {
@@ -184,6 +186,26 @@ export default function SnapsPage() {
       ])} />
       <PageHeader title="Snaps" />
       <NavBar />
+      <section className="mb-4 overflow-hidden rounded-2xl border border-gray-200 bg-[linear-gradient(135deg,#fff7ed_0%,#fff_55%,#f0f9ff_100%)] p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-orange-700">Snap flow</p>
+            <p className="mt-1 text-sm text-gray-700">Open, reply, and keep your streaks alive in one place.</p>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="rounded-full border border-yellow-300 bg-yellow-100 px-2.5 py-1 font-semibold text-yellow-900">{snaps.length} unread</span>
+            <span className="rounded-full border border-orange-200 bg-white px-2.5 py-1 font-semibold text-orange-700">🔥 {activeStreakCount}</span>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Link to="/" className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-center text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50">
+            Open camera
+          </Link>
+          <Link to="/dms" className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-center text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50">
+            Reply in chats
+          </Link>
+        </div>
+      </section>
       <div className="mb-4">
         <p className="w-fit bg-[linear-gradient(90deg,#ef4444_0%,#f97316_20%,#eab308_40%,#22c55e_60%,#3b82f6_80%,#d946ef_100%)] bg-clip-text text-sm font-semibold text-transparent">
           Send a Snap, keep a streak going.
@@ -234,7 +256,9 @@ export default function SnapsPage() {
                 <h2 className="text-sm font-bold text-gray-900">Your streaks</h2>
                 <p className="mt-0.5 text-xs text-gray-500">All your contacts · reply to each other within 24 hours</p>
               </div>
-              <span aria-hidden="true" className="text-xl">🔥</span>
+              <span aria-hidden="true" className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-bold text-orange-700">
+                {waitingForYouCount > 0 ? `${waitingForYouCount} waiting` : "🔥 Active"}
+              </span>
             </div>
             <div>
               {friendsWithStreaks.map(({ friend, streak }) => (

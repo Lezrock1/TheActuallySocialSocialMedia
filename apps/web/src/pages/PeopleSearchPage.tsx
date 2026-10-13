@@ -7,7 +7,7 @@ import Avatar from "../components/Avatar.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
-import { btnSecondary, input } from "../lib/ui.js";
+import { activityList, activityRow, btnSecondary, input } from "../lib/ui.js";
 
 interface UserDirectoryPage {
   users: PublicUser[];
@@ -56,6 +56,7 @@ export default function PeopleSearchPage() {
   const users: Array<PublicUser & { mutualCount?: number }> = deferredQuery
     ? searchQuery.data?.pages.flatMap((page) => page.users) ?? []
     : suggestionsQuery.data ?? [];
+  const quickPicks = (suggestionsQuery.data ?? []).slice(0, 4);
   const isLoading = deferredQuery ? searchQuery.isLoading : suggestionsQuery.isLoading;
   const isError = deferredQuery ? searchQuery.isError : suggestionsQuery.isError;
 
@@ -63,6 +64,25 @@ export default function PeopleSearchPage() {
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="Find people" />
       <NavBar />
+
+      <section className="mb-4 rounded-2xl border border-gray-200 bg-[linear-gradient(140deg,#f0f9ff_0%,#ffffff_55%,#eef2ff_100%)] p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">Discover</p>
+        <p className="mt-1 text-sm text-gray-700">Find people by name, username, or mutual network.</p>
+        {!deferredQuery && quickPicks.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {quickPicks.map((person) => (
+              <button
+                key={person.id}
+                type="button"
+                onClick={() => setQuery(`@${person.username}`)}
+                className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                @{person.username}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
 
       <label htmlFor="people-search" className="sr-only">Search people by name or username</label>
       <input
@@ -88,12 +108,12 @@ export default function PeopleSearchPage() {
             {deferredQuery ? "No matching profiles found." : "Follow people to get friend-based suggestions."}
           </p>
         ) : (
-          <div className="divide-y divide-gray-100 border-y border-gray-100">
+          <div className={activityList}>
             {users.map((person) => (
               <Link
                 key={person.id}
                 to={`/u/${person.username}`}
-                className="flex items-center gap-3 py-3 hover:bg-gray-50"
+                className={activityRow}
               >
                 <Avatar avatarKey={person.avatarKey} username={person.username} size={42} />
                 <span className="min-w-0 flex-1">

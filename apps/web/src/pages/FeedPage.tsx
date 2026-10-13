@@ -332,6 +332,15 @@ export default function FeedPage() {
     void queryClient.invalidateQueries({ queryKey: ["feed", "first"] });
   }, [queryClient]);
 
+  const postCount = useMemo(() => allPages.reduce((sum, page) => (
+    sum + page.items.filter((item) => item.type === "post").length
+  ), 0), [allPages]);
+  const followCount = useMemo(() => allPages.reduce((sum, page) => (
+    sum + page.items.filter((item) => item.type === "follow").length
+  ), 0), [allPages]);
+  const boundaryPage = allPages.find((page) => page.boundaryIndex !== null);
+  const newCount = boundaryPage?.boundaryIndex ?? allPages[0]?.items.length ?? 0;
+
   return (
     <div ref={pageRef} className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PullToRefresh onRefresh={async () => {
@@ -345,10 +354,25 @@ export default function FeedPage() {
       <PageHeader title="Feed" showSearch />
       <NavBar />
 
+      <section className="mb-4 overflow-hidden rounded-2xl border border-gray-200 bg-[radial-gradient(130%_120%_at_0%_0%,#e0f2fe_0%,#f8fafc_42%,#ffffff_100%)] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">Today on InTouch</p>
+            <p className="mt-1 text-sm text-gray-700">
+              {newCount > 0 ? `${newCount} new updates since your last visit.` : "You are fully caught up right now."}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="rounded-full border border-sky-200 bg-white/80 px-2.5 py-1 font-semibold text-sky-700">{postCount} posts</span>
+            <span className="rounded-full border border-gray-200 bg-white/80 px-2.5 py-1 font-semibold text-gray-600">{followCount} follows</span>
+          </div>
+        </div>
+      </section>
+
       <MomentCard />
       <StoriesBar />
 
-      <form ref={formRef} onSubmit={onPost} className={`${card} mb-4 flex flex-col gap-2.5 !p-3`}>
+      <form ref={formRef} onSubmit={onPost} className={`${card} mb-4 flex flex-col gap-2.5 border-gray-200/90 bg-white/95 shadow-[0_10px_28px_rgba(15,23,42,0.06)] !p-3`}>
         <div className="flex items-start gap-2.5">
           {user && <span className="mt-0.5 shrink-0"><Avatar avatarKey={user.avatarKey} username={user.username} size={36} /></span>}
           <textarea
@@ -414,6 +438,9 @@ export default function FeedPage() {
           </div>
         )}
         {composerError && <p role="alert" className="text-xs text-red-600">{composerError}</p>}
+        {!composerOpen && (
+          <p className="-mt-1 mb-0.5 text-[11px] text-gray-500">Tip: tap the text field to reveal audience, poll, and media options.</p>
+        )}
         <div
           className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out ${composerOpen ? "grid-rows-[1fr] opacity-100" : "-mt-2.5 grid-rows-[0fr] opacity-0"}`}
           aria-hidden={!composerOpen}

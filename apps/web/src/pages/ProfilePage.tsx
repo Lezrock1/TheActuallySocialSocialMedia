@@ -243,7 +243,8 @@ export default function ProfilePage() {
       {profileQuery.isLoading && <CardListSkeleton rows={3} />}
       {profile && (
         <>
-          <div className={`${card} mb-6 !p-5`}>
+          <div className={`${card} mb-6 overflow-hidden !p-5`}>
+            <div aria-hidden="true" className="-mx-5 -mt-5 mb-4 h-14 rounded-b-2xl bg-[radial-gradient(120%_140%_at_0%_0%,#dbeafe_0%,#eff6ff_45%,#ffffff_100%)]" />
             <div className="flex items-center gap-4">
               <div className="shrink-0">
                 {profile.isMe && editing ? (
@@ -276,6 +277,11 @@ export default function ProfilePage() {
                 <h1 className="truncate text-xl font-semibold leading-tight">@{profile.username}</h1>
                 {profile.displayName && <p className="mt-0.5 truncate text-sm text-gray-500">{profile.displayName}</p>}
                 {profile.bio && <p className="mt-1.5 break-words text-sm leading-5 text-gray-700">{profile.bio}</p>}
+                {!profile.isMe && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    {profile.isFollowedByMe ? "Following this profile" : "Not following yet"}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -328,18 +334,11 @@ export default function ProfilePage() {
               </div>
               {(["followers", "following"] as const).map((kind) => {
                 const count = kind === "followers" ? profile.followerCount : profile.followingCount;
-                const content = (
-                  <>
+                return (
+                  <button key={kind} type="button" onClick={() => setConnectionList(kind)} className="px-2 transition-opacity active:opacity-60">
                     <span className="block text-lg font-semibold leading-6 tabular-nums text-gray-900">{count}</span>
                     <span className="block text-xs text-gray-500">{kind === "followers" ? "Followers" : "Following"}</span>
-                  </>
-                );
-                return profile.isMe ? (
-                  <button key={kind} type="button" onClick={() => setConnectionList(kind)} className="px-2 transition-opacity active:opacity-60">
-                    {content}
                   </button>
-                ) : (
-                  <div key={kind} className="px-2">{content}</div>
                 );
               })}
             </div>
