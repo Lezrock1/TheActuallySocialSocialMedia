@@ -149,17 +149,21 @@ export default function DMsPage() {
   }, [queryClient]);
   const call = useWebRtcCall(user?.id);
   const friendPickerRef = useRef<HTMLDivElement>(null);
+  const friendSearchInputRef = useRef<HTMLInputElement>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const scrolledConversationRef = useRef<string | null>(null);
   const wasAtBottomRef = useRef(true);
+  const topAutoLoadReadyRef = useRef(true);
   const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number; count: number } | null>(null);
   const lastVisibleMessageIdRef = useRef<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeId, setActiveId] = useState<string | null>(() => searchParams.get("conversation"));
+  const [chatSearch, setChatSearch] = useState("");
+  const [chatFilter, setChatFilter] = useState<"all" | "unread" | "groups">("all");
   const [friendSearch, setFriendSearch] = useState("");
   const [friendPickerOpen, setFriendPickerOpen] = useState(false);
   const [selectedGroupUsernames, setSelectedGroupUsernames] = useState<string[]>([]);
@@ -324,7 +328,11 @@ export default function DMsPage() {
     const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
     wasAtBottomRef.current = distance <= 120;
     setShowJumpToLatest(distance > 320);
-    if (container.scrollTop < 60) loadOlderMessages();
+    if (container.scrollTop > 140) topAutoLoadReadyRef.current = true;
+    if (container.scrollTop < 60 && topAutoLoadReadyRef.current) {
+      topAutoLoadReadyRef.current = false;
+      loadOlderMessages();
+    }
   }
 
   function jumpToLatest() {
@@ -351,6 +359,20 @@ export default function DMsPage() {
   const callConversationId = call.activeCall?.conversationId ?? call.incomingCall?.conversationId;
   const callConversation = conversations.find((conversation) => conversation.id === callConversationId);
   const canCall = !!activeConversation && activeConversation.members.length >= 2 && activeConversation.members.length <= MAX_LIVE_ROOM_PARTICIPANTS;
+  const normalizedChatSearch = chatSearch.trim().replace(/^@/, "").toLocaleLowerCase();
+  const visibleConversations = conversations.filter((conversation) => {
+    if (chatFilter === "unread" && conversation.unreadCount === 0) return false;
+    if (chatFilter === "groups" && !conversation.isGroup) return false;
+    if (!normalizedChatSearch) return true;
+    const conversationText = [
+      conversation.name ?? "",
+      conversation.otherMember?.username ?? "",
+      conversation.otherMember?.displayName ?? "",
+      conversation.members.map((member) => member.username).join(" "),
+      conversation.lastMessage && !conversation.lastMessage.isEncrypted ? conversation.lastMessage.text ?? "" : "",
+    ].join(" ").toLocaleLowerCase();
+    return conversationText.includes(normalizedChatSearch);
+  });
   const membersWithKeys = new Set(encryptionKeys.map((key) => key.userId));
   const allMembersHaveKeys = !!activeConversation &&
     activeConversation.members.length > 0 &&
@@ -732,6 +754,7 @@ export default function DMsPage() {
             )}
             <div ref={friendPickerRef} className="relative">
               <input
+                ref={friendSearchInputRef}
                 value={friendSearch}
                 onFocus={() => setFriendPickerOpen(true)}
                 onChange={(e) => {
@@ -804,12 +827,59 @@ export default function DMsPage() {
               </button>
             )}
           </form>}
+          {messageView === "chats" && (
+            <div className="mb-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <label htmlFor="chat-search" className="sr-only">Search chats</label>
+                <input
+                  id="chat-search"
+                  value={chatSearch}
+                  onChange={(e) => setChatSearch(e.target.value)}
+                  placeholder="Search chats"
+                  className={`${input} min-h-10 flex-1 rounded-full px-4`}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFriendPickerOpen(true);
+                    friendSearchInputRef.current?.focus();
+                  }}
+                  className="rounded-full border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+                >
+                  New chat
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setChatFilter("all")}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "all" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChatFilter("unread")}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "unread" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                >
+                  Unread
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChatFilter("groups")}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "groups" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                >
+                  Groups
+                </button>
+              </div>
+            </div>
+          )}
           {messageView === "chats" && <div className={activityList}>
-            {conversations.map((c) => (
+            {visibleConversations.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setActiveId(c.id)}
-                className={activityRow}
+                className={`${activityRow} relative`}
               >
                 {c.isGroup ? (
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700">
@@ -836,8 +906,13 @@ export default function DMsPage() {
                     )}
                   </span>
                   <span className="mt-0.5 flex min-w-0 items-center gap-2">
+                    {c.lastMessage?.isEncrypted && (
+                      <span aria-hidden="true" className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500">
+                        <svg viewBox="0 0 24 24" fill="none" className="h-2.5 w-2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+                      </span>
+                    )}
                     <span className={`min-w-0 flex-1 truncate text-[13px] leading-5 ${c.unreadCount > 0 ? "font-medium text-gray-800" : "text-gray-500"}`}>
-                      {c.lastMessage ? (c.lastMessage.isEncrypted ? "Encrypted message" : c.lastMessage.text) : "No messages yet"}
+                      {c.lastMessage ? (c.lastMessage.isEncrypted ? "End-to-end encrypted message" : c.lastMessage.text) : "No messages yet"}
                     </span>
                     {c.unreadCount > 0 && (
                       <span
@@ -851,7 +926,7 @@ export default function DMsPage() {
                 </span>
               </button>
             ))}
-            {conversations.length === 0 && (
+            {visibleConversations.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-gray-500">No conversations yet.</p>
             )}
           </div>}
@@ -889,9 +964,23 @@ export default function DMsPage() {
                     {activeConversation.members.length}
                   </span>
                 ) : activeConversation?.otherMember ? (
-                  <Avatar avatarKey={activeConversation.otherMember.avatarKey} username={activeConversation.otherMember.username} size={40} />
+                  <Link
+                    to={`/u/${activeConversation.otherMember.username}`}
+                    aria-label={`Open @${activeConversation.otherMember.username} profile`}
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-1 py-1 transition-colors hover:bg-gray-100"
+                  >
+                    <Avatar avatarKey={activeConversation.otherMember.avatarKey} username={activeConversation.otherMember.username} size={40} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[15px] font-semibold leading-5 text-gray-900">
+                        @{activeConversation.otherMember.username}
+                      </span>
+                      <span className={`block truncate text-[11px] leading-4 ${deviceKeyReady && allMembersHaveKeys && !encryptionKeysError ? "text-green-700" : "text-amber-700"}`}>
+                        {deviceKeyReady && allMembersHaveKeys && !encryptionKeysError ? "End-to-end encrypted" : "Not ready for encryption yet"}
+                      </span>
+                    </span>
+                  </Link>
                 ) : null}
-                <div className="min-w-0 flex-1 pl-1">
+                <div className={`min-w-0 ${activeConversation?.otherMember && !activeConversation?.isGroup ? "hidden" : "flex-1 pl-1"}`}>
                   <h2 className="truncate text-[15px] font-semibold leading-5 text-gray-900">
                     {activeConversation?.isGroup
                       ? activeConversation.name ?? activeConversation.members.map((member) => `@${member.username}`).join(", ")
@@ -947,6 +1036,13 @@ export default function DMsPage() {
               <p role="alert" className="mx-4 mt-2 text-xs text-red-600">Could not load conversation encryption keys.</p>
             )}
             <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-3 sm:px-[max(0.75rem,calc((100%-42rem)/2))]">
+              {messagesQuery.isPending && (
+                <div aria-hidden="true" className="space-y-2 px-1 py-2">
+                  <div className="chat-bubble chat-bubble-theirs h-16 animate-pulse" />
+                  <div className="chat-bubble chat-bubble-mine ml-auto h-12 animate-pulse" />
+                  <div className="chat-bubble chat-bubble-theirs h-20 animate-pulse" />
+                </div>
+              )}
               {messagesQuery.hasNextPage && (
                 <div className="self-center pb-1 pt-0.5">
                   <button
