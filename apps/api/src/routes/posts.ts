@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { createPostSchema } from "@app/shared";
+import { createPostSchema, extractHashtags, normalizeHashtag } from "@app/shared";
 import type { FeedItem, FeedPage } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
@@ -60,6 +60,25 @@ function compareFeedItems(a: FeedItem, b: FeedItem): number {
 }
 
 export async function postRoutes(app: FastifyInstance): Promise<void> {
+  app.get<{ Params: { tag: string }; Querystring: { cursor?: string } }>("/hashtags/:tag/posts", { preHandler: requireAuth }, async (request, reply) => {
+    const tag = normalizeHashtag(request.params.tag);
+    if (!/^[\p{L}\p{N}_]{1,64}$/u.test(tag)) return reply.code(400).send({ error: "Invalid hashtag" });
+    const viewerId = request.userId!;
+    const [blockedIds, grants] = await Promise.all([getBlockedUserIds(viewerId), getVisibilityGrants(viewerId)]);
+    const cursor = request.query.cursor ? await prisma.post.findUnique({ where: { id: request.query.cursor }, select: { id: true, createdAt: true } }) : null;
+    if (request.query.cursor && !cursor) return reply.code(400).send({ error: "Invalid cursor" });
+    const rows = await prisma.post.findMany({
+      where: {
+        hashtags: { has: tag }, parentPostId: null, authorId: { notIn: blockedIds },
+        AND: [{ OR: visibleContentClauses(viewerId, grants) }, ...(cursor ? [{ OR: [
+          { createdAt: { lt: cursor.createdAt } }, { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+        ] }] : [])],
+      },
+      include: postWithCountsInclude, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 21,
+    });
+    const posts = rows.slice(0, 20);
+    return reply.send({ posts: posts.map(toFeedPost), nextCursor: rows.length > 20 ? posts[posts.length - 1].id : null });
+  });
   app.post("/posts", { preHandler: requireAuth }, async (request, reply) => {
     const parsed = createPostSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -98,6 +117,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       data: {
         authorId: request.userId!,
         text: parsed.data.text,
+        hashtags: extractHashtags(parsed.data.text ?? ""),
         imageKey: parsed.data.imageKey,
         mediaType: parsed.data.mediaType ?? "image",
         parentPostId: parsed.data.parentPostId,

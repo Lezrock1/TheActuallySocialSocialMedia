@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 
 // Group 1: a web link. Groups 2-3: an @mention, which must not directly follow a word character.
-const TOKEN_PATTERN = /(https?:\/\/[^\s<>]+|www\.[^\s<>]+)|(^|[^A-Za-z0-9_])@([A-Za-z0-9_]{3,30})(?![A-Za-z0-9_])/g;
+const TOKEN_PATTERN = /(https?:\/\/[^\s<>]+|www\.[^\s<>]+)|(^|[^A-Za-z0-9_])@([A-Za-z0-9_]{3,30})(?![A-Za-z0-9_])|(^|[^\p{L}\p{N}_])#([\p{L}\p{N}_]{1,64})(?![\p{L}\p{N}_])/gu;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/;
 
 function splitTrailingPunctuation(raw: string): [string, string] {
@@ -47,6 +47,13 @@ export default function LinkedMentions({ text }: { text: string }) {
       continue;
     }
 
+    if (match[5]) {
+      const start = match.index + match[4].length;
+      parts.push(text.slice(lastIndex, start));
+      parts.push(<Link key={`hashtag-${start}`} to={`/tags/${encodeURIComponent(match[5].normalize("NFC").toLowerCase())}`} className="font-medium text-blue-700 hover:underline">#{match[5]}</Link>);
+      lastIndex = match.index + match[0].length;
+      continue;
+    }
     const mentionStart = match.index + match[2].length;
     parts.push(text.slice(lastIndex, mentionStart));
     parts.push(

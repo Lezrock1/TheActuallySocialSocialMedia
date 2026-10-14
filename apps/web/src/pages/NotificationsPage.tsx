@@ -38,6 +38,8 @@ function notificationText(notification: UserNotification): string {
       return "mentioned you";
     case "message":
       return "sent you a message";
+    case "call":
+      return "called you";
     case "live_room":
       return "started a Live Room you can join";
     case "snap":
@@ -59,6 +61,7 @@ function notificationText(notification: UserNotification): string {
 
 function isDirectActivity(notification: UserNotification): boolean {
   return notification.type === "message" ||
+    notification.type === "call" ||
     notification.type === "snap" ||
     notification.type === "live_room" ||
     notification.type === "meetup_response" ||

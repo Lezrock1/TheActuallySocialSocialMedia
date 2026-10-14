@@ -20,11 +20,16 @@ import { toPublicUser } from "../serializers.js";
 import { isBlocked } from "../visibility.js";
 import { ownsMedia } from "../mediaAccess.js";
 import { byUser, createRateLimiter, rateLimitBy } from "../rateLimit.js";
+import { musicSearchLinks, validMusicLink, searchTracks, resolveMusicLinks } from "../musicCatalog.js";
+import { z } from "zod";
 
 const nowPlayingLimiter = createRateLimiter({ windowMs: 60_000, max: 12 });
 const mixCreateLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: 6 });
 const mixCommentLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
 const NOW_PLAYING_TTL_MS = 4 * 60 * 60 * 1000;
+const catalogLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
+const catalogSchema = z.object({ q: z.string().trim().min(2).max(240) });
+const linkSchema = z.object({ title: z.string().trim().min(1).max(120), artist: z.string().trim().min(1).max(120), appleUrl: z.string().url().max(2048) });
 const MUSIC_HOSTS: Record<(typeof MUSIC_PROVIDERS)[number], string[]> = {
   spotify: ["open.spotify.com", "spotify.link"],
   apple_music: ["music.apple.com", "itunes.apple.com"],
@@ -47,6 +52,7 @@ function toNowPlaying(row: {
   title: string;
   artist: string;
   url: string;
+  links?: unknown;
   updatedAt: Date;
   user: Parameters<typeof toPublicUser>[0];
 }): MusicNowPlaying {
@@ -56,6 +62,7 @@ function toNowPlaying(row: {
     title: row.title,
     artist: row.artist,
     url: row.url,
+    links: { ...musicSearchLinks(row.title, row.artist), [row.provider]: row.url, ...(row.links && typeof row.links === "object" ? row.links : {}) },
     updatedAt: row.updatedAt.toISOString(),
     user: toPublicUser(row.user),
   };
@@ -146,6 +153,17 @@ async function getTasteMatch(userId: string, otherUserId: string): Promise<Music
 }
 
 export async function musicRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/music/search", { preHandler: [requireAuth, rateLimitBy(catalogLimiter, byUser)] }, async (request, reply) => {
+    const parsed = catalogSchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: "Enter a track or artist" });
+    try { return reply.send({ tracks: await searchTracks(parsed.data.q) }); }
+    catch { return reply.code(503).send({ error: "Music search temporarily unavailable. You can enter the track manually." }); }
+  });
+  app.post("/music/links", { preHandler: [requireAuth, rateLimitBy(catalogLimiter, byUser)] }, async (request, reply) => {
+    const parsed = linkSchema.safeParse(request.body);
+    if (!parsed.success || !validMusicLink("apple_music", parsed.data.appleUrl)) return reply.code(400).send({ error: "Invalid catalog link" });
+    return reply.send({ links: await resolveMusicLinks(parsed.data.title, parsed.data.artist, parsed.data.appleUrl) });
+  });
   app.get("/music/now-playing/feed", { preHandler: requireAuth }, async (request, reply) => {
     const following = await prisma.follow.findMany({
       where: { followerId: request.userId! },
@@ -186,10 +204,15 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
     if (!isProviderUrl(parsed.data.provider, parsed.data.url)) {
       return reply.code(400).send({ error: "Use a secure link from the selected music service" });
     }
+    if (parsed.data.links && Object.entries(parsed.data.links).some(([provider, url]) => !validMusicLink(provider, url))) {
+      return reply.code(400).send({ error: "Use Spotify, Apple Music or SoundCloud links" });
+    }
+    const links = { ...musicSearchLinks(parsed.data.title, parsed.data.artist), ...parsed.data.links };
+    links[parsed.data.provider] = parsed.data.url;
     const status = await prisma.musicNowPlaying.upsert({
       where: { userId: request.userId! },
-      create: { ...parsed.data, userId: request.userId! },
-      update: parsed.data,
+      create: { ...parsed.data, links, userId: request.userId! },
+      update: { ...parsed.data, links },
       include: { user: true },
     });
     return reply.send({ status: toNowPlaying(status) });

@@ -88,6 +88,19 @@ type FeedRow =
       item: Extract<FeedItem, { type: "follow" }>;
     };
 
+function FeedCaughtUp({ hasEarlierPosts = false }: { hasEarlierPosts?: boolean }) {
+  return (
+    <section aria-label="You're all caught up" className="flex flex-col items-center px-5 py-9 text-center">
+      <span aria-hidden="true" className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border-2 border-emerald-600 text-emerald-700">
+        <svg viewBox="0 0 24 24" fill="none" className="h-8 w-8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4.5 4.5L19 7" /></svg>
+      </span>
+      <h2 className="text-lg font-semibold text-gray-900">You're all caught up</h2>
+      <p className="mt-1.5 max-w-xs text-sm leading-6 text-gray-500">You've seen all new posts from people you follow.</p>
+      {hasEarlierPosts && <div className="mt-7 flex w-full items-center gap-3 text-xs text-gray-400"><span className="h-px flex-1 bg-gray-200" /><span>Earlier posts</span><span className="h-px flex-1 bg-gray-200" /></div>}
+    </section>
+  );
+}
+
 export default function FeedPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -189,7 +202,7 @@ export default function FeedPage() {
 
   const rowVirtualizer = useWindowVirtualizer({
     count: feedRows.length,
-    estimateSize: (index) => (feedRows[index]?.kind === "boundary" ? 44 : feedRows[index]?.kind === "follow" ? 56 : 360),
+    estimateSize: (index) => (feedRows[index]?.kind === "boundary" ? 260 : feedRows[index]?.kind === "follow" ? 56 : 360),
     getItemKey: (index) => feedRows[index]?.key ?? index,
     overscan: 4,
     scrollMargin: virtualScrollMargin,
@@ -518,11 +531,7 @@ export default function FeedPage() {
               style={{ transform: `translateY(${virtualRow.start - virtualScrollMargin}px)` }}
             >
               {row.kind === "boundary" ? (
-                <div className="my-4 flex items-center gap-2 text-center text-sm text-gray-400">
-                  <span className="h-px flex-1 bg-gray-200" />
-                  <span>✓ You are all caught up</span>
-                  <span className="h-px flex-1 bg-gray-200" />
-                </div>
+                <FeedCaughtUp hasEarlierPosts />
               ) : row.kind === "post" ? (
                 <div className="pb-3">
                   <PostCard
@@ -557,9 +566,9 @@ export default function FeedPage() {
       )}
 
       {!lastPage?.nextCursor && allPages.length > 0 && (
-        <p className="mt-6 text-center text-sm text-gray-400">
-          You're all out of posts.
-        </p>
+        feedRows.some((row) => row.kind === "boundary")
+          ? <p className="py-8 text-center text-xs text-gray-400">No more posts.</p>
+          : <FeedCaughtUp />
       )}
     </div>
   );

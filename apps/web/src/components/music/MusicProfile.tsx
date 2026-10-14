@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MusicNowPlaying, MusicTaste, MusicTasteMatch, MusicProvider } from "@app/shared";
 import { apiFetch } from "../../lib/api.js";
@@ -27,6 +27,20 @@ function csvValues(value: string): string[] {
   return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
 }
 
+type ServiceLinks = NonNullable<MusicNowPlaying["links"]>;
+type TrackSuggestion = { id: string; title: string; artist: string; appleUrl: string };
+function searchLinks(title: string, artist: string): ServiceLinks {
+  const term = encodeURIComponent(`${artist} ${title}`.trim());
+  return { spotify: `https://open.spotify.com/search/${term}`, apple_music: `https://music.apple.com/us/search?term=${term}` };
+}
+function ServiceButtons({ links }: { links: ServiceLinks }) {
+  return <div className="mt-2 flex flex-wrap gap-2">{PROVIDERS.map(({ value, label }) => links[value] && (
+    <a key={value} href={links[value]} target="_blank" rel="noreferrer" className="rounded-full border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-50">
+      {label}{links[value]?.includes("/search") ? " · Search" : ""}
+    </a>
+  ))}</div>;
+}
+
 export function NowPlayingProfile({ username, isOwnProfile, canViewStatus = true }: { username: string; isOwnProfile: boolean; canViewStatus?: boolean }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -34,6 +48,12 @@ export function NowPlayingProfile({ username, isOwnProfile, canViewStatus = true
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [url, setUrl] = useState("");
+  const [links, setLinks] = useState<ServiceLinks>(() => searchLinks("", ""));
+  const [suggestions, setSuggestions] = useState<TrackSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const revisionRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const { data: status = null } = useQuery({
@@ -49,7 +69,41 @@ export function NowPlayingProfile({ username, isOwnProfile, canViewStatus = true
     setTitle(status.title);
     setArtist(status.artist);
     setUrl(status.url);
+    setLinks(status.links ?? { ...searchLinks(status.title, status.artist), [status.provider]: status.url });
   }, [editing, status]);
+
+  useEffect(() => {
+    if (!editing || title.trim().length < 2) { setSuggestions([]); return; }
+    let cancelled = false;
+    const revision = revisionRef.current;
+    const timer = window.setTimeout(() => {
+      setLookupBusy(true);
+      setLookupError(null);
+      void apiFetch<{ tracks: TrackSuggestion[] }>(`/music/search?q=${encodeURIComponent(`${title} ${artist}`.trim())}`)
+        .then(async ({ tracks }) => {
+          if (cancelled) return;
+          setSuggestions(tracks);
+          const exact = tracks.find((track) => track.title.toLowerCase() === title.trim().toLowerCase() && track.artist.toLowerCase() === artist.trim().toLowerCase());
+          if (!exact) return;
+          const result = await apiFetch<{ links: ServiceLinks }>("/music/links", { method: "POST", body: JSON.stringify({ title, artist, appleUrl: exact.appleUrl }) });
+          if (!cancelled && revisionRef.current === revision) {
+            setLinks(result.links);
+            setUrl(result.links[provider] ?? "");
+          }
+        }).catch(() => { if (!cancelled) setLookupError("Search unavailable. You can still edit the track and links manually."); })
+        .finally(() => { if (!cancelled) setLookupBusy(false); });
+    }, 450);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [title, artist, editing, provider]);
+
+  function changeTrack(nextTitle: string, nextArtist: string) {
+    revisionRef.current += 1;
+    setTitle(nextTitle);
+    setArtist(nextArtist);
+    const next = searchLinks(nextTitle, nextArtist);
+    setLinks(next);
+    setUrl(next[provider] ?? "");
+  }
 
   async function saveStatus(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,7 +112,7 @@ export function NowPlayingProfile({ username, isOwnProfile, canViewStatus = true
     try {
       await apiFetch("/music/now-playing", {
         method: "POST",
-        body: JSON.stringify({ provider, title, artist, url }),
+        body: JSON.stringify({ provider, title, artist, url, links: { ...links, [provider]: url } }),
       });
       await queryClient.invalidateQueries({ queryKey: ["music-now-playing", username] });
       await queryClient.invalidateQueries({ queryKey: ["music-now-playing-feed"] });
@@ -103,14 +157,37 @@ export function NowPlayingProfile({ username, isOwnProfile, canViewStatus = true
 
       {editing && isOwnProfile ? (
         <form onSubmit={(event) => void saveStatus(event)} className="mt-3 flex flex-col gap-2.5">
-          <select aria-label="Music service" value={provider} onChange={(event) => setProvider(event.target.value as MusicProvider)} className={input}>
+          <select aria-label="Music service" value={provider} onChange={(event) => {
+            const nextProvider = event.target.value as MusicProvider;
+            revisionRef.current += 1;
+            setProvider(nextProvider); setUrl(links[nextProvider] ?? "");
+          }} className={input}>
             {PROVIDERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <input required maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Track title" className={input} />
-            <input required maxLength={120} value={artist} onChange={(event) => setArtist(event.target.value)} placeholder="Artist" className={input} />
+            <input required aria-label="Track title" autoComplete="off" maxLength={120} value={title} onFocus={() => setShowSuggestions(true)} onChange={(event) => { changeTrack(event.target.value, artist); setShowSuggestions(true); }} placeholder="Track title" className={input} />
+            <input required aria-label="Artist" maxLength={120} value={artist} onChange={(event) => changeTrack(title, event.target.value)} placeholder="Artist" className={input} />
           </div>
-          <input required type="url" maxLength={2048} value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://… track link" className={input} />
+          {showSuggestions && suggestions.length > 0 && <div role="listbox" aria-label="Track suggestions" className="max-h-56 overflow-y-auto rounded-lg border border-gray-200">
+            {suggestions.map((track) => <button key={track.id} type="button" role="option" aria-label={`${track.title} ${track.artist}`} aria-selected={false} onClick={() => {
+              changeTrack(track.title, track.artist); setShowSuggestions(false);
+              setLinks({ ...searchLinks(track.title, track.artist), apple_music: track.appleUrl });
+              if (provider === "apple_music") setUrl(track.appleUrl);
+            }} className="block w-full border-b border-gray-100 px-3 py-2 text-left text-xs hover:bg-emerald-50">
+              <span className="block font-semibold">{track.title}</span><span className="text-gray-500">{track.artist}</span>
+            </button>)}
+          </div>}
+          {lookupBusy && <p role="status" className="text-xs text-gray-500">Looking up track links...</p>}
+          {lookupError && <p role="status" className="text-xs text-amber-700">{lookupError}</p>}
+          <label className="text-xs text-gray-600">Preferred service link<input aria-label="Preferred service link" required type="url" maxLength={2048} value={url} onChange={(event) => {
+            revisionRef.current += 1; setUrl(event.target.value); setLinks((current) => ({ ...current, [provider]: event.target.value }));
+          }} className={`${input} mt-1 w-full`} /></label>
+          <details className="text-xs text-gray-600"><summary className="cursor-pointer">All service links</summary>
+            {PROVIDERS.map(({ value, label }) => <label key={value} className="mt-2 block">{label}<input aria-label={`${label} link`} type="url" value={links[value] ?? ""} onChange={(event) => {
+              revisionRef.current += 1; const next = { ...links }; if (value === "soundcloud" && !event.target.value) delete next.soundcloud; else next[value] = event.target.value;
+              setLinks(next); if (provider === value) setUrl(event.target.value);
+            }} className={`${input} mt-1 w-full`} /></label>)}
+          </details>
           {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
           <div className="flex flex-wrap justify-end gap-2">
             {status && <button type="button" onClick={() => void clearStatus()} disabled={saving} className="rounded-full border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">Clear status</button>}
@@ -118,7 +195,8 @@ export function NowPlayingProfile({ username, isOwnProfile, canViewStatus = true
           </div>
         </form>
       ) : status ? (
-        <a href={status.url} target="_blank" rel="noreferrer" className="mt-3 flex min-w-0 items-center gap-3 rounded-lg bg-emerald-50/70 p-3 transition-colors hover:bg-emerald-50">
+        <div className="mt-3">
+        <a href={status.url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-3 rounded-lg bg-emerald-50/70 p-3 transition-colors hover:bg-emerald-50">
           <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-sm text-white">♫</span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold text-gray-900">{status.title}</span>
@@ -126,6 +204,8 @@ export function NowPlayingProfile({ username, isOwnProfile, canViewStatus = true
           </span>
           <span aria-hidden="true" className="text-xs text-emerald-800">↗</span>
         </a>
+        <ServiceButtons links={status.links ?? searchLinks(status.title, status.artist)} />
+        </div>
       ) : (
         <p className="mt-2 text-xs text-gray-500">Share the track you have on repeat.</p>
       )}
@@ -148,7 +228,8 @@ export function NowPlayingFeed() {
       </div>
       <div className="flex snap-x gap-2 overflow-x-auto pb-1">
         {statuses.map((status) => (
-          <a key={status.id} href={status.url} target="_blank" rel="noreferrer" className="flex w-64 shrink-0 snap-start items-center gap-2.5 rounded-xl border border-gray-200 bg-white p-3 shadow-[0_2px_12px_rgba(15,23,42,0.05)] transition-colors hover:border-emerald-200 hover:bg-emerald-50/30">
+          <article key={status.id} className="w-72 shrink-0 snap-start rounded-xl border border-gray-200 bg-white p-3 shadow-[0_2px_12px_rgba(15,23,42,0.05)]">
+          <div className="flex items-center gap-2.5">
             <Avatar avatarKey={status.user.avatarKey} username={status.user.username} size={38} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[11px] text-gray-500">@{status.user.username} is listening to</span>
@@ -156,7 +237,9 @@ export function NowPlayingFeed() {
               <span className="block truncate text-[11px] text-gray-500">{status.artist}</span>
             </span>
             <span aria-hidden="true" className="text-sm text-emerald-700">♫</span>
-          </a>
+          </div>
+          <ServiceButtons links={status.links ?? searchLinks(status.title, status.artist)} />
+          </article>
         ))}
       </div>
     </section>

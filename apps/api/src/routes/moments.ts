@@ -9,10 +9,14 @@ import { ownsMedia } from "../mediaAccess.js";
 import { deleteMediaIfUnreferenced } from "../storage.js";
 import { getBlockedUserIds } from "../visibility.js";
 import { ensureTodayMoment, utcDayKey } from "../moments.js";
+import { z } from "zod";
+import { createRateLimiter, rateLimitBy, byUser } from "../rateLimit.js";
 
 const WINDOW_MS = MOMENT_WINDOW_SECONDS * 1000;
+const reactionSchema = z.object({ emoji: z.enum(["❤️", "🔥", "😂", "😍", "👏", "😮"]).nullable() });
+const reactionLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
 
-type PostWithUser = MomentPost & { user: User };
+type PostWithUser = MomentPost & { user: User; reactions?: { emoji: string; user: User }[] };
 
 function toItem(post: PostWithUser, moment: Moment): MomentPostItem {
   const windowEnd = moment.startsAt.getTime() + WINDOW_MS;
@@ -25,6 +29,7 @@ function toItem(post: PostWithUser, moment: Moment): MomentPostItem {
     late: post.late,
     lateBySeconds: post.late ? Math.max(0, Math.round((post.createdAt.getTime() - windowEnd) / 1000)) : 0,
     createdAt: post.createdAt.toISOString(),
+    reactions: post.reactions?.map((reaction) => ({ emoji: reaction.emoji, user: toPublicUser(reaction.user) })) ?? [],
   };
 }
 
@@ -80,6 +85,33 @@ async function friendIdsOf(userId: string): Promise<string[]> {
 }
 
 export async function momentRoutes(app: FastifyInstance): Promise<void> {
+  app.get<{ Params: { postId: string } }>("/moments/posts/:postId/reactions", { preHandler: requireAuth }, async (request, reply) => {
+    const post = await prisma.momentPost.findUnique({ where: { id: request.params.postId }, include: { moment: true } });
+    if (!post || post.moment.day !== utcDayKey(new Date()) || !(await canReadMoment(request.userId!, post))) {
+      return reply.code(404).send({ error: "Moment unavailable" });
+    }
+    const blocked = await getBlockedUserIds(request.userId!);
+    const reactions = await prisma.momentReaction.findMany({
+      where: { postId: post.id, userId: { notIn: blocked } }, include: { user: true }, orderBy: { createdAt: "asc" },
+    });
+    return reply.send({ reactions: reactions.map((reaction) => ({ emoji: reaction.emoji, user: toPublicUser(reaction.user) })) });
+  });
+  app.post<{ Params: { postId: string } }>("/moments/posts/:postId/reactions", {
+    preHandler: [requireAuth, rateLimitBy(reactionLimiter, byUser)],
+  }, async (request, reply) => {
+    const parsed = reactionSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "Choose a valid reaction" });
+    const post = await prisma.momentPost.findUnique({ where: { id: request.params.postId }, include: { moment: true } });
+    if (!post || post.moment.day !== utcDayKey(new Date()) || !(await canReadMoment(request.userId!, post))) {
+      return reply.code(404).send({ error: "Moment unavailable" });
+    }
+    if (parsed.data.emoji === null) await prisma.momentReaction.deleteMany({ where: { postId: post.id, userId: request.userId! } });
+    else await prisma.momentReaction.upsert({
+      where: { postId_userId: { postId: post.id, userId: request.userId! } },
+      create: { postId: post.id, userId: request.userId!, emoji: parsed.data.emoji }, update: { emoji: parsed.data.emoji },
+    });
+    return reply.code(204).send();
+  });
   app.get("/moments/today", { preHandler: requireAuth }, async (request, reply) => {
     const now = new Date();
     const moment = await ensureTodayMoment(now);
@@ -179,4 +211,13 @@ export async function momentRoutes(app: FastifyInstance): Promise<void> {
     const feed: MomentFeed = { locked: false, friendPostCount: friendPosts.length, posts };
     return reply.send(feed);
   });
+}
+
+async function canReadMoment(viewerId: string, post: MomentPost): Promise<boolean> {
+  if (post.userId === viewerId) return true;
+  const [mine, friends] = await Promise.all([
+    prisma.momentPost.findUnique({ where: { momentId_userId: { momentId: post.momentId, userId: viewerId } }, select: { id: true } }),
+    friendIdsOf(viewerId),
+  ]);
+  return !!mine && friends.includes(post.userId);
 }

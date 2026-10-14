@@ -10,6 +10,7 @@ const preferenceByType: Record<NotificationType, BooleanPreferenceKey> = {
   snap: "snaps",
   message: "messages",
   live_room: "liveRooms",
+  call: "messages",
   follow: "follows",
   comment: "comments",
   comment_reply: "commentReplies",

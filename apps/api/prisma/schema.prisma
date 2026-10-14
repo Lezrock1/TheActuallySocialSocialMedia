@@ -52,6 +52,7 @@ model User {
   commentLikes     CommentLike[]
   pushSubscriptions WebPushSubscription[]
   momentPosts       MomentPost[]
+  momentReactions   MomentReaction[]
   notificationPreferences NotificationPreference?
   circles           Circle[]
   circleMemberships CircleMember[]
@@ -95,6 +96,7 @@ model Post {
   id           String   @id @default(cuid())
   authorId     String
   text         String?
+  hashtags     String[] @default([])
   imageKey     String?
   mediaType    String   @default("image")
   createdAt    DateTime @default(now())
@@ -121,6 +123,7 @@ model Post {
 
   @@index([authorId, createdAt])
   @@index([parentPostId])
+  @@index([hashtags], type: Gin)
 }
 
 model Comment {
@@ -166,10 +169,22 @@ model MomentPost {
 
   moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions MomentReaction[]
 
   @@unique([momentId, userId])
   @@index([userId, createdAt])
   @@index([imageKey])
+}
+
+model MomentReaction {
+  id String @id @default(cuid())
+  postId String
+  userId String
+  emoji String
+  createdAt DateTime @default(now())
+  post MomentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([postId, userId])
 }
 
 model CommentLike {
@@ -337,6 +352,7 @@ model MusicNowPlaying {
   title     String
   artist    String
   url       String
+  links     Json @default("{}")
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -538,6 +554,7 @@ model ConversationMember {
 
 model Message {
   id             String   @id @default(cuid())
+  callId         String?  @unique
   conversationId String
   senderId       String
   text           String

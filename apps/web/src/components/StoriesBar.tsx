@@ -20,6 +20,9 @@ import { useAuth } from "../auth/AuthContext.js";
 import { clearLocalMeetupReminder, getLocalMeetupReminderMinutes, setLocalMeetupReminder } from "../lib/localMeetupReminders.js";
 import { useMoment } from "../lib/useMoment.js";
 import { useCamera } from "./camera/CameraProvider.js";
+import MomentReactions from "./MomentReactions.js";
+import { encryptMessage, type PublicEncryptionKey } from "../lib/encryption.js";
+import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
 
 async function fetchStoryGroups(): Promise<StoryGroup[]> {
   const res = await apiFetch<{ groups: StoryGroup[] }>("/stories");
@@ -195,12 +198,13 @@ function MomentViewer({ posts, startIndex, onClose }: { posts: MomentPostItem[];
       )}
 
       {post.caption && (
-        <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/75 to-transparent px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-16" onClick={(event) => event.stopPropagation()}>
+        <div className="absolute inset-x-0 bottom-36 z-10 px-4" onClick={(event) => event.stopPropagation()}>
           <p className="mx-auto max-w-[90vw] rounded-full bg-black/55 px-4 py-2 text-center text-sm text-white backdrop-blur-md">
             {post.caption}
           </p>
         </div>
       )}
+      <MomentReactions key={post.id} postId={post.id} />
     </div>
   );
 }
@@ -373,21 +377,21 @@ export default function StoriesBar() {
         method: "POST",
         body: JSON.stringify({ username: viewing.author.username }),
       });
+      if (!user) throw new Error("Please sign in to reply");
+      await registerDeviceEncryptionKey(user.id);
+      const { keys } = await apiFetch<{ keys: PublicEncryptionKey[] }>(`/conversations/${result.conversationId}/encryption-keys`);
+      if (!keys.some((key) => key.userId === viewing.author.id)) throw new Error("Your friend needs to open Messages once to enable encrypted replies.");
+      const encryptedPayload = await encryptMessage(JSON.stringify({ type: "story_reply", text: message, story: {
+        storyId: story.id, imageKey: story.imageKey, authorUsername: viewing.author.username, createdAt: story.createdAt,
+      } }), keys);
+      await apiFetch(`/conversations/${result.conversationId}/messages`, { method: "POST", body: JSON.stringify({ encryptedPayload, storyId: story.id }) });
+      await queryClient.invalidateQueries({ queryKey: ["messages", result.conversationId] });
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       setViewing(null);
-      navigate(`/dms?conversation=${result.conversationId}`, {
-        state: {
-          draftMessage: message,
-          storyReply: {
-            storyId: story.id,
-            imageKey: story.imageKey,
-            authorUsername: viewing.author.username,
-            createdAt: story.createdAt,
-          },
-        },
-      });
-    } catch {
-      setReactionError("Could not open a private reply.");
+      setReplyText("");
+      navigate(`/dms?conversation=${result.conversationId}`);
+    } catch (error) {
+      setReactionError(error instanceof Error ? error.message : "Could not send a private reply.");
     } finally {
       setReplySending(false);
     }

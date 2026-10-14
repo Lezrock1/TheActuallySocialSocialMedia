@@ -236,8 +236,8 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
       if (activeCallRef.current?.callId === payload.callId) clearCall();
       if (incomingCallRef.current?.callId === payload.callId) updateIncomingCall(null);
     }
-    function onCallDeclined() {
-      setCallError("Someone declined the call.");
+    function onCallDeclined(payload: { callId: string }) {
+      if (activeCallRef.current?.callId === payload.callId && !activeCallRef.current.isRoom) clearCall();
     }
 
     socket.on("call:incoming", onIncoming);
@@ -247,6 +247,12 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
     socket.on("call:media-state", onMediaState);
     socket.on("call:ended", onCallEnded);
     socket.on("call:declined", onCallDeclined);
+    function checkPendingCall() {
+      if (ignoreIncomingCalls) return;
+      socket.emit("call:pending", (pending: IncomingCall | null) => { if (pending) onIncoming(pending); });
+    }
+    socket.on("connect", checkPendingCall);
+    if (socket.connected) checkPendingCall();
     return () => {
       socket.off("call:incoming", onIncoming);
       socket.off("call:participant-joined", onParticipantJoined);
@@ -255,6 +261,7 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
       socket.off("call:media-state", onMediaState);
       socket.off("call:ended", onCallEnded);
       socket.off("call:declined", onCallDeclined);
+      socket.off("connect", checkPendingCall);
       if (activeCallRef.current) {
         socket.emit("call:leave", { callId: activeCallRef.current.callId });
         clearCall();

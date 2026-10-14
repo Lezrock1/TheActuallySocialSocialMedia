@@ -276,6 +276,7 @@ export const NOTIFICATION_TYPES = [
   "mention",
   "message",
   "live_room",
+  "call",
   "snap",
   "close_friend",
   "circle_post",
@@ -483,6 +484,7 @@ export interface MomentPostItem {
   late: boolean;
   lateBySeconds: number;
   createdAt: string;
+  reactions?: { emoji: string; user: PublicUser }[];
 }
 
 // "waiting": the time is still a secret; "open": inside the on-time window; "late": window over, posting still allowed today.
@@ -510,6 +512,7 @@ export const setNowPlayingSchema = z.object({
   title: z.string().trim().min(1).max(120),
   artist: z.string().trim().min(1).max(120),
   url: z.string().url().max(2048),
+  links: z.object({ spotify: z.string().url().max(2048), apple_music: z.string().url().max(2048), soundcloud: z.string().url().max(2048).optional() }).optional(),
 });
 export type SetNowPlayingInput = z.infer<typeof setNowPlayingSchema>;
 
@@ -519,6 +522,7 @@ export interface MusicNowPlaying {
   title: string;
   artist: string;
   url: string;
+  links?: { spotify: string; apple_music: string; soundcloud?: string };
   updatedAt: string;
   user: PublicUser;
 }
@@ -650,7 +654,7 @@ export type EncryptedMessagePayload = z.infer<typeof encryptedMessagePayloadSche
 
 export const sendMessageSchema = z.union([
   z.object({ text: z.string().min(1).max(4000), mediaKey: z.string().min(1).optional() }).strict(),
-  z.object({ encryptedPayload: encryptedMessagePayloadSchema, mediaKey: z.string().min(1).optional() }).strict(),
+  z.object({ encryptedPayload: encryptedMessagePayloadSchema, mediaKey: z.string().min(1).optional(), storyId: z.string().min(1).optional() }).strict(),
 ]);
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 
@@ -690,6 +694,7 @@ export interface ConversationSummary {
 
 export interface ConversationMessage {
   id: string;
+  callId?: string | null;
   senderId: string;
   text: string | null;
   isEncrypted: boolean;
@@ -733,3 +738,4 @@ export const createReportSchema = z.object({
 export type CreateReportInput = z.infer<typeof createReportSchema>;
 
 export * from "./safetyNumber.js";
+export * from "./hashtags.js";

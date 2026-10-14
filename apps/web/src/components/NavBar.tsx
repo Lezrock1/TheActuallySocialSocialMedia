@@ -1,4 +1,6 @@
 import { NavLink } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../lib/api.js";
 import CameraIcon from "./CameraIcon.js";
@@ -137,12 +139,30 @@ export default function NavBar() {
 export function MobileNav() {
   const { notificationCount, messageUnreadCount, feedUnreadCount, snapUnreadCount } = useNavCounts();
   const camera = useCamera();
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const update = () => {
+      const active = document.activeElement;
+      const editing = active instanceof HTMLTextAreaElement ||
+        (active instanceof HTMLInputElement && !["checkbox", "radio", "button", "submit"].includes(active.type));
+      setKeyboardOpen(editing && !!viewport && window.innerHeight - viewport.height > 150);
+    };
+    viewport?.addEventListener("resize", update);
+    document.addEventListener("focusin", update);
+    document.addEventListener("focusout", update);
+    return () => {
+      viewport?.removeEventListener("resize", update);
+      document.removeEventListener("focusin", update);
+      document.removeEventListener("focusout", update);
+    };
+  }, []);
 
-  return (
+  return createPortal(
       <nav
         aria-label="Primary navigation"
-        className="fixed bottom-2 left-1/2 z-40 grid w-[90%] max-w-lg -translate-x-1/2 grid-cols-5 items-stretch gap-1 rounded-2xl border border-white/70 bg-white/85 px-3 pt-1 shadow-[0_-8px_28px_rgba(15,23,42,0.09)] backdrop-blur-xl sm:hidden"
-        style={{ paddingBottom: "max(0.4rem, env(safe-area-inset-bottom))" }}
+        className={`${keyboardOpen ? "hidden" : "grid"} fixed inset-x-0 z-40 mx-auto w-[90%] max-w-lg grid-cols-5 items-stretch gap-1 rounded-2xl border border-white/70 bg-white/85 px-3 pb-2 pt-1 shadow-[0_-8px_28px_rgba(15,23,42,0.09)] backdrop-blur-xl sm:hidden`}
+        style={{ bottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
         <NavLink to="/" end className={mobileLinkClass}>
           <span className="relative inline-flex">
@@ -181,6 +201,6 @@ export function MobileNav() {
         >
           <CameraIcon />
         </button>
-      </nav>
+      </nav>, document.body
   );
 }

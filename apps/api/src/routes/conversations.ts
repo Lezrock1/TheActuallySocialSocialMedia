@@ -11,7 +11,7 @@ import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { createUserNotification } from "../notifications.js";
 import { emitToUsers } from "../realtime.js";
-import { isBlocked } from "../visibility.js";
+import { isBlocked, canViewContent } from "../visibility.js";
 import { ownsMedia } from "../mediaAccess.js";
 
 const DEFAULT_MESSAGES_LIMIT = 40;
@@ -226,6 +226,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({
         messages: messages.map((m) => ({
           id: m.id,
+          callId: m.callId,
           senderId: m.senderId,
           text: m.isEncrypted ? null : m.text,
           isEncrypted: m.isEncrypted,
@@ -323,12 +324,20 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         ? parsed.data.encryptedPayload
         : null;
       const plainText = "text" in parsed.data ? parsed.data.text : null;
-      const mediaKey = parsed.data.mediaKey ?? null;
+      const storyId = "storyId" in parsed.data ? parsed.data.storyId : undefined;
+      let mediaKey = parsed.data.mediaKey ?? null;
       if (mediaKey && !encryptedPayload) {
         return reply.code(400).send({ error: "Voice-message attachments must be end-to-end encrypted" });
       }
       if (mediaKey && !(await ownsMedia(request.userId!, mediaKey))) {
         return reply.code(403).send({ error: "You can only attach your own uploads" });
+      }
+      if (storyId) {
+        const story = await prisma.story.findUnique({ where: { id: storyId } });
+        if (!story || story.expiresAt <= new Date() || !(await canViewContent(request.userId!, story))) {
+          return reply.code(404).send({ error: "Story is no longer available" });
+        }
+        mediaKey = story.imageKey;
       }
       const isEncrypted = encryptedPayload !== null;
       const storedText = encryptedPayload ? JSON.stringify(encryptedPayload) : plainText!;

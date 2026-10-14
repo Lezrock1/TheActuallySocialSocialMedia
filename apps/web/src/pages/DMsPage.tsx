@@ -19,7 +19,7 @@ import {
 } from "../lib/encryption.js";
 import type { PublicEncryptionKey } from "../lib/encryption.js";
 import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
-import { useWebRtcCall } from "../lib/useWebRtcCall.js";
+import { useCalls } from "../components/CallProvider.js";
 import { getSocket } from "../lib/socket.js";
 import { mediaUrl, uploadMedia } from "../lib/upload.js";
 import { useConversationBackground } from "../lib/pageBackground.js";
@@ -27,7 +27,6 @@ import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import Avatar from "../components/Avatar.js";
-import CallOverlay from "../components/CallOverlay.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
 import LiveRoomsBar, { fetchLiveRooms } from "../components/LiveRoomsBar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
@@ -100,6 +99,18 @@ function labelForDeliveryState(state: ConversationMessage["deliveryState"] | und
 
 function formatClock(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function chatPreview(message: ConversationSummary["lastMessage"]): string {
+  if (!message) return "No messages yet";
+  if (message.isEncrypted) return "End-to-end encrypted message";
+  const parsed = parseMessageContent(message.text ?? "");
+  if (parsed.kind !== "call") return message.text ?? "";
+  const label = parsed.callType === "video" ? "Video call" : "Audio call";
+  if (parsed.status === "missed") return `Missed ${label.toLowerCase()}`;
+  if (parsed.status === "declined") return `${label} declined`;
+  if (parsed.status === "completed") return `${label} · ${formatDuration(parsed.durationSeconds * 1000)}`;
+  return `${label} · ${parsed.status === "ongoing" ? "In progress" : "Ringing"}`;
 }
 
 function dayKey(iso: string): string {
@@ -178,7 +189,7 @@ export default function DMsPage() {
       socket.off("live-rooms:changed", refresh);
     };
   }, [queryClient]);
-  const call = useWebRtcCall(user?.id);
+  const call = useCalls();
   const friendPickerRef = useRef<HTMLDivElement>(null);
   const friendSearchInputRef = useRef<HTMLInputElement>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
@@ -250,6 +261,11 @@ export default function DMsPage() {
     if (searchParams.get("view") !== "live_rooms") return;
     setActiveId(null);
     setMessageView("live_rooms");
+  }, [searchParams]);
+
+  useEffect(() => {
+    const conversationId = searchParams.get("conversation");
+    if (conversationId) { setActiveId(conversationId); setMessageView("chats"); }
   }, [searchParams]);
 
   useEffect(() => {
@@ -480,8 +496,6 @@ export default function DMsPage() {
     enabled: !!activeId && deviceKeyReady,
   });
   const activeConversation = conversations.find((conversation) => conversation.id === activeId);
-  const callConversationId = call.activeCall?.conversationId ?? call.incomingCall?.conversationId;
-  const callConversation = conversations.find((conversation) => conversation.id === callConversationId);
   const canCall = !!activeConversation && activeConversation.members.length >= 2 && activeConversation.members.length <= MAX_LIVE_ROOM_PARTICIPANTS;
   const normalizedChatSearch = chatSearch.trim().replace(/^@/, "").toLocaleLowerCase();
   const pinnedSet = useMemo(() => new Set(pinnedChatIds), [pinnedChatIds]);
@@ -613,8 +627,14 @@ export default function DMsPage() {
       }
     }
     socket.on("message:new", onNewMessage);
+    const onUpdatedMessage = (payload: { conversationId: string }) => {
+      void queryClient.invalidateQueries({ queryKey: ["messages", payload.conversationId] });
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    };
+    socket.on("message:updated", onUpdatedMessage);
     return () => {
       socket.off("message:new", onNewMessage);
+      socket.off("message:updated", onUpdatedMessage);
     };
   }, [activeId, queryClient]);
 
@@ -734,7 +754,7 @@ export default function DMsPage() {
       : [...current, friend.username]);
   }
 
-  async function sendEncrypted(content: string, mediaKey?: string) {
+  async function sendEncrypted(content: string, mediaKey?: string, storyId?: string) {
     if (!activeId || !deviceKeyReady) throw new Error("Encryption is not ready yet.");
     if (!allMembersHaveKeys) {
       throw new Error("Every participant must open Messages once before you can send an encrypted message.");
@@ -742,7 +762,7 @@ export default function DMsPage() {
     const encryptedPayload: EncryptedMessagePayload = await encryptMessage(content, encryptionKeys);
     await apiFetch(`/conversations/${activeId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ encryptedPayload, ...(mediaKey ? { mediaKey } : {}) }),
+      body: JSON.stringify({ encryptedPayload, ...(mediaKey ? { mediaKey } : {}), ...(storyId ? { storyId } : {}) }),
     });
   }
 
@@ -783,7 +803,7 @@ export default function DMsPage() {
             text: wrappedReply,
           })
         : wrappedReply;
-      await sendEncrypted(messageContent);
+      await sendEncrypted(messageContent, undefined, replyContext?.storyId);
       setPendingMessages((current) => current.filter((message) => message.id !== pendingId));
     } catch (error) {
       setPendingMessages((current) => current.filter((message) => message.id !== pendingId));
@@ -1166,7 +1186,7 @@ export default function DMsPage() {
                         </span>
                       )}
                       <span className={`min-w-0 flex-1 truncate text-[13px] leading-5 ${c.unreadCount > 0 ? "font-medium text-gray-800" : "text-gray-500"}`}>
-                        {c.lastMessage ? (c.lastMessage.isEncrypted ? "End-to-end encrypted message" : c.lastMessage.text) : "No messages yet"}
+                        {chatPreview(c.lastMessage)}
                       </span>
                       {c.unreadCount > 0 && (
                         <span
@@ -1356,6 +1376,15 @@ export default function DMsPage() {
                 </div>
               )}
               {renderedMessages.map(({ message, parsed, decrypting, pending }, messageIndex) => {
+                if (parsed.kind === "call" && "callId" in message && message.callId) return (
+                  <div key={message.id} className="my-2 self-center rounded-lg border border-gray-200 bg-white/90 px-4 py-2 text-center text-xs text-gray-600">
+                    <span className="block font-semibold text-gray-800">{parsed.callType === "video" ? "Video call" : "Audio call"}</span>
+                    <span>{parsed.status === "completed" ? `Duration ${formatDuration(parsed.durationSeconds * 1000)}`
+                      : parsed.status === "missed" ? "Missed call" : parsed.status === "declined" ? "Declined call"
+                      : parsed.status === "ongoing" ? "In progress" : "Ringing"}</span>
+                    <time className="ml-2 text-gray-400">{formatClock(message.createdAt)}</time>
+                  </div>
+                );
                 if (parsed.kind === "rsvp" || parsed.kind === "meetup_cancel") return null;
                 const mine = message.senderId === user?.id;
                 const isPending = pending;
@@ -1452,7 +1481,7 @@ export default function DMsPage() {
                         className="mb-2 flex items-center gap-2 overflow-hidden rounded-lg bg-black/5 p-1.5"
                       >
                         <img
-                          src={mediaUrl(parsed.storyReply.imageKey)}
+                          src={mediaUrl(message.mediaKey ?? parsed.storyReply.imageKey)}
                           alt={`Story by @${parsed.storyReply.authorUsername}`}
                           loading="lazy"
                           decoding="async"
@@ -1779,25 +1808,6 @@ export default function DMsPage() {
           onChanged={() => setSafetyVersion((value) => value + 1)}
         />
       )}
-      <CallOverlay
-        incomingCall={call.incomingCall}
-        activeCall={call.activeCall}
-        currentUserId={user?.id ?? ""}
-        users={callConversation?.members ?? []}
-        localStream={call.localStream}
-        remoteStreams={call.remoteStreams}
-        microphoneMuted={call.microphoneMuted}
-        remoteMuted={call.remoteMuted}
-        remoteCameraOff={call.remoteCameraOff}
-        cameraEnabled={call.cameraEnabled}
-        error={call.callError}
-        onAccept={() => void call.acceptCall()}
-        onDecline={call.declineCall}
-        onEnd={call.endCall}
-        onToggleMicrophone={call.toggleMicrophone}
-        onToggleCamera={call.toggleCamera}
-        onClearError={call.clearCallError}
-      />
     </div>
   );
 }

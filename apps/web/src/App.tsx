@@ -21,6 +21,7 @@ const AppearanceSettingsPage = lazy(() => import("./pages/AppearanceSettingsPage
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage.js"));
 const ApiUnavailablePage = lazy(() => import("./pages/ApiUnavailablePage.js"));
 const UsageDashboardPage = lazy(() => import("./pages/UsageDashboardPage.js"));
+const HashtagPage = lazy(() => import("./pages/HashtagPage.js"));
 import { MobileNav } from "./components/NavBar.js";
 import { CameraProvider } from "./components/camera/CameraProvider.js";
 import DeviceSetupPrompt from "./components/DeviceSetupPrompt.js";
@@ -29,6 +30,7 @@ import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
 import { AppBootSkeleton } from "./components/LoadingSkeleton.js";
 import { getSocket } from "./lib/socket.js";
 import { apiFetch } from "./lib/api.js";
+import CallProvider from "./components/CallProvider.js";
 
 type DeploymentNoticeStatus = "started" | "complete" | "failed";
 
@@ -196,6 +198,7 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 }
 
 function titleForPath(pathname: string): string {
+  if (pathname.startsWith("/tags/")) return "Hashtag";
   if (pathname === "/dashboard") return "Public Dashboard";
   if (pathname === "/") return "Feed";
   if (pathname.startsWith("/dms")) return "Messages";
@@ -234,6 +237,7 @@ function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/dashboard" element={<UsageDashboardPage />} />
+        <Route path="/tags/:tag" element={<RequireAuth><HashtagPage /></RequireAuth>} />
         <Route
           path="/"
           element={
@@ -361,7 +365,7 @@ export default function App() {
     <AuthProvider>
       <LocalMeetupReminderProvider>
         <CameraProvider>
-          <AppRoutes />
+          <CallProvider><AppRoutes /></CallProvider>
         </CameraProvider>
       </LocalMeetupReminderProvider>
     </AuthProvider>

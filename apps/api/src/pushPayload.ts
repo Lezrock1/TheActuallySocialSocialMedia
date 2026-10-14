@@ -20,6 +20,7 @@ const activityText: Record<NotificationType, string> = {
   mention: "mentioned you",
   message: "sent you a message",
   live_room: "started a Live Room you can join",
+  call: "is calling you",
   snap: "sent you a Snap",
   close_friend: "added you as a close friend",
   circle_post: "shared a new post with a circle you're in",

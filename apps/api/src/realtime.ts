@@ -29,6 +29,9 @@ interface ActiveCall {
   memberIds: string[];
   isRoom: boolean;
   audience: LiveRoomAudience;
+  callType: "audio" | "video";
+  answeredAt?: number;
+  ringingTimer?: ReturnType<typeof setTimeout>;
 }
 
 interface ActiveRadio {
@@ -139,6 +142,7 @@ async function canViewRadio(userId: string, radio: ActiveRadio): Promise<boolean
     memberIds: radio.memberIds,
     isRoom: true,
     audience: radio.audience,
+    callType: "audio",
   });
 }
 
@@ -150,6 +154,7 @@ async function notifyRadioListChanged(io: SocketIOServer, radio: ActiveRadio): P
     memberIds: radio.memberIds,
     isRoom: true,
     audience: radio.audience,
+    callType: "audio",
   };
   if (radio.audience === "everyone") io.emit("radio:rooms:changed", {});
   else emitToUsers(io, await getLiveRoomAudienceUserIds(callLikeRoom), "radio:rooms:changed", {});
@@ -184,6 +189,31 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
   const activeCalls = new Map<string, ActiveCall>();
   const activeRadios = new Map<string, ActiveRadio>();
   const onlineSocketCounts = new Map<string, number>();
+
+  async function saveCallEvent(callId: string, call: ActiveCall, status: "ringing" | "ongoing" | "completed" | "missed" | "declined") {
+    if (call.isRoom) return;
+    const durationSeconds = call.answeredAt ? Math.max(0, Math.floor((Date.now() - call.answeredAt) / 1000)) : 0;
+    const text = JSON.stringify({ type: "call", callType: call.callType, status, durationSeconds });
+    const message = await prisma.message.upsert({
+      where: { callId },
+      create: { callId, conversationId: call.conversationId, senderId: call.hostUserId, text },
+      update: { text },
+    });
+    emitToUsers(io, call.memberIds, "message:new", {
+      conversationId: call.conversationId,
+      message: { id: message.id, callId, senderId: message.senderId, text, isEncrypted: false, encryptedPayload: null, createdAt: message.createdAt.toISOString() },
+    });
+    emitToUsers(io, call.memberIds, "message:updated", { conversationId: call.conversationId });
+  }
+
+  function finishDirectCall(callId: string, status?: "declined") {
+    const call = activeCalls.get(callId);
+    if (!call || call.isRoom) return;
+    activeCalls.delete(callId);
+    if (call.ringingTimer) clearTimeout(call.ringingTimer);
+    emitToUsers(io, call.memberIds, "call:ended", { callId });
+    void saveCallEvent(callId, call, status ?? (call.answeredAt ? "completed" : "missed")).catch(console.error);
+  }
 
   async function emitContactPresence(userId: string, isOnline: boolean): Promise<void> {
     const memberships = await prisma.conversationMember.findMany({
@@ -478,6 +508,15 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
           acknowledge({ ok: false, error: "Conversation not found" });
           return;
         }
+        if (payload.callType !== "audio" && payload.callType !== "video") {
+          acknowledge({ ok: false, error: "Invalid call type" });
+          return;
+        }
+        if ((await Promise.all(members.filter((member) => member.userId !== userId)
+          .map((member) => isBlocked(userId, member.userId)))).some(Boolean)) {
+          acknowledge({ ok: false, error: "Participant unavailable" });
+          return;
+        }
         if (payload.isRoom && payload.callType !== "video") {
           acknowledge({ ok: false, error: "Live rooms require video" });
           return;
@@ -489,6 +528,11 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
         const minimumParticipants = payload.isRoom && payload.audience !== "invited" ? 1 : 2;
         if (members.length < minimumParticipants || members.length > MAX_CALL_PARTICIPANTS) {
           acknowledge({ ok: false, error: `Calls support ${minimumParticipants}–${MAX_CALL_PARTICIPANTS} participants` });
+          return;
+        }
+        const savedCall = await prisma.message.findUnique({ where: { callId: payload.callId }, select: { id: true } });
+        if (savedCall) {
+          acknowledge({ ok: false, error: "Call ID has already been used" });
           return;
         }
         if (activeCalls.has(payload.callId) ||
@@ -505,12 +549,20 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
           memberIds: members.map((member) => member.userId),
           isRoom: payload.isRoom === true,
           audience: payload.isRoom ? payload.audience ?? "invited" : "invited",
+          callType: payload.callType,
         });
         if (payload.isRoom) {
           const call = activeCalls.get(payload.callId)!;
           void notifyLiveRoomAudienceChanged(io, call).catch(() => undefined);
           void notifyLiveRoomStarted(payload.callId, call).catch(() => undefined);
         } else {
+          const call = activeCalls.get(payload.callId)!;
+          await saveCallEvent(payload.callId, call, "ringing");
+          call.ringingTimer = setTimeout(() => finishDirectCall(payload.callId), 45_000);
+          void Promise.all(call.memberIds.filter((memberId) => memberId !== userId).map((recipientId) =>
+            createUserNotification({ recipientId, actorId: userId, type: "call", conversationId: call.conversationId,
+              dedupeKey: `call:${payload.callId}:${recipientId}` })
+          )).catch(console.error);
           emitToUsers(
             io,
             members.map((member) => member.userId).filter((memberId) => memberId !== userId),
@@ -525,6 +577,14 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
         }
         acknowledge({ ok: true });
       })().catch(() => acknowledge({ ok: false, error: "Could not start the call" }));
+    });
+
+    socket.on("call:pending", (acknowledge: (call: unknown) => void) => {
+      if (typeof acknowledge !== "function") return;
+      const entry = [...activeCalls.entries()].find(([, call]) => !call.isRoom && !call.answeredAt &&
+        call.hostUserId !== userId && call.memberIds.includes(userId));
+      acknowledge(entry ? { callId: entry[0], conversationId: entry[1].conversationId,
+        callType: entry[1].callType, callerId: entry[1].hostUserId } : null);
     });
 
     socket.on("live-rooms:list", (acknowledge: (rooms: import("@app/shared").LiveRoom[]) => void) => {
@@ -595,6 +655,11 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
 
         const peerIds = [...call.participantIds].filter((peerId) => peerId !== userId);
         call.participantIds.add(userId);
+        if (!call.isRoom && userId !== call.hostUserId && !call.answeredAt) {
+          call.answeredAt = Date.now();
+          if (call.ringingTimer) clearTimeout(call.ringingTimer);
+          await saveCallEvent(payload.callId, call, "ongoing");
+        }
         emitToUsers(io, peerIds, "call:participant-joined", { callId: payload.callId, userId });
         if (call.isRoom) void notifyLiveRoomAudienceChanged(io, call).catch(() => undefined);
         acknowledge({ ok: true, peerIds });
@@ -626,7 +691,10 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
         where: { conversationId_userId: { conversationId: call.conversationId, userId } },
         select: { userId: true },
       }).then((membership) => {
-        if (membership) emitToUsers(io, [call.hostUserId], "call:declined", { callId: payload.callId, userId });
+        if (membership) {
+          emitToUsers(io, [call.hostUserId], "call:declined", { callId: payload.callId, userId });
+          if (!call.isRoom && !call.answeredAt) finishDirectCall(payload.callId, "declined");
+        }
       }).catch(() => undefined);
     });
 
@@ -664,6 +732,10 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
     function leaveCall(userId: string, callId: string) {
       const call = activeCalls.get(callId);
       if (!call || !call.participantIds.has(userId)) return;
+      if (!call.isRoom) {
+        finishDirectCall(callId);
+        return;
+      }
       call.participantIds.delete(userId);
       const otherParticipants = [...call.participantIds];
       if (userId === call.hostUserId && !call.isRoom) {

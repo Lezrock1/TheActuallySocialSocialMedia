@@ -24,6 +24,7 @@ export interface MeetupContent {
 }
 
 export type ParsedMessage =
+  | { kind: "call"; callType: "audio" | "video"; status: string; durationSeconds: number }
   | { kind: "text"; text: string; storyReply?: StoryReplyContext }
   | { kind: "voice"; voice: VoiceContent }
   | { kind: "meetup"; meetup: MeetupContent; event: "created" | "updated" }
@@ -38,6 +39,10 @@ export function parseMessageContent(content: string): ParsedMessage {
   if (!content.startsWith("{")) return { kind: "text", text: content };
   try {
     const value = JSON.parse(content) as Record<string, unknown>;
+    if (value.type === "call" && (value.callType === "audio" || value.callType === "video") &&
+      typeof value.status === "string" && typeof value.durationSeconds === "number") {
+      return { kind: "call", callType: value.callType, status: value.status, durationSeconds: value.durationSeconds };
+    }
     if (value.type === "story_reply" && isString(value.text)) {
       const story = value.story as Partial<StoryReplyContext> | undefined;
       if (isString(story?.storyId) && isString(story.imageKey) && isString(story.authorUsername)) {
