@@ -640,6 +640,7 @@ export interface PublicUsageMetrics {
   trackingSince: string;
   last24Hours: UsageMetricCounts;
   last7Days: UsageMetricCounts;
+  total: UsageMetricCounts;
 }
 
 export const encryptedMessagePayloadSchema = z.object({

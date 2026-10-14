@@ -10,12 +10,14 @@ function MediaTile({
   showVideo,
   muted,
   micMuted,
+  mirrored = false,
 }: {
   user: PublicUser | null;
   stream: MediaStream | null;
   showVideo: boolean;
   muted: boolean;
   micMuted: boolean;
+  mirrored?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -38,7 +40,7 @@ function MediaTile({
     <div className="relative flex aspect-video min-h-36 items-center justify-center overflow-hidden rounded-lg bg-gray-900">
       <audio ref={audioRef} autoPlay muted={muted} className="hidden" />
       {videoVisible ? (
-        <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
+        <video ref={videoRef} aria-label={mirrored ? "Your camera preview" : "Participant camera"} autoPlay playsInline muted className="h-full w-full object-cover" style={{ transform: mirrored ? "scaleX(-1)" : undefined }} />
       ) : (
         <Avatar avatarKey={user?.avatarKey ?? null} username={user?.username ?? "Call"} size={64} />
       )}
@@ -136,6 +138,7 @@ export default function CallOverlay({
               showVideo={callType === "video" && cameraEnabled}
               muted
               micMuted={microphoneMuted}
+              mirrored
             />
             {remoteTileIds.map((id) => (
               <MediaTile

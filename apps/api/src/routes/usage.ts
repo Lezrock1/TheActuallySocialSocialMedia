@@ -41,7 +41,7 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
     const start24Hours = new Date(Math.max(asOf.getTime() - DAY_MS, trackingSince.getTime()));
     const start7Days = new Date(Math.max(asOf.getTime() - 7 * DAY_MS, trackingSince.getTime()));
 
-    const [last24HoursRows, last7DaysRows] = await Promise.all([
+    const [last24HoursRows, last7DaysRows, totalRows] = await Promise.all([
       prisma.usageMetricBucket.groupBy({
         by: ["metric"],
         where: { metric: { in: [...METRICS] }, bucket: { gte: start24Hours, lt: asOf } },
@@ -52,6 +52,11 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
         where: { metric: { in: [...METRICS] }, bucket: { gte: start7Days, lt: asOf } },
         _sum: { count: true },
       }),
+      prisma.usageMetricBucket.groupBy({
+        by: ["metric"],
+        where: { metric: { in: [...METRICS] }, bucket: { gte: trackingSince, lt: asOf } },
+        _sum: { count: true },
+      }),
     ]);
 
     const result: PublicUsageMetrics = {
@@ -59,6 +64,7 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
       trackingSince: trackingSince.toISOString(),
       last24Hours: toCounts(last24HoursRows),
       last7Days: toCounts(last7DaysRows),
+      total: toCounts(totalRows),
     };
     return reply.header("Cache-Control", "public, max-age=60").send(result);
   });

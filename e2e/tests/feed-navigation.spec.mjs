@@ -9,6 +9,73 @@ test.beforeEach(async ({ context }, info) => {
   await context.request.post(`${API}/users/me/update-notice/acknowledge`);
 });
 
+test("dashboard total sums all recorded buckets and fits mobile", async ({ page, context }, info) => {
+  const response = await context.request.get(`${API}/public/usage-metrics`);
+  expect(response.ok()).toBeTruthy();
+  const data = await response.json();
+  const rows = await database.usageMetricBucket.groupBy({ by: ["metric"], where: { metric: { in: Object.keys(data.total) }, bucket: { gte: new Date(data.trackingSince), lt: new Date(data.asOf) } }, _sum: { count: true } });
+  for (const key of Object.keys(data.total)) expect(data.total[key]).toBe(rows.find((row) => row.metric === key)?._sum.count ?? 0);
+  await page.goto("/dashboard");
+  await expect(page.getByText("Total", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.screenshot({ path: `screenshots/${info.project.name}/dashboard-total-mobile.png`, fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(page.getByText("Total", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.screenshot({ path: `screenshots/${info.project.name}/dashboard-total-desktop.png`, fullPage: true });
+});
+
+test("following suggestions smoothly replaces them until no candidates remain", async ({ page }, info) => {
+  const headers = { "access-control-allow-origin": "http://localhost:5173", "access-control-allow-credentials": "true" };
+  let candidates = Array.from({ length: 4 }, (_, index) => ({ id: `candidate-${index}`, username: `candidate${index}`, displayName: `Candidate ${index}`, avatarKey: null, createdAt: new Date().toISOString(), mutualCount: 0 }));
+  await page.route(/\/users\/suggestions$/, (route) => route.fulfill({ headers, json: { users: candidates.slice(0, 3) } }));
+  await page.route(/\/users\/candidate\d\/follow$/, (route) => {
+    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: { ...headers, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type,x-forwarded-for" } });
+    const username = route.request().url().split("/").at(-2);
+    candidates = candidates.filter((person) => person.username !== username);
+    return route.fulfill({ status: 204, headers });
+  });
+  await page.goto("/people");
+  const list = page.getByRole("region", { name: "People you may know" });
+  await expect(list.getByRole("button", { name: /^Follow @/ })).toHaveCount(3);
+  await page.screenshot({ path: `screenshots/${info.project.name}/profile-suggestions-mobile.png`, fullPage: true });
+  const mobileViewport = page.viewportSize();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.screenshot({ path: `screenshots/${info.project.name}/profile-suggestions-desktop.png`, fullPage: true });
+  await page.setViewportSize(mobileViewport);
+  for (let index = 0; index < 4; index++) {
+    await list.getByRole("button", { name: `Follow @candidate${index}`, exact: true }).click();
+    await expect(list.getByRole("button", { name: `Follow @candidate${index}`, exact: true })).toHaveCount(0);
+    await expect(list.getByRole("button", { name: /^Follow @/ })).toHaveCount(Math.min(3, 3 - index));
+  }
+  await expect(page.getByText("No more suggestions right now.")).toBeVisible();
+});
+
+test("following from a profile refreshes suggestions when returning to search", async ({ page, context }) => {
+  const leo = await database.user.findUniqueOrThrow({ where: { username: "leo" } });
+  const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+  const where = { followerId: leo.id, followeeId: mia.id };
+  const original = await database.follow.findUnique({ where: { followerId_followeeId: where } });
+  await database.follow.deleteMany({ where });
+  try {
+    await page.goto("/people");
+    const suggestions = page.getByRole("region", { name: "People you may know" });
+    await suggestions.locator('a[href="/u/mia"]').click();
+    await page.getByRole("button", { name: "Follow", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Unfollow", exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(suggestions).toBeVisible();
+    await expect(suggestions.locator('a[href="/u/mia"]')).toHaveCount(0);
+    const response = await context.request.get(`${API}/users/suggestions`);
+    expect((await response.json()).users.some((person) => person.id === mia.id)).toBe(false);
+  } finally {
+    await database.follow.deleteMany({ where });
+    if (original) await database.follow.create({ data: original });
+  }
+});
+
 test("mobile navigation stays at viewport bottom, outside transformed content, and recovers after keyboard", async ({ page }, info) => {
   await page.goto("/");
   const nav = page.locator('nav[aria-label="Primary navigation"]:visible');
@@ -39,7 +106,7 @@ test("mobile navigation stays at viewport bottom, outside transformed content, a
   await page.screenshot({ path: `screenshots/${info.project.name}/navigation-fixed.png` });
 });
 
-test("caught-up section appears once and separates earlier posts", async ({ page }, info) => {
+test("caught-up section stays hidden when every post was already seen", async ({ page }) => {
   await page.route(/\/feed\?/, (route) => route.fulfill({ headers: {
     "access-control-allow-origin": "http://localhost:5173", "access-control-allow-credentials": "true",
   }, json: { items: [{ type: "follow", id: "follow-demo", createdAt: new Date().toISOString(),
@@ -47,8 +114,25 @@ test("caught-up section appears once and separates earlier posts", async ({ page
     followee: { id: "second", username: "leo", displayName: "Leo", avatarKey: null, createdAt: new Date().toISOString() } }],
     nextCursor: null, caughtUp: true, boundaryIndex: 0 } }));
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "You're all caught up" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "You're all caught up" })).toHaveCount(1);
+  await expect(page.getByText("No more posts.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "You're all caught up" })).toHaveCount(0);
+});
+
+test("caught-up section appears once only after scrolling through new entries", async ({ page }, info) => {
+  const createdAt = new Date().toISOString();
+  await page.route(/\/feed\?/, (route) => route.fulfill({ headers: {
+    "access-control-allow-origin": "http://localhost:5173", "access-control-allow-credentials": "true",
+  }, json: { items: Array.from({ length: 25 }, (_, index) => ({ type: "follow", id: `follow-${index}`, createdAt,
+    follower: { id: "first", username: "mia", displayName: "Mia", avatarKey: null, createdAt },
+    followee: { id: "second", username: "leo", displayName: "Leo", avatarKey: null, createdAt } })),
+    nextCursor: null, caughtUp: true, boundaryIndex: 20 } }));
+  await page.goto("/");
+  const heading = page.getByRole("heading", { name: "You're all caught up" });
+  await expect(page.getByText("Mia followed", { exact: false }).first()).toBeVisible();
+  await expect(heading).not.toBeInViewport();
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(heading).toBeInViewport();
+  await expect(heading).toHaveCount(1);
   await expect(page.getByText("Earlier posts", { exact: true })).toBeVisible();
   await page.screenshot({ path: `screenshots/${info.project.name}/caught-up-section.png` });
 });

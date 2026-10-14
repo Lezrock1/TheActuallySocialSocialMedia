@@ -69,15 +69,17 @@ export default function UsageDashboardPage() {
       )}
 
       <section aria-label="Activity totals" className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.05)]">
-        <div className="grid grid-cols-[minmax(0,1fr)_74px_74px] items-end gap-2 border-b border-gray-200 bg-gray-50 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_120px_120px] sm:px-6">
+        <div className="grid grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,64px))] items-end gap-2 border-b border-gray-200 bg-gray-50 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_repeat(3,120px)] sm:px-6">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Activity</span>
           <span className="text-right text-[10px] font-semibold leading-4 text-gray-600">Last<br className="sm:hidden" /> 24 hours</span>
           <span className="text-right text-[10px] font-semibold leading-4 text-gray-600">Last 7 days</span>
+          <span className="text-right text-[10px] font-semibold leading-4 text-gray-600" title="Since recording began">Total</span>
         </div>
 
         {isPending && ACTIVITY_ROWS.map(({ key, label }) => (
-          <div key={key} aria-hidden="true" className="grid min-h-14 grid-cols-[minmax(0,1fr)_74px_74px] items-center gap-2 border-b border-gray-100 px-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_120px_120px] sm:px-6">
-            <span className="h-3 w-28 animate-pulse rounded bg-gray-100">{label}</span>
+          <div key={key} aria-hidden="true" className="grid min-h-14 grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,64px))] items-center gap-2 border-b border-gray-100 px-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_repeat(3,120px)] sm:px-6">
+            <span className="h-3 w-full max-w-28 animate-pulse rounded bg-gray-100">{label}</span>
+            <span className="ml-auto h-5 w-10 animate-pulse rounded bg-gray-100" />
             <span className="ml-auto h-5 w-10 animate-pulse rounded bg-gray-100" />
             <span className="ml-auto h-5 w-10 animate-pulse rounded bg-gray-100" />
           </div>
@@ -91,10 +93,11 @@ export default function UsageDashboardPage() {
         )}
 
         {data && ACTIVITY_ROWS.map(({ key, label }) => (
-          <div key={key} className="grid min-h-14 grid-cols-[minmax(0,1fr)_74px_74px] items-center gap-2 border-b border-gray-100 px-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_120px_120px] sm:px-6">
-            <span className="text-sm font-medium text-gray-800">{label}</span>
+          <div key={key} className="grid min-h-14 grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,64px))] items-center gap-2 border-b border-gray-100 px-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_repeat(3,120px)] sm:px-6">
+            <span className="text-sm font-medium text-gray-800 [overflow-wrap:anywhere]">{label}</span>
             <span className="text-right font-mono text-sm tabular-nums text-gray-700">{formatCount(data.last24Hours[key])}</span>
             <span className="text-right font-mono text-sm font-semibold tabular-nums text-emerald-800">{formatCount(data.last7Days[key])}</span>
+            <span className="text-right font-mono text-sm font-semibold tabular-nums text-gray-900">{formatCount(data.total[key])}</span>
           </div>
         ))}
       </section>

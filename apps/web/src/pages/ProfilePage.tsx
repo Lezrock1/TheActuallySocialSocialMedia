@@ -175,7 +175,10 @@ export default function ProfilePage() {
     if (!profileQuery.data) return;
     const method = profileQuery.data.isFollowedByMe ? "DELETE" : "POST";
     await apiFetch(`/users/${username}/follow`, { method });
-    await queryClient.invalidateQueries({ queryKey: ["profile", username] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["profile", username] }),
+      queryClient.invalidateQueries({ queryKey: ["people-suggestions"] }),
+    ]);
   }
 
   const closeFriendsQuery = useQuery({

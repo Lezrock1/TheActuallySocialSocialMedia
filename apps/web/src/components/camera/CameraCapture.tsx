@@ -141,9 +141,7 @@ export default function CameraCapture({
   const releasedRef = useRef(false);
   const recordStartRef = useRef(0);
   const stopDrawingRef = useRef<(() => void) | null>(null);
-  const facingRef = useRef<FacingMode>("environment");
   const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
-  facingRef.current = facing;
   const zoomRef = useRef(1);
   const digitalZoomRef = useRef(true);
   const shutterDragRef = useRef<{ y: number; zoom: number } | null>(null);
@@ -306,7 +304,7 @@ export default function CameraCapture({
       setFocusPoint({ x, y, key: Date.now() });
       void applyAdvanced({
         focusMode: "single-shot",
-        pointsOfInterest: [{ x: x / rect.width, y: y / rect.height }],
+        pointsOfInterest: [{ x: 1 - x / rect.width, y: y / rect.height }],
       });
     }
   }
@@ -330,10 +328,8 @@ export default function CameraCapture({
     canvas.height = Math.round(sourceHeight);
     const context = canvas.getContext("2d");
     if (!context) return;
-    if (facing === "user") {
-      context.translate(canvas.width, 0);
-      context.scale(-1, 1);
-    }
+    context.translate(canvas.width, 0);
+    context.scale(-1, 1);
     context.drawImage(
       video,
       (video.videoWidth - sourceWidth) / 2,
@@ -350,7 +346,7 @@ export default function CameraCapture({
     canvas.toBlob((blob) => {
       if (blob) onCaptured(new File([blob], "camera-snap.jpg", { type: "image/jpeg" }));
     }, "image/jpeg", 0.92);
-  }, [facing, onCaptured]);
+  }, [onCaptured]);
 
   useEffect(() => {
     if (countdown === null) return;
@@ -414,10 +410,8 @@ export default function CameraCapture({
         const width = source.videoWidth * scale;
         const height = source.videoHeight * scale;
         context.save();
-        if (facingRef.current === "user") {
-          context.translate(canvas.width, 0);
-          context.scale(-1, 1);
-        }
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
         context.drawImage(source, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
         context.restore();
       }
@@ -581,11 +575,12 @@ export default function CameraCapture({
       >
         <video
           ref={videoRef}
+          aria-label="Camera preview"
           autoPlay
           muted
           playsInline
           className={`h-full w-full object-cover transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"}`}
-          style={{ transform: `${facing === "user" ? "scaleX(-1) " : ""}scale(${digitalZoom ? zoom : 1})` }}
+          style={{ transform: `scaleX(-1) scale(${digitalZoom ? zoom : 1})` }}
         />
         {!ready && !failure && (
           <div className="absolute inset-0 flex items-center justify-center">

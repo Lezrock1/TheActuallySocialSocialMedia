@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import type { PublicUser } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
@@ -30,6 +30,7 @@ async function fetchSuggestions(): Promise<SuggestedUser[]> {
 }
 
 export default function PeopleSearchPage() {
+  const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query.trim().replace(/^@/, ""));
@@ -59,6 +60,15 @@ export default function PeopleSearchPage() {
   const quickPicks = (suggestionsQuery.data ?? []).slice(0, 4);
   const isLoading = deferredQuery ? searchQuery.isLoading : suggestionsQuery.isLoading;
   const isError = deferredQuery ? searchQuery.isError : suggestionsQuery.isError;
+  const followMutation = useMutation({
+    mutationFn: (person: PublicUser) => apiFetch(`/users/${person.username}/follow`, { method: "POST" }),
+    onSuccess: async (_data, person) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["people-suggestions"] }),
+        queryClient.invalidateQueries({ queryKey: ["profile", person.username] }),
+      ]);
+    },
+  });
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
@@ -105,16 +115,16 @@ export default function PeopleSearchPage() {
           <p role="alert" className="py-4 text-sm text-red-600">Could not load people. Try again.</p>
         ) : users.length === 0 ? (
           <p className="py-4 text-sm text-gray-500">
-            {deferredQuery ? "No matching profiles found." : "Follow people to get friend-based suggestions."}
+            {deferredQuery ? "No matching profiles found." : "No more suggestions right now."}
           </p>
         ) : (
           <div className={activityList}>
             {users.map((person) => (
-              <Link
+              <div
                 key={person.id}
-                to={`/u/${person.username}`}
-                className={activityRow}
+                className={`${activityRow} motion-safe:animate-[menu-enter_220ms_ease-out]`}
               >
+                <Link to={`/u/${person.username}`} className="flex min-w-0 flex-1 items-center gap-3">
                 <Avatar avatarKey={person.avatarKey} username={person.username} size={42} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-gray-900">
@@ -129,12 +139,17 @@ export default function PeopleSearchPage() {
                     </span>
                   )}
                 </span>
-                <span className="text-xs font-medium text-gray-500">View profile</span>
-              </Link>
+                {deferredQuery && <span className="text-xs font-medium text-gray-500">View profile</span>}
+                </Link>
+                {!deferredQuery && <button type="button" aria-label={`Follow @${person.username}`} disabled={followMutation.isPending} onClick={() => followMutation.mutate(person)} className={`${btnSecondary} shrink-0 text-xs`}>
+                  {followMutation.isPending && followMutation.variables?.id === person.id ? "Following..." : "Follow"}
+                </button>}
+              </div>
             ))}
           </div>
         )}
       </section>
+      {followMutation.isError && <p role="alert" className="mt-3 text-sm text-red-600">Could not follow this profile. Try again.</p>}
 
       {deferredQuery && searchQuery.hasNextPage && (
         <button

@@ -25,9 +25,11 @@ async function prepare(context, username) {
       }
       if (constraints.video) {
         const canvas = document.createElement("canvas");
+        window.__testCameraCanvas = canvas;
         canvas.width = 320; canvas.height = 240;
         const paint = canvas.getContext("2d");
-        paint.fillStyle = "#14845f"; paint.fillRect(0, 0, 320, 240);
+        paint.fillStyle = "#ff0000"; paint.fillRect(0, 0, 160, 240);
+        paint.fillStyle = "#0000ff"; paint.fillRect(160, 0, 160, 240);
         canvas.captureStream(10).getTracks().forEach((track) => stream.addTrack(track));
       }
       return stream;
@@ -102,6 +104,15 @@ for (const type of ["audio", "video"]) {
     }).toBe(true);
     await recipient.getByRole("button", { name: "Answer", exact: true }).click();
     await expect(recipient.getByRole("dialog", { name: `${type} call`, exact: true })).toBeVisible();
+    if (type === "video") {
+      await expect(sender.getByLabel("Your camera preview", { exact: true })).toHaveCSS("transform", "matrix(-1, 0, 0, 1, 0, 0)");
+      await expect(recipient.getByLabel("Your camera preview", { exact: true })).toHaveCSS("transform", "matrix(-1, 0, 0, 1, 0, 0)");
+      await expect(sender.getByLabel("Participant camera", { exact: true })).toHaveCSS("transform", "none");
+      await sender.getByRole("button", { name: "Camera off", exact: true }).click();
+      await expect(sender.getByLabel("Your camera preview", { exact: true })).toHaveCount(0);
+      await sender.getByRole("button", { name: "Camera on", exact: true }).click();
+      await expect(sender.getByLabel("Your camera preview", { exact: true })).toHaveCSS("transform", "matrix(-1, 0, 0, 1, 0, 0)");
+    }
     await recipient.waitForTimeout(1200);
     await recipient.getByLabel("End call", { exact: true }).click();
     await expect(sender.getByRole("dialog", { name: `${type} call`, exact: true })).not.toBeVisible();
@@ -115,6 +126,92 @@ for (const type of ["audio", "video"]) {
     await mia.close();
   });
 }
+
+for (const facing of ["environment", "user"]) {
+  test(`${facing} camera mirrors its preview, photo pixels and recorded video pixels`, async ({ context }, info) => {
+    test.skip(info.project.name !== "android", "WebKit does not start synthetic canvas camera streams in this test environment");
+    const page = await prepare(context, "leo");
+    await page.getByRole("button", { name: "Open camera", exact: true }).click();
+    const shutter = page.getByRole("button", { name: "Take photo, or hold to record video", exact: true });
+    await expect(shutter).toBeEnabled();
+    if (facing === "user") {
+      await page.getByRole("button", { name: "Switch to front camera", exact: true }).click();
+      await expect(shutter).toBeEnabled();
+    }
+    const preview = page.getByLabel("Camera preview", { exact: true });
+    await expect(preview).toHaveCSS("transform", "matrix(-1, 0, 0, 1, 0, 0)");
+    await shutter.click();
+    const photo = page.getByRole("img", { name: "Photo preview", exact: true });
+    await expect(photo).toBeVisible();
+    await expect.poll(() => photo.evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
+    const checkPixels = (media) => {
+      const canvas = document.createElement("canvas"); canvas.width = 320; canvas.height = 240;
+      const paint = canvas.getContext("2d"); paint.drawImage(media, 0, 0, 320, 240);
+      return [Array.from(paint.getImageData(80, 120, 1, 1).data), Array.from(paint.getImageData(240, 120, 1, 1).data)];
+    };
+    const [left, right] = await photo.evaluate(checkPixels);
+    expect(left[2]).toBeGreaterThan(200); expect(left[0]).toBeLessThan(50);
+    expect(right[0]).toBeGreaterThan(200); expect(right[2]).toBeLessThan(50);
+    if (info.project.name === "android") {
+      await page.getByRole("button", { name: "Retake", exact: true }).click();
+      await expect(shutter).toBeEnabled();
+      if (facing === "user") {
+        await page.getByRole("button", { name: "Switch to front camera", exact: true }).click();
+        await expect(shutter).toBeEnabled();
+      }
+      await shutter.hover(); await page.mouse.down();
+      await expect(page.getByRole("button", { name: "Recording video", exact: true })).toBeVisible();
+      const startedAt = Date.now();
+      await expect.poll(() => Date.now() - startedAt).toBeGreaterThan(1200);
+      await page.mouse.up();
+      const clip = page.locator("video[src^='blob:']");
+      await expect(clip).toBeVisible();
+      await expect.poll(() => clip.evaluate((video) => video.readyState)).toBeGreaterThanOrEqual(2);
+      const [videoLeft, videoRight] = await clip.evaluate(checkPixels);
+      expect(videoLeft[2]).toBeGreaterThan(180); expect(videoLeft[0]).toBeLessThan(70);
+      expect(videoRight[0]).toBeGreaterThan(180); expect(videoRight[2]).toBeLessThan(70);
+    }
+  });
+}
+
+test("mirrored security scanner still verifies an unchanged QR payload", async ({ browser, context }, info) => {
+  test.skip(info.project.name !== "android", "Requires synthetic canvas media streams");
+  const mia = await friend(browser);
+  try {
+    await prepare(mia, "mia");
+    const page = await prepare(context, "leo");
+    const conversationId = (await (await context.request.post(`${API}/conversations`, { data: { username: "mia" } })).json()).conversationId;
+    await page.goto(`/dms?conversation=${conversationId}`);
+    await page.getByRole("button", { name: "Security code", exact: true }).click();
+    const qr = page.getByRole("img", { name: "Security code QR", exact: true });
+    await expect(qr).toBeVisible();
+    const source = await qr.getAttribute("src");
+    await page.getByRole("button", { name: "Scan their QR code", exact: true }).click();
+    const scanner = page.getByLabel("QR camera preview", { exact: true });
+    await expect(scanner).toHaveCSS("transform", "matrix(-1, 0, 0, 1, 0, 0)");
+    await expect.poll(() => scanner.evaluate((video) => video.readyState)).toBeGreaterThanOrEqual(2);
+    const decoded = await page.evaluate(async (source) => {
+      const image = new Image(); image.src = source; await image.decode();
+      const canvas = window.__testCameraCanvas;
+      const paint = canvas.getContext("2d");
+      paint.fillStyle = "white"; paint.fillRect(0, 0, canvas.width, canvas.height);
+      paint.drawImage(image, 40, 0, 240, 240);
+      const { default: jsQR } = await import("/node_modules/.vite/deps/jsqr.js");
+      const pixels = paint.getImageData(0, 0, canvas.width, canvas.height);
+      const redraw = () => {
+        paint.drawImage(image, 40, 0, 240, 240);
+        requestAnimationFrame(redraw);
+      };
+      redraw();
+      return jsQR(pixels.data, pixels.width, pixels.height)?.data ?? null;
+    }, source);
+    expect(decoded).not.toBeNull();
+    await expect(page.getByRole("button", { name: "Remove verification", exact: true })).toBeVisible();
+    await expect(scanner).toHaveCount(0);
+  } finally {
+    await mia.close();
+  }
+});
 
 test("A saved call ID cannot overwrite earlier call history", async ({ context }) => {
   const page = await prepare(context, "leo");

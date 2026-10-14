@@ -144,6 +144,7 @@ export default function FeedPage() {
 
   const allPages = firstPageQuery.data ? [firstPageQuery.data, ...pages] : pages;
   const lastPage = allPages[allPages.length - 1];
+  const hasNewFeedItems = !!allPages[0]?.items.length && allPages[0]?.boundaryIndex !== 0;
 
   const loadMore = useCallback(async (cursor: string) => {
     if (loadingMoreRef.current) return;
@@ -166,7 +167,7 @@ export default function FeedPage() {
     let boundaryShown = false;
     allPages.forEach((page, pageIndex) => {
       page.items.forEach((item, itemIndex) => {
-        const showBoundary = page.boundaryIndex === itemIndex && !boundaryShown;
+        const showBoundary = hasNewFeedItems && rows.length > 0 && page.boundaryIndex === itemIndex && !boundaryShown;
         if (showBoundary) {
           rows.push({ key: `boundary:${pageIndex}:${itemIndex}`, kind: "boundary" });
           boundaryShown = true;
@@ -179,7 +180,7 @@ export default function FeedPage() {
       });
     });
     return rows;
-  }, [allPages]);
+  }, [allPages, hasNewFeedItems]);
 
   useEffect(() => {
     function updateScrollMargin() {
@@ -566,7 +567,7 @@ export default function FeedPage() {
       )}
 
       {!lastPage?.nextCursor && allPages.length > 0 && (
-        feedRows.some((row) => row.kind === "boundary")
+        !hasNewFeedItems || feedRows.some((row) => row.kind === "boundary")
           ? <p className="py-8 text-center text-xs text-gray-400">No more posts.</p>
           : <FeedCaughtUp />
       )}

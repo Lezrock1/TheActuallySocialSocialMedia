@@ -60,7 +60,7 @@ function QrScanner({ onResult, onClose }: { onResult: (text: string) => void; on
 
   return (
     <div className="mt-3 overflow-hidden rounded-2xl bg-black">
-      <video ref={videoRef} playsInline muted className="aspect-square w-full object-cover" />
+      <video ref={videoRef} aria-label="QR camera preview" playsInline muted className="aspect-square w-full object-cover" style={{ transform: "scaleX(-1)" }} />
       <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs text-white/80">
         <span>{error ?? "Point the camera at their QR code"}</span>
         <button type="button" onClick={onClose} className="font-semibold text-white">Cancel</button>
