@@ -9,6 +9,15 @@ test.beforeEach(async ({ context }, info) => {
   await context.request.post(`${API}/users/me/update-notice/acknowledge`);
 });
 
+test("installable app requests a fixed upright portrait orientation", async ({ page }) => {
+  await page.goto("/");
+  const manifestUrl = await page.locator('link[rel="manifest"]').getAttribute("href");
+  expect(manifestUrl).toBeTruthy();
+  const response = await page.request.get(manifestUrl);
+  expect(response.ok()).toBeTruthy();
+  expect((await response.json()).orientation).toBe("portrait-primary");
+});
+
 test("dashboard total sums all recorded buckets and fits mobile", async ({ page, context }, info) => {
   const response = await context.request.get(`${API}/public/usage-metrics`);
   expect(response.ok()).toBeTruthy();
