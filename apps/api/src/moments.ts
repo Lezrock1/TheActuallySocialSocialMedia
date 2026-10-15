@@ -30,9 +30,9 @@ export async function ensureTodayMoment(now = new Date()): Promise<Moment | null
   const start = dayStartMs(day);
   const earliest = Math.max(start + MOMENT_EARLIEST_HOUR_UTC * HOUR_MS, now.getTime() + 60_000);
   const latest = start + MOMENT_LATEST_HOUR_UTC * HOUR_MS;
-  const startsAt = earliest >= latest
-    ? new Date(now)
-    : new Date(earliest + randomInt(0, latest - earliest));
+  if (earliest >= latest) return null;
+
+  const startsAt = new Date(earliest + randomInt(0, latest - earliest));
   try {
     return await prisma.moment.create({ data: { day, startsAt } });
   } catch (error) {

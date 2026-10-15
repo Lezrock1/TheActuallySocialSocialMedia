@@ -312,7 +312,7 @@ test("Unanswered call expires automatically and clears incoming notification", a
   await mia.close();
 });
 
-test("Moments can be saved early, keep friends locked until the drop, and show named reactions", async ({ browser, context }, info) => {
+test("Moments wait for the shared drop, then unlock friends after posting", async ({ browser, context }, info) => {
   const mia = await friend(browser);
   const miaPage = await prepare(mia, "mia");
   const page = await prepare(context, "leo");
@@ -324,28 +324,26 @@ test("Moments can be saved early, keep friends locked until the drop, and show n
   const imageKey = await uploadImage(mia);
   const miaPost = await database.momentPost.create({ data: { momentId: moment.id, userId: miaUser.id, imageKey } });
   expect((await context.request.post(`${API}/moments/posts/${miaPost.id}/reactions`, { data: { emoji: "🔥" } })).status()).toBe(404);
-  expect((await context.request.get(`${API}/moments/today/feed`)).status()).toBe(200);
   expect((await (await context.request.get(`${API}/moments/today/feed`)).json()).posts).toHaveLength(0);
+  const ownKey = await uploadImage(context);
+  expect((await context.request.post(`${API}/moments/today/post`, { data: { imageKey: ownKey } })).status()).toBe(409);
   await page.goto("/");
+  const waitingMoment = page.getByRole("button", { name: "Today's Moment is waiting", exact: true });
+  await expect(waitingMoment).toBeVisible();
+  await expect(waitingMoment).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Create Today's Moment" })).toHaveCount(0);
+  await database.moment.update({ where: { id: moment.id }, data: { startsAt: new Date(Date.now() - 60_000) } });
+  await page.reload();
   await page.getByRole("button", { name: "Create Today's Moment" }).click();
   await expect(page.getByRole("button", { name: "Close camera", exact: true })).toBeVisible();
   await page.locator("#camera-file-picker").setInputFiles({
-    name: "early-moment.png", mimeType: "image/png",
+    name: "daily-moment.png", mimeType: "image/png",
     buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)),
   });
   await page.getByRole("button", { name: "Share Moment", exact: true }).click();
   await expect(page.getByRole("button", { name: "Open Today's Moment" })).toBeVisible();
-  const earlySummary = await (await context.request.get(`${API}/moments/today`)).json();
-  expect(earlySummary.status).toBe("waiting");
-  expect(earlySummary.myPost.early).toBe(true);
-  const waitingFeed = await (await context.request.get(`${API}/moments/today/feed`)).json();
-  expect(waitingFeed.posts.map((post) => post.user.username)).toEqual(["leo"]);
-  await page.getByRole("button", { name: "Open Today's Moment" }).click();
-  await expect(page.getByText("Saved early", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Next Moment" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Close Moment", exact: true }).click();
-  await database.moment.update({ where: { id: moment.id }, data: { startsAt: new Date(Date.now() - 60_000) } });
-  await page.reload();
+  const postedSummary = await (await context.request.get(`${API}/moments/today`)).json();
+  expect(postedSummary.myPost.early).toBeUndefined();
   await page.getByRole("button", { name: "Open Today's Moment" }).click();
   await page.getByRole("button", { name: "Next Moment" }).click();
   await page.getByRole("button", { name: "React 🔥", exact: true }).click();
@@ -354,6 +352,7 @@ test("Moments can be saved early, keep friends locked until the drop, and show n
   await expect(page.getByLabel("Moment reactions")).toContainText("@leo 😂");
   await expect(page.getByLabel("Moment reactions")).not.toContainText("@leo 🔥");
   await miaPage.goto("/");
+  await miaPage.reload();
   await miaPage.getByRole("button", { name: "Open Today's Moment" }).click();
   await expect(miaPage.getByLabel("Moment reactions")).toContainText("@leo 😂");
   await page.screenshot({ path: `screenshots/${info.project.name}/moment-reactions.png` });

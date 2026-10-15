@@ -103,7 +103,6 @@ function StoryVideo({ src, poster }: { src: string; poster: string }) {
 }
 
 function lateLabel(post: MomentPostItem): string | null {
-  if (post.early) return "Saved early";
   if (!post.late) return null;
   const minutes = Math.max(1, Math.round(post.lateBySeconds / 60));
   return minutes >= 60 ? `${Math.round(minutes / 60)}h late` : `${minutes} min late`;
@@ -307,7 +306,7 @@ export default function StoriesBar() {
   }, [groups, loadingPolicy.preloadCount, momentPosts, momentViewerIndex, myMoment, storyIndex, viewing]);
 
   function openMomentCircle() {
-    if (!momentSummary) return;
+    if (!momentStarted || !momentSummary) return;
     if (!myMoment) {
       camera.openMoment();
       return;
@@ -512,7 +511,8 @@ export default function StoriesBar() {
           <button
             type="button"
             onClick={openMomentCircle}
-            aria-label={myMoment ? "Open Today's Moment" : "Create Today's Moment"}
+            aria-label={myMoment ? "Open Today's Moment" : momentStarted ? "Create Today's Moment" : "Today's Moment is waiting"}
+            disabled={!momentStarted && !myMoment}
             className="relative flex shrink-0 flex-col items-center gap-1"
           >
             {myMoment ? (
@@ -528,12 +528,12 @@ export default function StoriesBar() {
             ) : (
               <span className={`flex h-14 w-14 items-center justify-center rounded-full border-2 text-cyan-700 ${momentStarted ? "border-cyan-300 bg-cyan-50" : "border-cyan-200 border-dashed bg-cyan-50/70"}`}>
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-6 w-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 8h3l1.5-2h7L17 8h3a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 20 19H4a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 4 8Z" />
-                  <circle cx="12" cy="13" r="3" />
+                  <circle cx="12" cy="12" r="8.5" />
+                  <path d="M12 7.5V12l3 2" />
                 </svg>
               </span>
             )}
-            <span className="max-w-[68px] truncate text-[11px] font-semibold text-cyan-700">{myMoment ? "Moment" : "Add Moment"}</span>
+            <span className="max-w-[68px] truncate text-[11px] font-semibold text-cyan-700">Moment</span>
             {!myMoment && momentFeed?.locked && momentFeed.friendPostCount > 0 && (
               <span className="absolute -right-1 top-0 rounded-full bg-cyan-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
                 {momentFeed.friendPostCount}
