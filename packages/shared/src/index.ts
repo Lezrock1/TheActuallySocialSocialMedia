@@ -482,6 +482,7 @@ export interface MomentPostItem {
   mediaType: (typeof MOMENT_MEDIA_TYPES)[number];
   caption: string | null;
   late: boolean;
+  early: boolean;
   lateBySeconds: number;
   createdAt: string;
   reactions?: { emoji: string; user: PublicUser }[];

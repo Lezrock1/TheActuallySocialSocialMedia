@@ -21,7 +21,7 @@ import type { PublicEncryptionKey } from "../lib/encryption.js";
 import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
 import { useCalls } from "../components/CallProvider.js";
 import { getSocket } from "../lib/socket.js";
-import { mediaUrl, uploadMedia } from "../lib/upload.js";
+import { downloadMediaBlob, mediaUrl, uploadMedia } from "../lib/upload.js";
 import { useConversationBackground } from "../lib/pageBackground.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
@@ -57,9 +57,10 @@ import {
   computeMeetupStates,
   parseMessageContent,
 } from "../lib/messageContent.js";
-import type { MeetupContent, StoryReplyContext } from "../lib/messageContent.js";
+import type { MeetupContent, SnapReplyContext, StoryReplyContext } from "../lib/messageContent.js";
 import { clearLocalMeetupReminder, getLocalMeetupReminderMinutes, setLocalMeetupReminder, syncLocalChatMeetupReminders } from "../lib/localMeetupReminders.js";
-import { computePeaks, encryptAudioBlob } from "../lib/voice.js";
+import { computePeaks, decryptMediaBlob, encryptAudioBlob, encryptMediaBlob } from "../lib/voice.js";
+import { captureVideoPoster } from "../lib/video.js";
 import { formatDuration, isAudioRecordingSupported, useAudioRecorder } from "../lib/useAudioRecorder.js";
 import type { AudioRecording } from "../lib/useAudioRecorder.js";
 import { MAX_VOICE_MESSAGE_MS } from "@app/shared";
@@ -81,6 +82,59 @@ interface ReplyTarget {
   id: string;
   senderUsername: string;
   text: string;
+}
+
+interface SnapReplyDraftContext {
+  snapId: string;
+  authorUsername: string;
+  createdAt: string;
+  image: Blob;
+}
+
+function LocalBlobImage({ blob, alt, className }: { blob: Blob | null; alt: string; className: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!blob) { setUrl(null); return; }
+    const nextUrl = URL.createObjectURL(blob);
+    setUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [blob]);
+  return url ? <img src={url} alt={alt} className={className} /> : <span aria-label="Snap preview loading" className={`${className} bg-gray-200`} />;
+}
+
+function EncryptedSnapThumbnail({ mediaKey, reply }: { mediaKey: string; reply: SnapReplyContext }) {
+  const [blob, setBlob] = useState<Blob | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setBlob(null);
+    void downloadMediaBlob(mediaKey)
+      .then((ciphertext) => decryptMediaBlob(ciphertext, reply.key, reply.iv, "image/jpeg"))
+      .then((preview) => { if (!cancelled) setBlob(preview); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [mediaKey, reply.iv, reply.key]);
+  return <LocalBlobImage blob={blob} alt={`Snap from @${reply.authorUsername}`} className="h-14 w-10 shrink-0 rounded object-cover" />;
+}
+
+async function createSnapReplyThumbnail(image: Blob): Promise<Blob> {
+  const source = image.type.startsWith("video/")
+    ? await captureVideoPoster(new File([image], "snap-video", { type: image.type }))
+    : image;
+  const bitmap = await createImageBitmap(source);
+  try {
+    const scale = Math.min(1, 160 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Could not create Snap preview");
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const preview = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.72));
+    if (!preview) throw new Error("Could not create Snap preview");
+    return preview;
+  } finally {
+    bitmap.close();
+  }
 }
 
 function extractLinks(text: string): string[] {
@@ -229,6 +283,7 @@ export default function DMsPage() {
   const [startingConversation, setStartingConversation] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [storyReplyContext, setStoryReplyContext] = useState<StoryReplyContext | null>(null);
+  const [snapReplyContext, setSnapReplyContext] = useState<SnapReplyDraftContext | null>(null);
   const [messageView, setMessageView] = useState<"chats" | "create_group" | "live_rooms">(() =>
     searchParams.get("view") === "live_rooms" ? "live_rooms" : "chats"
   );
@@ -280,6 +335,7 @@ export default function DMsPage() {
     const state = location.state as {
       draftMessage?: unknown;
       storyReply?: Partial<StoryReplyContext>;
+      snapReply?: Partial<SnapReplyDraftContext>;
     } | null;
     if (typeof state?.draftMessage !== "string" || !state.draftMessage) return;
     setMessageText(state.draftMessage);
@@ -294,6 +350,19 @@ export default function DMsPage() {
         imageKey: state.storyReply.imageKey,
         authorUsername: state.storyReply.authorUsername,
         createdAt: state.storyReply.createdAt,
+      });
+    }
+    if (
+      typeof state.snapReply?.snapId === "string" &&
+      typeof state.snapReply.authorUsername === "string" &&
+      typeof state.snapReply.createdAt === "string" &&
+      state.snapReply.image instanceof Blob
+    ) {
+      setSnapReplyContext({
+        snapId: state.snapReply.snapId,
+        authorUsername: state.snapReply.authorUsername,
+        createdAt: state.snapReply.createdAt,
+        image: state.snapReply.image,
       });
     }
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
@@ -552,7 +621,7 @@ export default function DMsPage() {
   }, [visibleParsedMessages]);
   const sharedMediaKeys = useMemo(() => {
     return visibleParsedMessages
-      .map(({ parsed }) => parsed.kind === "voice" ? parsed.voice.mediaKey : null)
+      .map(({ message, parsed }) => parsed.kind === "voice" ? parsed.voice.mediaKey : parsed.kind === "text" && parsed.snapReply ? message.mediaKey ?? null : null)
       .filter((item): item is string => Boolean(item))
       .slice(-3)
       .reverse();
@@ -772,6 +841,7 @@ export default function DMsPage() {
     setMessageError(null);
     const draft = messageText;
     const replyContext = storyReplyContext;
+    const snapContext = snapReplyContext;
     const activeReplyTarget = replyTarget;
     const wrappedReply = activeReplyTarget
       ? `↪ @${activeReplyTarget.senderUsername}: ${activeReplyTarget.text}\n${draft.trim()}`
@@ -794,21 +864,39 @@ export default function DMsPage() {
     // Clear right away so the next message can be typed while this one is still being sent.
     setMessageText("");
     setStoryReplyContext(null);
+    setSnapReplyContext(null);
     setReplyTarget(null);
     try {
+      let snapReply: SnapReplyContext | null = null;
+      let snapPreviewKey: string | undefined;
+      if (snapContext) {
+        const preview = await createSnapReplyThumbnail(snapContext.image);
+        const encryptedPreview = await encryptMediaBlob(preview, "snap-preview.bin", "image/jpeg");
+        snapPreviewKey = await uploadMedia(encryptedPreview.file, { resize: false });
+        snapReply = {
+          snapId: snapContext.snapId,
+          authorUsername: snapContext.authorUsername,
+          createdAt: snapContext.createdAt,
+          key: encryptedPreview.key,
+          iv: encryptedPreview.iv,
+        };
+      }
       const messageContent = replyContext
         ? JSON.stringify({
             type: "story_reply",
             story: replyContext,
             text: wrappedReply,
           })
-        : wrappedReply;
-      await sendEncrypted(messageContent, undefined, replyContext?.storyId);
+        : snapReply
+          ? JSON.stringify({ type: "snap_reply", snap: snapReply, text: wrappedReply })
+          : wrappedReply;
+      await sendEncrypted(messageContent, snapPreviewKey, replyContext?.storyId);
       setPendingMessages((current) => current.filter((message) => message.id !== pendingId));
     } catch (error) {
       setPendingMessages((current) => current.filter((message) => message.id !== pendingId));
       setMessageText((current) => current || draft);
       setStoryReplyContext(replyContext);
+      setSnapReplyContext(snapContext);
       setReplyTarget(activeReplyTarget);
       setMessageError(error instanceof Error ? error.message : "Could not encrypt this message");
     }
@@ -1496,6 +1584,20 @@ export default function DMsPage() {
                         </span>
                       </div>
                     )}
+                    {parsed.kind === "text" && parsed.snapReply && message.mediaKey && (
+                      <div
+                        data-snap-id={parsed.snapReply.snapId}
+                        className="mb-2 flex items-center gap-2 overflow-hidden rounded-lg bg-black/5 p-1.5"
+                      >
+                        <EncryptedSnapThumbnail mediaKey={message.mediaKey} reply={parsed.snapReply} />
+                        <span className="min-w-0 py-1">
+                          <span className="block text-[11px] font-semibold">Snap reply</span>
+                          <span className="block truncate text-xs opacity-80">
+                            @{parsed.snapReply.authorUsername} · {formatActivityTime(parsed.snapReply.createdAt)}
+                          </span>
+                        </span>
+                      </div>
+                    )}
                     {parsed.kind === "voice" ? (
                       <VoiceMessage voice={parsed.voice} tone="light" />
                     ) : parsed.kind === "text" ? (
@@ -1617,6 +1719,23 @@ export default function DMsPage() {
                   type="button"
                   onClick={() => setStoryReplyContext(null)}
                   aria-label="Remove Story reply context"
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-gray-500 hover:bg-gray-200"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            {snapReplyContext && (
+              <div className="mx-auto flex w-full max-w-2xl shrink-0 items-center gap-3 border-t border-gray-200 bg-white p-2 lg:max-w-none lg:px-4">
+                <LocalBlobImage blob={snapReplyContext.image} alt={`Snap from @${snapReplyContext.authorUsername}`} className="h-14 w-10 shrink-0 rounded object-cover" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-semibold text-gray-800">Replying to Snap</span>
+                  <span className="block truncate text-xs text-gray-500">@{snapReplyContext.authorUsername} · {formatActivityTime(snapReplyContext.createdAt)}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSnapReplyContext(null)}
+                  aria-label="Remove Snap reply context"
                   className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-gray-500 hover:bg-gray-200"
                 >
                   ×

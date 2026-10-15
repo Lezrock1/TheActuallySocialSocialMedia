@@ -27,6 +27,7 @@ function toItem(post: PostWithUser, moment: Moment): MomentPostItem {
     mediaType: post.mediaType === "video" ? "video" : "image",
     caption: post.caption,
     late: post.late,
+    early: post.createdAt < moment.startsAt,
     lateBySeconds: post.late ? Math.max(0, Math.round((post.createdAt.getTime() - windowEnd) / 1000)) : 0,
     createdAt: post.createdAt.toISOString(),
     reactions: post.reactions?.map((reaction) => ({ emoji: reaction.emoji, user: toPublicUser(reaction.user) })) ?? [],
@@ -144,9 +145,7 @@ export async function momentRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const now = new Date();
     const moment = await ensureTodayMoment(now);
-    if (!moment || now < moment.startsAt) {
-      return reply.code(409).send({ error: "Today's Moment hasn't started yet" });
-    }
+    if (!moment) return reply.code(409).send({ error: "Today's Moment is not available" });
     if (!(await ownsMedia(request.userId!, parsed.data.imageKey))) {
       return reply.code(403).send({ error: "You can only attach your own uploads" });
     }
@@ -186,9 +185,17 @@ export async function momentRoutes(app: FastifyInstance): Promise<void> {
   app.get("/moments/today/feed", { preHandler: requireAuth }, async (request, reply) => {
     const now = new Date();
     const moment = await prisma.moment.findUnique({ where: { day: utcDayKey(now) } });
-    if (!moment || now < moment.startsAt) {
+    if (!moment) {
       const empty: MomentFeed = { locked: false, friendPostCount: 0, posts: [] };
       return reply.send(empty);
+    }
+    if (now < moment.startsAt) {
+      const mine = await prisma.momentPost.findUnique({
+        where: { momentId_userId: { momentId: moment.id, userId: request.userId! } },
+        include: { user: true },
+      });
+      const waiting: MomentFeed = { locked: false, friendPostCount: 0, posts: mine ? [toItem(mine, moment)] : [] };
+      return reply.send(waiting);
     }
     const friendIds = await friendIdsOf(request.userId!);
     const [mine, friendPosts] = await Promise.all([

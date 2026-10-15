@@ -52,6 +52,7 @@ export default function SnapsPage() {
   const queryClient = useQueryClient();
   const [viewing, setViewing] = useState<InboxSnap | null>(null);
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
+  const [viewingImageBlob, setViewingImageBlob] = useState<Blob | null>(null);
   const [viewingText, setViewingText] = useState("");
   const [viewingIsVideo, setViewingIsVideo] = useState(false);
   const [viewerRevealed, setViewerRevealed] = useState(false);
@@ -154,6 +155,7 @@ export default function SnapsPage() {
       await apiFetch(`/snaps/${snap.id}/view`, { method: "POST" });
       if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
       setViewingImageUrl(URL.createObjectURL(image));
+      setViewingImageBlob(image);
       setViewingIsVideo(image.type.startsWith("video/"));
       setViewingText(caption);
       setViewerRevealed(false);
@@ -179,6 +181,7 @@ export default function SnapsPage() {
     setSnapClosing(true);
     closeTimerRef.current = window.setTimeout(() => {
       setViewingImageUrl(null);
+      setViewingImageBlob(null);
       setViewingText("");
       setViewingIsVideo(false);
       setViewing(null);
@@ -192,7 +195,7 @@ export default function SnapsPage() {
   }
 
   async function quickReply(message: string) {
-    if (!viewing || !message.trim() || quickReplyBusy) return;
+    if (!viewing || !viewingImageBlob || !message.trim() || quickReplyBusy) return;
     setQuickReplyBusy(true);
     try {
       const result = await apiFetch<{ conversationId: string }>("/conversations", {
@@ -202,7 +205,12 @@ export default function SnapsPage() {
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       closeSnap();
       navigate(`/dms?conversation=${result.conversationId}`, {
-        state: { draftMessage: message.trim() },
+        state: { draftMessage: message.trim(), snapReply: {
+          snapId: viewing.id,
+          authorUsername: viewing.sender.username,
+          createdAt: viewing.createdAt,
+          image: viewingImageBlob,
+        } },
       });
     } catch {
       setSnapError("Could not open quick reply. Please try again.");

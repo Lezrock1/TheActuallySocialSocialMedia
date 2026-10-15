@@ -78,6 +78,45 @@ test("Story reply sends directly and keeps its thumbnail after Story deletion", 
   await mia.close();
 });
 
+test("Snap quick replies keep an encrypted thumbnail and identify the source in chat", async ({ browser, context }, info) => {
+  const mia = await friend(browser);
+  try {
+    await prepare(mia, "mia");
+    const page = await prepare(context, "leo");
+    const imageKey = await uploadImage(mia);
+    const created = await mia.request.post(`${API}/snaps`, { data: { imageKey, text: "A private Snap", recipientUsernames: ["leo"] } });
+    expect(created.status()).toBe(201);
+    const { snapId } = await created.json();
+    await page.goto("/snaps");
+    const homeScreenPrompt = page.getByRole("button", { name: "Got it", exact: true });
+    if (await homeScreenPrompt.isVisible().catch(() => false)) await homeScreenPrompt.click();
+    await page.getByRole("region", { name: "Received Snaps" }).getByRole("button", { name: /New Snap/ }).first().click();
+    const snap = page.getByRole("dialog", { name: "Snap from @mia" });
+    await expect(snap).toBeVisible();
+    await snap.getByPlaceholder("Quick reply").fill("This is my Snap reply");
+    await snap.getByRole("button", { name: "Reply", exact: true }).click();
+    await expect(page.getByLabel("Message", { exact: true })).toHaveValue("This is my Snap reply");
+    await expect(page.getByText("Replying to Snap", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Send message", exact: true }).click();
+    const conversationId = new URL(page.url()).searchParams.get("conversation");
+    expect(conversationId).toBeTruthy();
+    const preview = page.locator(`[data-snap-id="${snapId}"] img`);
+    const replyCard = page.locator(`[data-snap-id="${snapId}"]`);
+    await expect(preview).toBeVisible();
+    await expect.poll(() => preview.evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+    await expect(replyCard.getByText("Snap reply", { exact: true })).toBeVisible();
+    await expect(replyCard).toContainText("@mia");
+    await expect(page.getByText("This is my Snap reply", { exact: true })).toBeVisible();
+    const messages = (await (await context.request.get(`${API}/conversations/${conversationId}/messages`)).json()).messages;
+    const reply = messages.find((message) => message.mediaKey);
+    expect(reply?.isEncrypted).toBe(true);
+    expect(reply?.mediaKey).toBeTruthy();
+    await page.screenshot({ path: `screenshots/${info.project.name}/snap-reply-context.png` });
+  } finally {
+    await mia.close();
+  }
+});
+
 for (const type of ["audio", "video"]) {
   test(`${type} call reaches the Feed and records completed duration and notification`, async ({ browser, context }, info) => {
     test.skip(info.project.name !== "android", "Chromium provides fake media devices");
@@ -139,7 +178,7 @@ for (const facing of ["environment", "user"]) {
       await expect(shutter).toBeEnabled();
     }
     const preview = page.getByLabel("Camera preview", { exact: true });
-    await expect(preview).toHaveCSS("transform", "matrix(-1, 0, 0, 1, 0, 0)");
+    await expect(preview).toHaveCSS("transform", facing === "user" ? "matrix(-1, 0, 0, 1, 0, 0)" : "matrix(1, 0, 0, 1, 0, 0)");
     await shutter.click();
     const photo = page.getByRole("img", { name: "Photo preview", exact: true });
     await expect(photo).toBeVisible();
@@ -150,8 +189,9 @@ for (const facing of ["environment", "user"]) {
       return [Array.from(paint.getImageData(80, 120, 1, 1).data), Array.from(paint.getImageData(240, 120, 1, 1).data)];
     };
     const [left, right] = await photo.evaluate(checkPixels);
-    expect(left[2]).toBeGreaterThan(200); expect(left[0]).toBeLessThan(50);
-    expect(right[0]).toBeGreaterThan(200); expect(right[2]).toBeLessThan(50);
+    const [leftPrimary, rightPrimary] = facing === "user" ? [left, right] : [right, left];
+    expect(leftPrimary[2]).toBeGreaterThan(200); expect(leftPrimary[0]).toBeLessThan(50);
+    expect(rightPrimary[0]).toBeGreaterThan(200); expect(rightPrimary[2]).toBeLessThan(50);
     if (info.project.name === "android") {
       await page.getByRole("button", { name: "Retake", exact: true }).click();
       await expect(shutter).toBeEnabled();
@@ -168,8 +208,9 @@ for (const facing of ["environment", "user"]) {
       await expect(clip).toBeVisible();
       await expect.poll(() => clip.evaluate((video) => video.readyState)).toBeGreaterThanOrEqual(2);
       const [videoLeft, videoRight] = await clip.evaluate(checkPixels);
-      expect(videoLeft[2]).toBeGreaterThan(180); expect(videoLeft[0]).toBeLessThan(70);
-      expect(videoRight[0]).toBeGreaterThan(180); expect(videoRight[2]).toBeLessThan(70);
+      const [videoLeftPrimary, videoRightPrimary] = facing === "user" ? [videoLeft, videoRight] : [videoRight, videoLeft];
+      expect(videoLeftPrimary[2]).toBeGreaterThan(180); expect(videoLeftPrimary[0]).toBeLessThan(70);
+      expect(videoRightPrimary[0]).toBeGreaterThan(180); expect(videoRightPrimary[2]).toBeLessThan(70);
     }
   });
 }
@@ -188,7 +229,7 @@ test("mirrored security scanner still verifies an unchanged QR payload", async (
     const source = await qr.getAttribute("src");
     await page.getByRole("button", { name: "Scan their QR code", exact: true }).click();
     const scanner = page.getByLabel("QR camera preview", { exact: true });
-    await expect(scanner).toHaveCSS("transform", "matrix(-1, 0, 0, 1, 0, 0)");
+    await expect(scanner).toHaveCSS("transform", "none");
     await expect.poll(() => scanner.evaluate((video) => video.readyState)).toBeGreaterThanOrEqual(2);
     const decoded = await page.evaluate(async (source) => {
       const image = new Image(); image.src = source; await image.decode();
@@ -271,21 +312,40 @@ test("Unanswered call expires automatically and clears incoming notification", a
   await mia.close();
 });
 
-test("Moments show named reactions, support changes/removal and keep the posting lock", async ({ browser, context }, info) => {
+test("Moments can be saved early, keep friends locked until the drop, and show named reactions", async ({ browser, context }, info) => {
   const mia = await friend(browser);
   const miaPage = await prepare(mia, "mia");
   const page = await prepare(context, "leo");
   const today = new Date().toISOString().slice(0, 10);
-  const moment = await database.moment.upsert({ where: { day: today }, create: { day: today, startsAt: new Date(Date.now() - 60_000) }, update: { startsAt: new Date(Date.now() - 60_000) } });
+  const moment = await database.moment.upsert({ where: { day: today }, create: { day: today, startsAt: new Date(Date.now() + 10 * 60_000) }, update: { startsAt: new Date(Date.now() + 10 * 60_000) } });
   const leo = await database.user.findUniqueOrThrow({ where: { username: "leo" } });
   const miaUser = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
   await database.momentPost.deleteMany({ where: { momentId: moment.id } });
   const imageKey = await uploadImage(mia);
   const miaPost = await database.momentPost.create({ data: { momentId: moment.id, userId: miaUser.id, imageKey } });
   expect((await context.request.post(`${API}/moments/posts/${miaPost.id}/reactions`, { data: { emoji: "🔥" } })).status()).toBe(404);
-  const ownKey = await uploadImage(context);
-  await database.momentPost.create({ data: { momentId: moment.id, userId: leo.id, imageKey: ownKey } });
+  expect((await context.request.get(`${API}/moments/today/feed`)).status()).toBe(200);
+  expect((await (await context.request.get(`${API}/moments/today/feed`)).json()).posts).toHaveLength(0);
   await page.goto("/");
+  await page.getByRole("button", { name: "Create Today's Moment" }).click();
+  await expect(page.getByRole("button", { name: "Close camera", exact: true })).toBeVisible();
+  await page.locator("#camera-file-picker").setInputFiles({
+    name: "early-moment.png", mimeType: "image/png",
+    buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)),
+  });
+  await page.getByRole("button", { name: "Share Moment", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Open Today's Moment" })).toBeVisible();
+  const earlySummary = await (await context.request.get(`${API}/moments/today`)).json();
+  expect(earlySummary.status).toBe("waiting");
+  expect(earlySummary.myPost.early).toBe(true);
+  const waitingFeed = await (await context.request.get(`${API}/moments/today/feed`)).json();
+  expect(waitingFeed.posts.map((post) => post.user.username)).toEqual(["leo"]);
+  await page.getByRole("button", { name: "Open Today's Moment" }).click();
+  await expect(page.getByText("Saved early", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next Moment" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Close Moment", exact: true }).click();
+  await database.moment.update({ where: { id: moment.id }, data: { startsAt: new Date(Date.now() - 60_000) } });
+  await page.reload();
   await page.getByRole("button", { name: "Open Today's Moment" }).click();
   await page.getByRole("button", { name: "Next Moment" }).click();
   await page.getByRole("button", { name: "React 🔥", exact: true }).click();

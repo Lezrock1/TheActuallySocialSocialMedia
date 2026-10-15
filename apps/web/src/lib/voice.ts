@@ -19,18 +19,27 @@ export interface EncryptedVoice {
   iv: string;
 }
 
-// Encrypts a recording in the browser; key and IV only ever travel inside the encrypted chat message.
-export async function encryptAudioBlob(blob: Blob): Promise<EncryptedVoice> {
+export async function encryptMediaBlob(blob: Blob, filename: string, contentType = blob.type): Promise<EncryptedVoice> {
   const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, await blob.arrayBuffer());
   const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", key));
-  const type = normalizeAudioType(blob.type);
   return {
-    file: new File([ciphertext], "voice.bin", { type }),
+    file: new File([ciphertext], filename, { type: contentType }),
     key: toBase64(rawKey),
     iv: toBase64(iv),
   };
+}
+
+export async function decryptMediaBlob(ciphertext: Blob, key: string, iv: string, type: string): Promise<Blob> {
+  const cryptoKey = await crypto.subtle.importKey("raw", fromBase64(key), { name: "AES-GCM" }, false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64(iv) }, cryptoKey, await ciphertext.arrayBuffer());
+  return new Blob([plain], { type });
+}
+
+// Encrypts a recording in the browser; key and IV only ever travel inside the encrypted chat message.
+export async function encryptAudioBlob(blob: Blob): Promise<EncryptedVoice> {
+  return encryptMediaBlob(blob, "voice.bin", normalizeAudioType(blob.type));
 }
 
 export async function decryptAudioBlob(
@@ -39,9 +48,7 @@ export async function decryptAudioBlob(
   iv: string,
   type: string
 ): Promise<Blob> {
-  const cryptoKey = await crypto.subtle.importKey("raw", fromBase64(key), { name: "AES-GCM" }, false, ["decrypt"]);
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64(iv) }, cryptoKey, await ciphertext.arrayBuffer());
-  return new Blob([plain], { type });
+  return decryptMediaBlob(ciphertext, key, iv, type);
 }
 
 // The server only accepts bare audio types; the real type is stored in the voice message.

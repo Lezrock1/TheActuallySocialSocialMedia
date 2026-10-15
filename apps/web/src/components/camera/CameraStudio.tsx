@@ -412,7 +412,7 @@ export default function CameraStudio({
         <div className={`mx-auto mt-4 w-full ${target === "snap" ? "max-w-2xl" : "max-w-sm"}`}>
           {momentMode ? (
             <p className={`rounded-2xl px-4 py-3 text-center text-xs leading-5 ${dark ? "bg-fuchsia-500/15 text-fuchsia-100" : "bg-fuchsia-50 text-fuchsia-900"}`}>
-              Your friends who also shared today's Moment will see this. Post it as it is, no retakes needed.
+              Save your Moment now. Friends' Moments unlock together at today's surprise time.
             </p>
           ) : (
           <div className={`shrink-0 rounded-2xl p-1 ${dark ? "bg-white/10" : "bg-gray-200"}`}>

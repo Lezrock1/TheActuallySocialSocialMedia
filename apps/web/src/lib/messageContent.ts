@@ -6,6 +6,14 @@ export interface StoryReplyContext {
   createdAt: string;
 }
 
+export interface SnapReplyContext {
+  snapId: string;
+  authorUsername: string;
+  createdAt: string;
+  key: string;
+  iv: string;
+}
+
 export interface VoiceContent {
   mediaKey: string;
   // base64 AES-GCM key and IV for the uploaded ciphertext
@@ -25,7 +33,7 @@ export interface MeetupContent {
 
 export type ParsedMessage =
   | { kind: "call"; callType: "audio" | "video"; status: string; durationSeconds: number }
-  | { kind: "text"; text: string; storyReply?: StoryReplyContext }
+  | { kind: "text"; text: string; storyReply?: StoryReplyContext; snapReply?: SnapReplyContext }
   | { kind: "voice"; voice: VoiceContent }
   | { kind: "meetup"; meetup: MeetupContent; event: "created" | "updated" }
   | { kind: "meetup_cancel"; meetupId: string }
@@ -54,6 +62,22 @@ export function parseMessageContent(content: string): ParsedMessage {
             imageKey: story.imageKey,
             authorUsername: story.authorUsername,
             createdAt: isString(story.createdAt) ? story.createdAt : "",
+          },
+        };
+      }
+    }
+    if (value.type === "snap_reply" && isString(value.text)) {
+      const snap = value.snap as Partial<SnapReplyContext> | undefined;
+      if (isString(snap?.snapId) && isString(snap.authorUsername) && isString(snap.createdAt) && isString(snap.key) && isString(snap.iv)) {
+        return {
+          kind: "text",
+          text: value.text,
+          snapReply: {
+            snapId: snap.snapId,
+            authorUsername: snap.authorUsername,
+            createdAt: snap.createdAt,
+            key: snap.key,
+            iv: snap.iv,
           },
         };
       }
