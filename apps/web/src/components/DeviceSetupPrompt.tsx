@@ -45,7 +45,16 @@ export default function DeviceSetupPrompt() {
   const [mode, setMode] = useState<PromptMode | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [overlayOpen, setOverlayOpen] = useState(false);
   const installEventRef = useRef<InstallPromptEvent | null>(null);
+
+  useEffect(() => {
+    const update = () => setOverlayOpen(!!document.querySelector('[role="dialog"][aria-modal="true"], button[aria-label="Close camera"]'));
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     function onBeforeInstall(event: Event) {
@@ -57,7 +66,7 @@ export default function DeviceSetupPrompt() {
   }, []);
 
   useEffect(() => {
-    if (!user || !allowedHere) return;
+    if (!user || !allowedHere || overlayOpen) return;
     const timeout = window.setTimeout(() => {
       const canInstall = !isStandalone() && (isIos() || !!installEventRef.current);
       if (canInstall && !wasShownRecently(user.id, "install")) {
@@ -68,9 +77,9 @@ export default function DeviceSetupPrompt() {
       if (canAskNotifications && !wasShownRecently(user.id, "notify")) setMode("notify");
     }, SHOW_DELAY_MS);
     return () => window.clearTimeout(timeout);
-  }, [user, allowedHere]);
+  }, [user, allowedHere, overlayOpen]);
 
-  if (!user || !mode || !allowedHere) return null;
+  if (!user || !mode || !allowedHere || overlayOpen) return null;
 
   function dismiss() {
     if (user && mode) markShown(user.id, mode);

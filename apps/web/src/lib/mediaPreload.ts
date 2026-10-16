@@ -20,6 +20,7 @@ export function preloadMediaUrl(url: string, options: PreloadMediaOptions = {}):
   const image = new Image();
   image.decoding = "async";
   image.fetchPriority = options.priority === "low" ? "low" : "high";
+  image.onerror = () => warmedMediaUrls.delete(url);
   image.src = url;
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
@@ -8,6 +9,8 @@ import type { MomentFeed, MomentPostItem, StoryGroup, StoryMeetup } from "@app/s
 import { apiFetch } from "../lib/api.js";
 import { mediaPosterUrl, mediaUrl, preloadMediaKeys } from "../lib/upload.js";
 import Avatar from "./Avatar.js";
+import DecodedImage from "./DecodedImage.js";
+import PlaybackProgress from "./PlaybackProgress.js";
 import LiveRoomsBar from "./LiveRoomsBar.js";
 import RadioRoomsBar from "./music/RadioRoomsBar.js";
 import StoryComposer from "./StoryComposer.js";
@@ -59,38 +62,58 @@ function getStoryLoadingPolicy(): StoryLoadingPolicy {
   return { preloadCount: 4 };
 }
 
-function StoryVideo({ src, poster }: { src: string; poster: string }) {
+function StoryVideo({ src, poster, paused, onReady, onWaiting, onEnd }: {
+  src: string; poster: string; paused: boolean;
+  onReady: (durationMs: number) => void; onWaiting: () => void; onEnd: () => void;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
-    // Browsers may refuse autoplay with sound; fall back to muted playback.
-    video.play().catch(() => {
-      video.muted = true;
-      setMuted(true);
-      void video.play().catch(() => undefined);
-    });
-  }, [src]);
+    let cancelled = false;
+    const update = () => {
+      if (paused || document.hidden) { video.pause(); return; }
+      void video.play().catch(() => {
+        if (cancelled || paused || document.hidden) return;
+        video.muted = true;
+        setMuted(true);
+        void video.play().catch(() => undefined);
+      });
+    };
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => { cancelled = true; document.removeEventListener("visibilitychange", update); };
+  }, [src, paused]);
 
   return (
     <>
       <video
         ref={ref}
         src={src}
+        aria-label="Story video"
         poster={poster}
         autoPlay
-        loop
         playsInline
         muted={muted}
         preload="auto"
-        className="h-full w-full object-contain"
+        onLoadedData={(event) => { setReady(true); setFailed(false); onReady(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 7000); }}
+        onPlaying={(event) => onReady(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 7000)}
+        onWaiting={onWaiting}
+        onEnded={onEnd}
+        onError={() => { setFailed(true); onWaiting(); }}
+        className={`h-full w-full object-contain ${ready && !failed ? "opacity-100" : "opacity-0"}`}
       />
+      {!ready && !failed && <DecodedImage src={poster} alt="Story video preview" className="pointer-events-none absolute inset-0" />}
+      {failed && <button type="button" data-viewer-controls aria-label="Retry Story video" onClick={() => { setFailed(false); ref.current?.load(); }} className="absolute z-20 rounded bg-black/70 px-4 py-2 text-sm text-white">Retry video</button>}
       <button
         type="button"
         onClick={() => setMuted((value) => !value)}
         aria-label={muted ? "Turn sound on" : "Turn sound off"}
+        data-viewer-controls
         className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-md transition-transform active:scale-90"
       >
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -108,28 +131,33 @@ function lateLabel(post: MomentPostItem): string | null {
   return minutes >= 60 ? `${Math.round(minutes / 60)}h late` : `${minutes} min late`;
 }
 
-function MomentViewer({ posts, startIndex, onClose }: { posts: MomentPostItem[]; startIndex: number; onClose: () => void }) {
-  const [index, setIndex] = useState(startIndex);
+function MomentViewer({ posts, startId, onClose }: { posts: MomentPostItem[]; startId: string; onClose: () => void }) {
+  const [selectedId, setSelectedId] = useState(startId);
+  const index = posts.findIndex((item) => item.id === selectedId);
   const post = posts[index];
+  function advance(direction: -1 | 1) {
+    const next = posts[index + direction];
+    if (next) setSelectedId(next.id);
+  }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
-      if (event.key === "ArrowRight") setIndex((value) => Math.min(posts.length - 1, value + 1));
-      if (event.key === "ArrowLeft") setIndex((value) => Math.max(0, value - 1));
+      if (event.key === "ArrowRight") advance(1);
+      if (event.key === "ArrowLeft") advance(-1);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, posts.length]);
+  }, [onClose, posts, index]);
 
   if (!post) return null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Today's Moment"
-      className="snap-viewer-enter fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black"
+      className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black"
       onClick={onClose}
     >
       <div className="absolute inset-x-4 top-[max(0.5rem,env(safe-area-inset-top))] z-20 flex gap-1" aria-hidden="true">
@@ -160,10 +188,11 @@ function MomentViewer({ posts, startIndex, onClose }: { posts: MomentPostItem[];
 
       {post.mediaType === "video" ? (
         <video
-          key={post.id}
+          key={`${post.id}:${post.imageKey}`}
           src={mediaUrl(post.imageKey)}
           poster={mediaPosterUrl(post.imageKey)}
           autoPlay
+          muted
           playsInline
           controls
           loop
@@ -171,12 +200,11 @@ function MomentViewer({ posts, startIndex, onClose }: { posts: MomentPostItem[];
           className="max-h-screen max-w-full object-contain"
         />
       ) : (
-        <img
-          key={post.id}
+        <DecodedImage
+          key={`${post.id}:${post.imageKey}`}
           src={mediaUrl(post.imageKey)}
           alt={`Moment from @${post.user.username}`}
-          onClick={(event) => event.stopPropagation()}
-          className="snap-media-enter max-h-screen max-w-full object-contain"
+          className="h-full w-full"
         />
       )}
 
@@ -184,7 +212,7 @@ function MomentViewer({ posts, startIndex, onClose }: { posts: MomentPostItem[];
         <button
           type="button"
           aria-label="Previous Moment"
-          onClick={(event) => { event.stopPropagation(); setIndex(index - 1); }}
+          onClick={(event) => { event.stopPropagation(); advance(-1); }}
           className="absolute inset-y-24 left-0 z-10 w-1/4"
         />
       )}
@@ -192,7 +220,7 @@ function MomentViewer({ posts, startIndex, onClose }: { posts: MomentPostItem[];
         <button
           type="button"
           aria-label="Next Moment"
-          onClick={(event) => { event.stopPropagation(); setIndex(index + 1); }}
+          onClick={(event) => { event.stopPropagation(); advance(1); }}
           className="absolute inset-y-24 right-0 z-10 w-1/4"
         />
       )}
@@ -205,7 +233,7 @@ function MomentViewer({ posts, startIndex, onClose }: { posts: MomentPostItem[];
         </div>
       )}
       <MomentReactions key={post.id} postId={post.id} />
-    </div>
+    </div>, document.body
   );
 }
 
@@ -222,11 +250,18 @@ export default function StoriesBar() {
   const [cancelMeetupId, setCancelMeetupId] = useState<string | null>(null);
   const [reminderVersion, setReminderVersion] = useState(0);
   const [viewing, setViewing] = useState<StoryGroup | null>(null);
-  const [momentViewerIndex, setMomentViewerIndex] = useState<number | null>(null);
+  const [momentViewer, setMomentViewer] = useState<{ posts: MomentPostItem[]; startId: string } | null>(null);
   const [storyIndex, setStoryIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
   const [replySending, setReplySending] = useState(false);
   const [reactionError, setReactionError] = useState<string | null>(null);
+  const [storyReadyId, setStoryReadyId] = useState<string | null>(null);
+  const [storyHeld, setStoryHeld] = useState(false);
+  const [replyFocused, setReplyFocused] = useState(false);
+  const [videoDurationMs, setVideoDurationMs] = useState(7000);
+  const [seenStories, setSeenStories] = useState<Set<string>>(() => new Set());
+  const storyGestureRef = useRef<{ x: number; y: number; startedAt: number } | null>(null);
+  const suppressStoryTapRef = useRef(false);
   const [loadingPolicy, setLoadingPolicy] = useState(getStoryLoadingPolicy);
 
   const { data: groups = [] } = useQuery({
@@ -264,11 +299,20 @@ export default function StoriesBar() {
   const viewingGroupIndex = viewing
     ? groups.findIndex((group) => group.author.id === viewing.author.id)
     : -1;
+  const activeStory = viewing?.stories[storyIndex];
+  const storyPaused = storyHeld || replyFocused || replySending || meetupBusy || !!editingMeetup || !!cancelMeetupId;
+  function storyLoaded(durationMs?: number) {
+    if (!activeStory) return;
+    setStoryReadyId(activeStory.id);
+    if (durationMs) setVideoDurationMs(durationMs);
+    setSeenStories((current) => current.has(activeStory.id) ? current : new Set([...current, activeStory.id]));
+  }
 
   useEffect(() => {
     if (!viewing) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setViewing(null);
+      if ((event.target as HTMLElement)?.closest("input, textarea, [contenteditable]")) return;
       if (event.key === "ArrowRight") advanceStory(1);
       if (event.key === "ArrowLeft") advanceStory(-1);
     }
@@ -287,23 +331,20 @@ export default function StoriesBar() {
         viewing.stories[storyIndex]?.imageKey ?? null,
         viewing.stories[storyIndex - 1]?.imageKey ?? null,
         viewing.stories[storyIndex + 1]?.imageKey ?? null,
-        viewing.author.avatarKey
+        viewing.author.avatarKey,
+        groups[viewingGroupIndex + 1]?.stories[0]?.imageKey ?? null
       );
     }
 
     if (myMoment) {
       keysToWarm.push(myMoment.imageKey, myMoment.user.avatarKey);
     }
-    if (momentViewerIndex !== null) {
-      keysToWarm.push(
-        momentPosts[momentViewerIndex]?.imageKey ?? null,
-        momentPosts[momentViewerIndex - 1]?.imageKey ?? null,
-        momentPosts[momentViewerIndex + 1]?.imageKey ?? null
-      );
+    if (momentViewer) {
+      keysToWarm.push(...momentViewer.posts.slice(0, loadingPolicy.preloadCount).map((post) => post.mediaType === "video" ? null : post.imageKey));
     }
 
     preloadMediaKeys(keysToWarm, { priority: viewing ? "high" : "low" });
-  }, [groups, loadingPolicy.preloadCount, momentPosts, momentViewerIndex, myMoment, storyIndex, viewing]);
+  }, [groups, loadingPolicy.preloadCount, momentViewer, myMoment, storyIndex, viewing]);
 
   function openMomentCircle() {
     if (!momentStarted || !momentSummary) return;
@@ -311,12 +352,16 @@ export default function StoriesBar() {
       camera.openMoment();
       return;
     }
-    const mineIndex = momentPosts.findIndex((post) => post.user.id === myMoment.user.id);
-    setMomentViewerIndex(mineIndex >= 0 ? mineIndex : 0);
+    const posts = momentPosts.some((post) => post.id === myMoment.id) ? momentPosts : [myMoment, ...momentPosts];
+    setMomentViewer({ posts: [...posts], startId: myMoment.id });
   }
 
   function advanceStory(direction: -1 | 1) {
     if (!viewing) return;
+    setStoryReadyId(null);
+    setStoryHeld(false);
+    setReplyText("");
+    setReactionError(null);
     const nextStoryIndex = storyIndex + direction;
     if (nextStoryIndex >= 0 && nextStoryIndex < viewing.stories.length) {
       setStoryIndex(nextStoryIndex);
@@ -333,6 +378,9 @@ export default function StoriesBar() {
   }
 
   function openStoryGroup(group: StoryGroup) {
+    setStoryReadyId(null);
+    setStoryHeld(false);
+    setReplyFocused(false);
     setViewing(group);
     setStoryIndex(0);
     setReplyText("");
@@ -354,8 +402,8 @@ export default function StoriesBar() {
       setViewing((current) => current
         ? {
             ...current,
-            stories: current.stories.map((story, index) =>
-              index === storyIndex ? { ...story, ...reaction } : story
+            stories: current.stories.map((story) =>
+              story.id === storyId ? { ...story, ...reaction } : story
             ),
           }
         : current);
@@ -518,10 +566,12 @@ export default function StoriesBar() {
             {myMoment ? (
               <span className="rounded-full bg-gradient-to-br from-cyan-400 via-teal-400 to-emerald-500 p-0.5">
                 <span className="block rounded-full border-2 border-white">
-                  <img
+                  <DecodedImage
+                    key={myMoment.imageKey}
                     src={myMoment.mediaType === "video" ? mediaPosterUrl(myMoment.imageKey) : mediaUrl(myMoment.imageKey)}
                     alt=""
-                    className="h-[52px] w-[52px] rounded-full object-cover"
+                    className="h-[52px] w-[52px] rounded-full"
+                    imageClassName="object-cover"
                   />
                 </span>
               </span>
@@ -547,35 +597,36 @@ export default function StoriesBar() {
             onClick={() => openStoryGroup(group)}
             className="flex shrink-0 flex-col items-center gap-1"
           >
-            <span className="rounded-full bg-gradient-to-br from-gray-700 to-gray-900 p-0.5">
+            <span className={`rounded-full p-0.5 ${group.stories.every((story) => seenStories.has(story.id)) ? "bg-gray-300" : "bg-emerald-600"}`}>
               <span className="block rounded-full border-2 border-white">
-                <Avatar avatarKey={group.stories[0].imageKey} username={group.author.username} size={52} />
+                <DecodedImage key={group.stories[0].imageKey} src={mediaUrl(group.stories[0].imageKey)} alt={group.author.username} className="h-[52px] w-[52px] rounded-full" imageClassName="object-cover" />
               </span>
             </span>
             <span className="max-w-[60px] truncate text-[11px] text-gray-600">@{group.author.username}</span>
           </button>
         ))}
       </div>
-      {viewing && (
+      {viewing && activeStory && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 px-3"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black sm:px-3"
           role="dialog"
           aria-modal="true"
           aria-label={`Stories from @${viewing.author.username}`}
           onClick={() => setViewing(null)}
         >
           <div
-            className="w-full max-w-md overflow-hidden rounded-lg bg-black"
+            className="flex h-[100dvh] w-full max-w-md flex-col overflow-hidden bg-black sm:h-[min(100dvh,900px)] sm:rounded-lg"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex gap-1 px-3 pt-3" aria-label={`Story ${storyIndex + 1} of ${viewing.stories.length}`}>
+            <div className="flex shrink-0 gap-1 px-3 pt-[max(0.75rem,env(safe-area-inset-top))]" aria-label={`Story ${storyIndex + 1} of ${viewing.stories.length}`}>
               {viewing.stories.map((story, index) => (
                 <span key={story.id} className="h-0.5 flex-1 overflow-hidden rounded-full bg-white/35">
-                  {index <= storyIndex && <span className="block h-full bg-white" />}
+                  {index < storyIndex && <span className="block h-full bg-white" />}
+                  {index === storyIndex && <PlaybackProgress key={story.id} label="Story progress" durationMs={activeStory.videoKey ? videoDurationMs : activeStory.audioDurationMs || 7000} paused={storyPaused} ready={storyReadyId === activeStory.id} onComplete={() => { if (!activeStory.videoKey) advanceStory(1); }} />}
                 </span>
               ))}
             </div>
-            <div className="flex items-center justify-between px-3 py-3 text-sm font-medium text-white">
+            <div className="flex shrink-0 items-center justify-between px-3 py-3 text-sm font-medium text-white">
               <Link
                 to={`/u/${viewing.author.username}`}
                 onClick={() => setViewing(null)}
@@ -595,36 +646,62 @@ export default function StoriesBar() {
                 ×
               </button>
             </div>
-            <div className="relative flex aspect-[9/16] max-h-[75vh] w-full items-center justify-center bg-gray-950">
+            <div className="relative flex min-h-0 w-full flex-1 touch-none items-center justify-center overflow-hidden bg-black"
+              onPointerDown={(event) => {
+                if ((event.target as HTMLElement).closest("[data-viewer-controls]")) return;
+                suppressStoryTapRef.current = false;
+                storyGestureRef.current = { x: event.clientX, y: event.clientY, startedAt: performance.now() };
+                setStoryHeld(true);
+              }}
+              onPointerUp={(event) => {
+                const gesture = storyGestureRef.current;
+                storyGestureRef.current = null;
+                setStoryHeld(false);
+                if (!gesture) return;
+                const deltaX = event.clientX - gesture.x;
+                const deltaY = event.clientY - gesture.y;
+                if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY)) {
+                  suppressStoryTapRef.current = true;
+                  advanceStory(deltaX < 0 ? 1 : -1);
+                } else if (deltaY > 80) {
+                  suppressStoryTapRef.current = true;
+                  setViewing(null);
+                } else if (performance.now() - gesture.startedAt > 220) suppressStoryTapRef.current = true;
+              }}
+              onPointerCancel={() => { storyGestureRef.current = null; setStoryHeld(false); suppressStoryTapRef.current = true; }}>
               {viewing.stories[storyIndex].videoKey ? (
                 <StoryVideo
                   key={viewing.stories[storyIndex].id}
                   src={mediaUrl(viewing.stories[storyIndex].videoKey!)}
                   poster={mediaUrl(viewing.stories[storyIndex].imageKey)}
+                  paused={storyPaused}
+                  onReady={storyLoaded}
+                  onWaiting={() => setStoryReadyId(null)}
+                  onEnd={() => advanceStory(1)}
                 />
               ) : (
-              <img
+              <DecodedImage
+                key={activeStory.id}
                 src={mediaUrl(viewing.stories[storyIndex].imageKey)}
                 alt={`Story ${storyIndex + 1} from @${viewing.author.username}`}
-                loading="eager"
-                decoding="async"
-                fetchPriority="high"
-                className="h-full w-full object-contain"
+                onReady={() => storyLoaded()}
+                className="h-full w-full"
               />
               )}
               <button
                 type="button"
-                onClick={() => advanceStory(-1)}
+                onClick={() => { if (!suppressStoryTapRef.current) advanceStory(-1); }}
                 aria-label="Previous story"
-                className="absolute inset-y-0 left-0 w-1/2"
+                className="absolute inset-y-0 left-0 w-[35%]"
               />
               <button
                 type="button"
-                onClick={() => advanceStory(1)}
+                onClick={() => { if (!suppressStoryTapRef.current) advanceStory(1); }}
                 aria-label="Next story"
-                className="absolute inset-y-0 right-0 w-1/2"
+                className="absolute inset-y-0 right-0 w-[65%]"
               />
               <div
+                data-viewer-controls
                 className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-3 pb-4 pt-12"
                 onClick={(event) => event.stopPropagation()}
               >
@@ -637,6 +714,7 @@ export default function StoriesBar() {
                       peaks={[]}
                       tone="dark"
                       autoPlay
+                      paused={storyPaused}
                     />
                   </div>
                 )}
@@ -702,6 +780,8 @@ export default function StoriesBar() {
                 <form onSubmit={(event) => void replyToStory(event)} className="flex items-center gap-2">
                   <input
                     value={replyText}
+                    onFocus={() => setReplyFocused(true)}
+                    onBlur={() => setReplyFocused(false)}
                     onChange={(event) => setReplyText(event.target.value)}
                     placeholder={`Reply to @${viewing.author.username}...`}
                     maxLength={4000}
@@ -719,13 +799,13 @@ export default function StoriesBar() {
               </div>
             </div>
           </div>
-        </div>
+        </div>, document.body
       )}
-      {momentViewerIndex !== null && momentPosts.length > 0 && (
+      {momentViewer && (
         <MomentViewer
-          posts={momentPosts}
-          startIndex={momentViewerIndex}
-          onClose={() => setMomentViewerIndex(null)}
+          posts={momentViewer.posts}
+          startId={momentViewer.startId}
+          onClose={() => setMomentViewer(null)}
         />
       )}
       <StoryComposer open={composerOpen} onClose={() => setComposerOpen(false)} />

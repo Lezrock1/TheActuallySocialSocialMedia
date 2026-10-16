@@ -13,6 +13,7 @@ export default function AudioPlayer({
   loading = false,
   error = null,
   onRequestLoad,
+  paused,
 }: {
   src: string | null;
   durationMs: number;
@@ -23,6 +24,7 @@ export default function AudioPlayer({
   error?: string | null;
   // Called when the user taps play before the audio has been fetched.
   onRequestLoad?: () => void;
+  paused?: boolean;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -35,10 +37,17 @@ export default function AudioPlayer({
   }, [src]);
 
   useEffect(() => {
-    if (autoPlay && src && audioRef.current) {
-      void audioRef.current.play().catch(() => undefined);
-    }
-  }, [autoPlay, src]);
+    const audio = audioRef.current;
+    if (!audio) return;
+    const update = () => {
+      if (paused || (paused !== undefined && document.hidden)) audio.pause();
+      else if (autoPlay && src) void audio.play().catch(() => undefined);
+    };
+    update();
+    if (paused === undefined) return;
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, [autoPlay, src, paused]);
 
   const bars = peaks.length > 0 ? peaks : Array.from({ length: 32 }, (_, index) => 0.35 + ((index * 7) % 5) / 12);
   const accent = tone === "dark" ? "bg-white" : "bg-black";

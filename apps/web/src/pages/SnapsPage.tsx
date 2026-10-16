@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InboxSnap, PublicUser, SnapStreakSummary } from "@app/shared";
@@ -15,6 +16,9 @@ import PageHeader from "../components/PageHeader.js";
 import Avatar from "../components/Avatar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
+import DecodedImage from "../components/DecodedImage.js";
+import PlaybackProgress from "../components/PlaybackProgress.js";
+import CameraIcon from "../components/CameraIcon.js";
 import { activityList, activityRow, card, formatActivityTime } from "../lib/ui.js";
 
 interface SnapInboxData {
@@ -56,12 +60,20 @@ export default function SnapsPage() {
   const [viewingText, setViewingText] = useState("");
   const [viewingIsVideo, setViewingIsVideo] = useState(false);
   const [viewerRevealed, setViewerRevealed] = useState(false);
+  const [snapHeld, setSnapHeld] = useState(false);
+  const [replyFocused, setReplyFocused] = useState(false);
+  const [videoMuted, setVideoMuted] = useState(true);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const replyInputRef = useRef<HTMLInputElement>(null);
+  const openingRequestRef = useRef(0);
+  const markedSnapsRef = useRef(new Set<string>());
+  const prefetchRef = useRef(new Map<string, { promise: Promise<Blob>; controller: AbortController; startedAt: number }>());
   const [snapClosing, setSnapClosing] = useState(false);
   const closeTimerRef = useRef<number | null>(null);
   const [openingSnapId, setOpeningSnapId] = useState<string | null>(null);
   const [dragY, setDragY] = useState(0);
   const [dragX, setDragX] = useState(0);
-  const dragRef = useRef<{ startY: number; startX: number; moved: boolean; mode: "x" | "y" | null } | null>(null);
+  const dragRef = useRef<{ startY: number; startX: number; startedAt: number; moved: boolean; mode: "x" | "y" | null } | null>(null);
   const suppressClickRef = useRef(false);
   const [snapError, setSnapError] = useState<string | null>(null);
   const [quickReplyText, setQuickReplyText] = useState("");
@@ -75,6 +87,23 @@ export default function SnapsPage() {
     queryFn: fetchInbox,
   });
   const snaps = inbox?.snaps ?? [];
+  const inboxRows = snaps.filter((snap, index) => snaps.findIndex((candidate) => candidate.sender.id === snap.sender.id) === index);
+  useEffect(() => {
+    const upcoming = (inbox?.snaps ?? []).filter((snap) => !markedSnapsRef.current.has(snap.id)).slice(0, 2);
+    const keys = new Set(upcoming.map((snap) => snap.imageKey));
+    for (const [key, pending] of prefetchRef.current) {
+      if (!keys.has(key)) { pending.controller.abort(); prefetchRef.current.delete(key); }
+    }
+    for (const snap of upcoming) {
+      if (prefetchRef.current.has(snap.imageKey)) continue;
+      const controller = new AbortController();
+      const promise = downloadMediaBlob(snap.imageKey, controller.signal);
+      prefetchRef.current.set(snap.imageKey, { promise, controller, startedAt: Date.now() });
+      void promise.catch(() => {
+        if (prefetchRef.current.get(snap.imageKey)?.controller === controller) prefetchRef.current.delete(snap.imageKey);
+      });
+    }
+  }, [inbox]);
   const seenToday = inbox?.recentlyViewed ?? [];
   const { data: following = [], isLoading: followingLoading } = useQuery({
     queryKey: ["following", user?.username],
@@ -119,10 +148,16 @@ export default function SnapsPage() {
   }, [viewingImageUrl]);
 
   useEffect(() => {
-    if (!viewing || viewingIsVideo || snapClosing) return;
-    const timeout = window.setTimeout(closeSnap, 10_000);
-    return () => window.clearTimeout(timeout);
-  }, [viewing, viewingIsVideo, snapClosing]);
+    const video = videoRef.current;
+    if (!video) return;
+    const update = () => {
+      if (snapHeld || replyFocused || quickReplyBusy || document.hidden) video.pause();
+      else void video.play().catch(() => undefined);
+    };
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, [snapHeld, replyFocused, quickReplyBusy, viewingImageUrl]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -133,15 +168,23 @@ export default function SnapsPage() {
   }, [viewing, snapClosing]);
 
   useEffect(() => () => {
+    openingRequestRef.current += 1;
+    for (const pending of prefetchRef.current.values()) pending.controller.abort();
+    prefetchRef.current.clear();
     if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
   }, []);
 
   async function openSnap(snap: InboxSnap) {
     if (openingSnapId) return;
+    const requestId = ++openingRequestRef.current;
     setOpeningSnapId(snap.id);
+    setViewing(null);
+    setViewingImageUrl(null);
+    setViewingImageBlob(null);
     setSnapError(null);
     try {
-      let image = await downloadMediaBlob(snap.imageKey);
+      const prefetched = prefetchRef.current.get(snap.imageKey);
+      let image = await (prefetched && Date.now() - prefetched.startedAt < 30_000 ? prefetched.promise : downloadMediaBlob(snap.imageKey));
       let caption = snap.text ?? "";
       if (snap.isEncrypted) {
         if (!snap.encryptedPayload || !user) {
@@ -152,7 +195,7 @@ export default function SnapsPage() {
         image = decrypted.image;
         caption = decrypted.text;
       }
-      await apiFetch(`/snaps/${snap.id}/view`, { method: "POST" });
+      if (requestId !== openingRequestRef.current) return;
       if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
       setViewingImageUrl(URL.createObjectURL(image));
       setViewingImageBlob(image);
@@ -163,20 +206,44 @@ export default function SnapsPage() {
       setDragY(0);
       setDragX(0);
       setQuickReplyText("");
+      setReplyFocused(false);
+      setSnapHeld(false);
       setViewing(snap);
-      window.setTimeout(() => setViewerRevealed(true), 180);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
-        queryClient.invalidateQueries({ queryKey: ["snaps", "unread-count"] }),
-      ]);
     } catch (error) {
-      setSnapError(error instanceof Error ? error.message : "Could not load this Snap. Please try again.");
+      if (requestId === openingRequestRef.current) setSnapError(error instanceof Error ? error.message : "Could not load this Snap. Please try again.");
     } finally {
-      setOpeningSnapId(null);
+      if (requestId === openingRequestRef.current) setOpeningSnapId(null);
     }
   }
 
+  function revealSnap() {
+    if (!viewing) return;
+    setViewerRevealed(true);
+    if (markedSnapsRef.current.has(viewing.id)) return;
+    const snapId = viewing.id;
+    markedSnapsRef.current.add(snapId);
+    void apiFetch(`/snaps/${snapId}/view`, { method: "POST" }).then(() => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
+      queryClient.invalidateQueries({ queryKey: ["snaps", "unread-count"] }),
+    ])).catch(() => {
+      markedSnapsRef.current.delete(snapId);
+      setSnapError("Could not sync this Snap's view status.");
+    });
+  }
+
+  function advanceSnap() {
+    if (!viewing || snapClosing) return;
+    const remaining = snaps.filter((snap) => snap.id !== viewing.id && !markedSnapsRef.current.has(snap.id));
+    const next = remaining.find((snap) => snap.sender.id === viewing.sender.id) ?? remaining[0];
+    if (next) void openSnap(next);
+    else closeSnap();
+  }
+
   function closeSnap() {
+    if (openingSnapId) {
+      openingRequestRef.current += 1;
+      setOpeningSnapId(null);
+    }
     if (!viewing || snapClosing) return;
     setSnapClosing(true);
     closeTimerRef.current = window.setTimeout(() => {
@@ -220,8 +287,10 @@ export default function SnapsPage() {
   }
 
   function onViewerPointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (snapClosing) return;
-    dragRef.current = { startY: event.clientY, startX: event.clientX, moved: false, mode: null };
+    if (snapClosing || (event.target as HTMLElement).closest("[data-snap-controls]")) return;
+    suppressClickRef.current = false;
+    setSnapHeld(true);
+    dragRef.current = { startY: event.clientY, startX: event.clientX, startedAt: performance.now(), moved: false, mode: null };
   }
 
   function onViewerPointerMove(event: React.PointerEvent<HTMLDivElement>) {
@@ -242,15 +311,16 @@ export default function SnapsPage() {
     }
   }
 
-  function onViewerPointerEnd() {
+  function onViewerPointerEnd(event: React.PointerEvent<HTMLDivElement>) {
     const drag = dragRef.current;
     dragRef.current = null;
+    setSnapHeld(false);
+    if (drag && performance.now() - drag.startedAt > 220) suppressClickRef.current = true;
     if (!drag?.moved) return;
     suppressClickRef.current = true;
-    window.setTimeout(() => { suppressClickRef.current = false; }, 0);
-    if (drag.mode === "x" && dragX > 95) {
+    if ((drag.mode === "x" && dragX > 95) || event.clientY - drag.startY < -80) {
       setDragX(0);
-      void quickReply(quickReplyText.trim() || "👋");
+      replyInputRef.current?.focus();
       return;
     }
     if (drag.mode === "y" && dragY > 110) closeSnap();
@@ -370,7 +440,7 @@ export default function SnapsPage() {
             </div>
             {snapError && <p role="alert" className="px-4 pt-3 text-sm text-red-600">{snapError}</p>}
             <div>
-              {snaps.map((snap) => (
+              {inboxRows.map((snap) => (
                 <button
                   key={snap.id}
                   onClick={() => void openSnap(snap)}
@@ -383,7 +453,7 @@ export default function SnapsPage() {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-gray-900">{snap.sender.displayName || `@${snap.sender.username}`}</span>
-                    <span className="block text-xs text-gray-500">New Snap · {formatActivityTime(snap.createdAt)}</span>
+                    <span className="block text-xs text-gray-500">New Snap · {snaps.filter((item) => item.sender.id === snap.sender.id).length > 1 ? `${snaps.filter((item) => item.sender.id === snap.sender.id).length} unread · ` : ""}{formatActivityTime(snap.createdAt)}</span>
                     {snap.isEncrypted && (
                       <span className="mt-1 block"><EncryptionNotice encrypted /></span>
                     )}
@@ -490,27 +560,31 @@ export default function SnapsPage() {
         </p>
       </details>
 
-      {viewing && (
+      {openingSnapId && createPortal(<div role="dialog" aria-modal="true" aria-label="Opening Snap" className="fixed inset-0 z-[60] flex items-center justify-center bg-black text-white">
+        <span role="status" aria-label="Loading Snap" className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+        <button type="button" aria-label="Cancel opening Snap" onClick={closeSnap} className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center text-2xl">×</button>
+      </div>, document.body)}
+      {viewing && createPortal(
         <div
-          className={`fixed inset-0 z-50 flex touch-none select-none flex-col items-center justify-center bg-black ${snapClosing ? "snap-viewer-exit" : "snap-viewer-enter"}`}
+          className={`fixed inset-0 z-50 flex touch-none select-none flex-col items-center justify-center bg-black ${snapClosing ? "snap-viewer-exit" : ""}`}
           style={(dragY > 0 || dragX > 0) && !snapClosing
             ? { backgroundColor: `rgba(0,0,0,${Math.max(0.35, 1 - Math.max(dragY, dragX) / 500)})`, animation: "none" }
             : undefined}
           role="dialog"
           aria-modal="true"
           aria-label={`Snap from @${viewing.sender.username}`}
-          onClick={() => { if (!suppressClickRef.current) closeSnap(); }}
+          onClick={() => { if (!suppressClickRef.current) advanceSnap(); }}
           onPointerDown={onViewerPointerDown}
           onPointerMove={onViewerPointerMove}
           onPointerUp={onViewerPointerEnd}
           onPointerCancel={onViewerPointerEnd}
         >
           {!viewingIsVideo && !snapClosing && (
-            <span key={viewing.id} aria-hidden="true" className="pointer-events-none absolute inset-x-4 top-[max(0.5rem,env(safe-area-inset-top))] z-20 h-[3px] overflow-hidden rounded-full bg-white/25">
-              <span className="snap-timer block h-full rounded-full bg-white" />
+            <span key={viewing.id} className="pointer-events-none absolute inset-x-4 top-[max(0.5rem,env(safe-area-inset-top))] z-20 h-[3px] overflow-hidden rounded-full">
+              <PlaybackProgress label="Snap progress" durationMs={10_000} ready={viewerRevealed} paused={snapHeld || replyFocused || quickReplyBusy} onComplete={advanceSnap} />
             </span>
           )}
-          <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-black/70 via-black/30 to-transparent px-4 pb-6 pt-[max(1rem,env(safe-area-inset-top))] text-white" onClick={(event) => event.stopPropagation()}>
+          <div data-snap-controls className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-black/70 via-black/30 to-transparent px-4 pb-6 pt-[max(1rem,env(safe-area-inset-top))] text-white" onClick={(event) => event.stopPropagation()}>
             <span className="flex items-center gap-2 text-sm font-medium">
               <Avatar avatarKey={viewing.sender.avatarKey} username={viewing.sender.username} size={28} />
               {viewing.sender.displayName || `@${viewing.sender.username}`}
@@ -526,22 +600,25 @@ export default function SnapsPage() {
           )}
           {viewingIsVideo ? (
             <video
+              key={viewing.id}
+              ref={videoRef}
+              aria-label={`Snap video from @${viewing.sender.username}`}
               src={viewingImageUrl ?? undefined}
               autoPlay
               playsInline
-              controls
-              loop
-              onClick={(event) => event.stopPropagation()}
+              muted={videoMuted}
+              onLoadedData={revealSnap}
+              onEnded={advanceSnap}
               style={dragStyle}
-              className={`max-h-screen max-w-full object-contain transition-[filter,opacity,transform] duration-200 ${viewerRevealed ? "opacity-100 blur-0" : "opacity-85 blur-sm"} ${snapClosing ? "snap-media-exit" : "snap-media-enter"}`}
+              className={`max-h-[100dvh] max-w-full object-contain ${snapClosing ? "snap-media-exit" : ""}`}
             />
           ) : (
-          <img
-            src={viewingImageUrl ?? undefined}
-            alt=""
-            onClick={(event) => event.stopPropagation()}
-            style={dragStyle}
-            className={`max-h-screen max-w-full object-contain transition-[filter,opacity,transform] duration-200 ${viewerRevealed ? "opacity-100 blur-0" : "opacity-85 blur-sm"} ${snapClosing ? "snap-media-exit" : "snap-media-enter"}`}
+          <DecodedImage
+            key={viewing.id}
+            src={viewingImageUrl!}
+            alt={`Snap from @${viewing.sender.username}`}
+            onReady={revealSnap}
+            className={`h-[100dvh] w-full ${snapClosing ? "snap-media-exit" : ""}`}
           />
           )}
           {viewing.isEncrypted && (
@@ -555,7 +632,9 @@ export default function SnapsPage() {
               {viewingText}
             </p>
           )}
-          <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-14" onClick={(event) => event.stopPropagation()}>
+          <div data-snap-controls className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-14" onClick={(event) => event.stopPropagation()}>
+            {viewingIsVideo && <button type="button" onClick={() => setVideoMuted((current) => !current)} aria-label={videoMuted ? "Turn Snap sound on" : "Turn Snap sound off"} className="mb-2 rounded-full bg-black/40 px-3 py-2 text-xs text-white">{videoMuted ? "Sound on" : "Mute"}</button>}
+            {snapError && <p role="alert" className="mb-2 text-xs text-white">{snapError}</p>}
             <div className="mb-2 flex flex-wrap items-center gap-2">
               {[
                 "Bin dabei",
@@ -580,8 +659,12 @@ export default function SnapsPage() {
               }}
               className="flex items-center gap-2"
             >
+              <button type="button" aria-label="Reply with a Snap" onClick={() => { const username = viewing.sender.username; closeSnap(); navigate(`/snaps?camera=1&snapTo=${encodeURIComponent(username)}`); }} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/35 text-white"><CameraIcon /></button>
               <input
+                ref={replyInputRef}
                 value={quickReplyText}
+                onFocus={() => setReplyFocused(true)}
+                onBlur={() => setReplyFocused(false)}
                 onChange={(event) => setQuickReplyText(event.target.value)}
                 placeholder="Quick reply"
                 maxLength={4000}
@@ -596,7 +679,7 @@ export default function SnapsPage() {
               </button>
             </form>
           </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );
