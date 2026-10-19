@@ -17,6 +17,10 @@ export function dayStartMs(day: string): number {
   return Date.parse(`${day}T00:00:00.000Z`);
 }
 
+export async function visibleMoment(now = new Date()): Promise<Moment | null> {
+  return prisma.moment.findFirst({ where: { startsAt: { lte: now } }, orderBy: [{ startsAt: "desc" }, { day: "desc" }] });
+}
+
 function isUniqueViolation(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }
@@ -56,21 +60,22 @@ async function tick(logger: { error: (error: unknown, message: string) => void }
   }
 }
 
-async function deletePastMoments(
+export async function deletePastMoments(
   now: Date,
   logger: { error: (error: unknown, message: string) => void }
 ): Promise<void> {
-  const today = utcDayKey(now);
+  const current = await visibleMoment(now);
+  if (!current) return;
   const oldPosts = await prisma.momentPost.findMany({
-    where: { moment: { day: { lt: today } } },
+    where: { moment: { startsAt: { lt: current.startsAt } } },
     select: { imageKey: true },
   });
   if (oldPosts.length === 0) {
-    await prisma.moment.deleteMany({ where: { day: { lt: today } } });
+    await prisma.moment.deleteMany({ where: { startsAt: { lt: current.startsAt } } });
     return;
   }
 
-  await prisma.moment.deleteMany({ where: { day: { lt: today } } });
+  await prisma.moment.deleteMany({ where: { startsAt: { lt: current.startsAt } } });
   const keys = [...new Set(oldPosts.map((post) => post.imageKey))];
   await Promise.all(keys.map((key) => deleteMediaIfUnreferenced(key).catch((error) => logger.error(error, "Moment cleanup media delete failed"))));
 }

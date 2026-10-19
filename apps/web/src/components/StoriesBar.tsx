@@ -131,7 +131,7 @@ function lateLabel(post: MomentPostItem): string | null {
   return minutes >= 60 ? `${Math.round(minutes / 60)}h late` : `${minutes} min late`;
 }
 
-function MomentViewer({ posts, startId, onClose }: { posts: MomentPostItem[]; startId: string; onClose: () => void }) {
+function MomentViewer({ posts, startId, previous = false, onClose }: { posts: MomentPostItem[]; startId: string; previous?: boolean; onClose: () => void }) {
   const [selectedId, setSelectedId] = useState(startId);
   const index = posts.findIndex((item) => item.id === selectedId);
   const post = posts[index];
@@ -156,7 +156,7 @@ function MomentViewer({ posts, startId, onClose }: { posts: MomentPostItem[]; st
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Today's Moment"
+      aria-label={previous ? "Previous Moment" : "Today's Moment"}
       className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black"
       onClick={onClose}
     >
@@ -174,6 +174,7 @@ function MomentViewer({ posts, startId, onClose }: { posts: MomentPostItem[]; st
         <span className="flex items-center gap-2 text-sm font-medium">
           <Avatar avatarKey={post.user.avatarKey} username={post.user.username} size={30} />
           <span>@{post.user.username}</span>
+          {previous && <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-semibold">Previous Moment</span>}
           {lateLabel(post) && <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-semibold">{lateLabel(post)}</span>}
         </span>
         <button
@@ -250,7 +251,7 @@ export default function StoriesBar() {
   const [cancelMeetupId, setCancelMeetupId] = useState<string | null>(null);
   const [reminderVersion, setReminderVersion] = useState(0);
   const [viewing, setViewing] = useState<StoryGroup | null>(null);
-  const [momentViewer, setMomentViewer] = useState<{ posts: MomentPostItem[]; startId: string } | null>(null);
+  const [momentViewer, setMomentViewer] = useState<{ posts: MomentPostItem[]; startId: string; momentId?: string | null; previous: boolean } | null>(null);
   const [storyIndex, setStoryIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
   const [replySending, setReplySending] = useState(false);
@@ -274,13 +275,16 @@ export default function StoriesBar() {
   const groups = [...storyGroups].sort((first, second) => Number(first.stories.every(isSeen)) - Number(second.stories.every(isSeen)));
   const momentStarted = momentStatus === "open" || momentStatus === "late";
   const { data: momentFeed } = useQuery({
-    queryKey: ["moment", "stories-bar-feed", momentSummary?.myPost?.id ?? "none"],
+    queryKey: ["moment", "stories-bar-feed", momentSummary?.momentId ?? "current", momentSummary?.myPost?.id ?? "none"],
     queryFn: () => apiFetch<MomentFeed>("/moments/today/feed"),
-    enabled: momentStarted,
+    enabled: momentStarted || !!momentSummary?.previousMoment,
     refetchInterval: 30_000,
   });
   const myMoment = momentSummary?.myPost ?? null;
   const momentPosts = momentFeed?.posts ?? (myMoment ? [myMoment] : []);
+  useEffect(() => {
+    if (momentViewer?.momentId && momentSummary?.momentId && momentViewer.momentId !== momentSummary.momentId) setMomentViewer(null);
+  }, [momentSummary?.momentId, momentViewer]);
 
   const requestedStoryId = searchParams.get("story");
   useEffect(() => {
@@ -362,13 +366,13 @@ export default function StoriesBar() {
   }, [groups, loadingPolicy.preloadCount, momentViewer, myMoment, storyIndex, viewing]);
 
   function openMomentCircle() {
-    if (!momentStarted || !momentSummary) return;
+    if (!momentSummary || (!momentStarted && !momentSummary.previousMoment)) return;
     if (!myMoment) {
-      camera.openMoment();
+      if (momentStarted) camera.openMoment();
       return;
     }
     const posts = momentPosts.some((post) => post.id === myMoment.id) ? momentPosts : [myMoment, ...momentPosts];
-    setMomentViewer({ posts: [...posts], startId: myMoment.id });
+    setMomentViewer({ posts: [...posts], startId: myMoment.id, momentId: momentSummary.momentId, previous: !!momentSummary.previousMoment });
   }
 
   function advanceStory(direction: -1 | 1) {
@@ -574,11 +578,11 @@ export default function StoriesBar() {
         </button>
         <LiveRoomsBar compact />
         <RadioRoomsBar compact />
-        {momentSummary && momentStatus !== "none" && (
+        {momentSummary && (momentStatus !== "none" || momentSummary.previousMoment) && (
           <button
             type="button"
             onClick={openMomentCircle}
-            aria-label={myMoment ? "Open Today's Moment" : momentStarted ? "Create Today's Moment" : "Today's Moment is waiting"}
+            aria-label={myMoment ? momentSummary.previousMoment ? "Open Previous Moment" : "Open Today's Moment" : momentStarted ? "Create Today's Moment" : "Today's Moment is waiting"}
             disabled={!momentStarted && !myMoment}
             className="relative flex shrink-0 flex-col items-center gap-1"
           >
@@ -826,6 +830,7 @@ export default function StoriesBar() {
         <MomentViewer
           posts={momentViewer.posts}
           startId={momentViewer.startId}
+          previous={momentViewer.previous}
           onClose={() => setMomentViewer(null)}
         />
       )}

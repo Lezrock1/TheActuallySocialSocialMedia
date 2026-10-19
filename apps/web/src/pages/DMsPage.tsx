@@ -260,7 +260,7 @@ export default function DMsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeId, setActiveId] = useState<string | null>(() => searchParams.get("conversation"));
   const [chatSearch, setChatSearch] = useState("");
-  const [chatFilter, setChatFilter] = useState<"all" | "unread" | "groups">("all");
+  const [chatFilter, setChatFilter] = useState<"all" | "unread" | "groups" | "pinned">("all");
   const [pinnedChatIds, setPinnedChatIds] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(PINNED_CHATS_KEY);
@@ -572,6 +572,7 @@ export default function DMsPage() {
     const filtered = conversations.filter((conversation) => {
       if (chatFilter === "unread" && conversation.unreadCount === 0) return false;
       if (chatFilter === "groups" && !conversation.isGroup) return false;
+      if (chatFilter === "pinned" && !pinnedSet.has(conversation.id)) return false;
       if (!normalizedChatSearch) return true;
       const conversationText = [
         conversation.name ?? "",
@@ -1039,7 +1040,7 @@ export default function DMsPage() {
   ];
 
   return (
-    <div className={`mx-auto w-full px-4 py-4 sm:py-8 ${activeId ? "max-w-7xl" : "max-w-2xl"}`}>
+    <div className="chat-page mx-auto w-full max-w-7xl px-4 py-4 sm:py-6">
       <PullToRefresh enabled={!activeId && !call.activeCall && !call.incomingCall} onRefresh={async () => {
         const refreshes = [
           queryClient.invalidateQueries({ queryKey: ["conversations"] }),
@@ -1048,15 +1049,13 @@ export default function DMsPage() {
         if (activeId) refreshes.push(queryClient.invalidateQueries({ queryKey: ["messages", activeId] }));
         await Promise.all(refreshes);
       }} />
-      <PageHeader title="Messages" />
+      <PageHeader title="Chats" />
       <NavBar />
       {encryptionError && <p role="alert" className="mb-3 text-xs text-red-600">{encryptionError}</p>}
 
-      <div className={activeId
-        ? "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(300px,340px)_minmax(0,1fr)] lg:items-start lg:gap-5 xl:grid-cols-[360px_minmax(0,1fr)]"
-        : "flex flex-col gap-6"}>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)] lg:items-start lg:gap-0">
         <div className={`w-full min-w-0 ${activeId ? "hidden lg:block" : ""}`}>
-          <div role="tablist" aria-label="Messages view" className="mb-3 inline-flex max-w-full rounded-lg bg-gray-100 p-1">
+          <div role="tablist" aria-label="Messages view" className="mb-3 inline-flex max-w-full gap-1 border-b border-gray-200 pb-2">
             <button
               type="button"
               role="tab"
@@ -1065,7 +1064,7 @@ export default function DMsPage() {
                 setMessageView("chats");
                 setSelectedGroupUsernames([]);
               }}
-              className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${messageView === "chats" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
+              className={`min-h-9 rounded-full px-3 text-sm font-semibold transition-colors ${messageView === "chats" ? "bg-emerald-50 text-emerald-800" : "text-gray-500 hover:text-gray-800"}`}
             >
               Chats
             </button>
@@ -1187,42 +1186,48 @@ export default function DMsPage() {
                   id="chat-search"
                   value={chatSearch}
                   onChange={(e) => setChatSearch(e.target.value)}
-                  placeholder="Search chats"
-                  className={`${input} min-h-10 flex-1 rounded-full px-4`}
+                  placeholder="Search"
+                  className="min-h-11 min-w-0 flex-1 rounded-full border-0 bg-gray-100 px-5 text-sm text-gray-900 outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                 />
                 <button
                   type="button"
+                  aria-label="New chat"
+                  title="New chat"
                   onClick={() => {
                     setFriendPickerOpen(true);
                     friendSearchInputRef.current?.focus();
                   }}
-                  className="rounded-full border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-2xl font-medium text-white transition-colors hover:bg-emerald-800"
                 >
-                  New chat
+                  <span aria-hidden="true">+</span>
                 </button>
               </div>
               <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
                 <button
                   type="button"
                   onClick={() => setChatFilter("all")}
-                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "all" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                  aria-pressed={chatFilter === "all"}
+                  className={`chat-filter ${chatFilter === "all" ? "chat-filter-active" : ""}`}
                 >
-                  Recent
+                  All
                 </button>
                 <button
                   type="button"
                   onClick={() => setChatFilter("unread")}
-                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "unread" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                  aria-pressed={chatFilter === "unread"}
+                  className={`chat-filter ${chatFilter === "unread" ? "chat-filter-active" : ""}`}
                 >
                   Unread
                 </button>
                 <button
                   type="button"
                   onClick={() => setChatFilter("groups")}
-                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${chatFilter === "groups" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                  aria-pressed={chatFilter === "groups"}
+                  className={`chat-filter ${chatFilter === "groups" ? "chat-filter-active" : ""}`}
                 >
                   Groups
                 </button>
+                <button type="button" onClick={() => setChatFilter("pinned")} aria-pressed={chatFilter === "pinned"} className={`chat-filter ${chatFilter === "pinned" ? "chat-filter-active" : ""}`}>Pinned</button>
                 <button
                   type="button"
                   onClick={() => setUnreadFirst((value) => !value)}
@@ -1233,16 +1238,16 @@ export default function DMsPage() {
               </div>
             </div>
           )}
-          {messageView === "chats" && <div className={`${activityList} ${activeId ? "lg:max-h-[calc(100dvh-19rem)] lg:overflow-y-auto lg:overscroll-contain" : ""}`}>
+          {messageView === "chats" && <div aria-label="Chat list" className="chat-list lg:max-h-[calc(100dvh-19rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-3">
             {visibleConversations.map((c) => (
-              <div key={c.id} className={`${activityRow} relative ${!activeId ? "before:absolute before:bottom-0 before:left-10 before:top-0 before:w-px before:bg-gray-100 before:content-[''] lg:before:hidden" : ""} ${activeId === c.id ? "bg-emerald-50/70" : ""}`}>
+              <div key={c.id} data-conversation-id={c.id} className={`chat-list-row ${activeId === c.id ? "chat-list-selected" : ""}`}>
                 <button
                   type="button"
                   onClick={() => setActiveId(c.id)}
                   className="flex min-w-0 flex-1 items-center gap-3 text-left"
                 >
                   {c.isGroup ? (
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-700">
                       {c.members.length}
                     </span>
                   ) : (
@@ -1256,10 +1261,10 @@ export default function DMsPage() {
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-baseline gap-2">
-                      <span className={`min-w-0 flex-1 truncate text-sm text-gray-900 ${c.unreadCount > 0 ? "font-bold" : "font-semibold"}`}>
+                      <span className={`min-w-0 flex-1 truncate text-[16px] text-gray-900 ${c.unreadCount > 0 ? "font-bold" : "font-semibold"}`}>
                         {c.isGroup
                           ? c.name ?? c.members.map((member) => `@${member.username}`).join(", ")
-                          : `@${c.otherMember?.username ?? "Unknown"}`}
+                          : c.otherMember?.displayName || `@${c.otherMember?.username ?? "Unknown"}`}
                       </span>
                       {c.lastMessage && (
                         <time className={`shrink-0 text-[11px] ${c.unreadCount > 0 ? "font-semibold text-green-600" : "text-gray-400"}`}>
@@ -1293,7 +1298,7 @@ export default function DMsPage() {
                   aria-label={pinnedSet.has(c.id) ? "Unpin chat" : "Pin chat"}
                   aria-pressed={pinnedSet.has(c.id)}
                   title={pinnedSet.has(c.id) ? "Unpin chat" : "Pin chat"}
-                  className={`ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-1 ${pinnedSet.has(c.id) ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-transparent text-gray-400 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-700"}`}
+                  className={`ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${pinnedSet.has(c.id) ? "bg-emerald-50 text-emerald-700" : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"}`}
                 >
                   <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M8 3.5h8l-1 5 3 3v2h-5v6.5L12 22l-1-2v-6.5H6v-2l3-3-1-5Z" />
@@ -1302,7 +1307,7 @@ export default function DMsPage() {
               </div>
             ))}
             {visibleConversations.length === 0 && (
-              <p className="px-4 py-6 text-center text-sm text-gray-500">No conversations yet.</p>
+              <p className="px-4 py-6 text-center text-sm text-gray-500">{chatSearch ? "No chats found." : chatFilter === "all" ? "No conversations yet." : "No chats in this filter."}</p>
             )}
           </div>}
           {messageView === "chats" && (
@@ -1314,14 +1319,19 @@ export default function DMsPage() {
           {messageView === "live_rooms" && <LiveRoomsBar />}
         </div>
 
+        {!activeId && <section aria-label="No chat selected" className="chat-empty hidden min-h-[34rem] flex-col items-center justify-center border-l border-gray-200 lg:flex">
+          <span aria-hidden="true" className="mb-4 flex h-20 w-20 items-center justify-center rounded-full border-2 border-emerald-700 text-3xl font-semibold text-emerald-700">in</span>
+          <h2 className="text-xl font-semibold text-gray-900">InTouch</h2>
+          <p className="mt-2 text-sm text-gray-500">Chats</p>
+        </section>}
         {activeId && (
           <section
             key={activeId}
-            className="message-conversation-enter fixed inset-x-0 top-0 z-[56] flex flex-col bg-gray-50 lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-12rem)] lg:min-h-[34rem] lg:overflow-hidden lg:rounded-xl lg:border lg:border-gray-200 lg:bg-white lg:shadow-[0_2px_12px_rgba(15,23,42,0.05)]"
+            className="chat-conversation fixed inset-x-0 top-0 z-[56] flex flex-col bg-gray-50 lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-12rem)] lg:min-h-[34rem] lg:overflow-hidden lg:border-l lg:border-gray-200"
             style={{ bottom: keyboardOffset }}
             aria-label="Conversation"
           >
-            <div className="shrink-0 border-b border-gray-200 bg-white/95 backdrop-blur-xl">
+            <div className="chat-conversation-header shrink-0 border-b border-gray-200 bg-white">
               <div className="mx-auto flex w-full max-w-2xl items-center gap-1.5 px-1.5 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] lg:max-w-none lg:gap-2.5 lg:px-4 lg:pt-3">
                 <button
                   type="button"
@@ -1353,7 +1363,7 @@ export default function DMsPage() {
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[15px] font-semibold leading-5 text-gray-900">
-                        @{activeConversation.otherMember.username}
+                        {activeConversation.otherMember.displayName || `@${activeConversation.otherMember.username}`}
                       </span>
                       <span className={`block truncate text-[11px] leading-4 ${deviceKeyReady && allMembersHaveKeys && !encryptionKeysError ? "text-green-700" : "text-amber-700"}`}>
                         {deviceKeyReady && allMembersHaveKeys && !encryptionKeysError
@@ -1615,7 +1625,9 @@ export default function DMsPage() {
                     <div className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] leading-4 opacity-60">
                       {"isEncrypted" in message && !message.isEncrypted && <span className="font-semibold text-red-600">Not encrypted</span>}
                       {mine && (
-                        <span className="font-semibold text-gray-600">{isPending ? "Pending" : labelForDeliveryState((message as ConversationMessage).deliveryState)}</span>
+                        <span role="img" aria-label={isPending ? "Pending" : labelForDeliveryState((message as ConversationMessage).deliveryState)} title={isPending ? "Pending" : labelForDeliveryState((message as ConversationMessage).deliveryState)} className={`inline-flex items-center font-semibold ${(message as ConversationMessage).deliveryState === "read" ? "text-sky-600" : "text-gray-500"}`}>
+                          {isPending ? <span className="h-2.5 w-2.5 rounded-full border border-current" /> : <svg aria-hidden="true" viewBox="0 0 24 16" fill="none" className="h-3 w-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m2 8 4 4L16 2" />{["delivered", "read"].includes((message as ConversationMessage).deliveryState ?? "") && <path d="m10 10 2 2L22 2" />}</svg>}
+                        </span>
                       )}
                       <time dateTime={message.createdAt}>{formatClock(message.createdAt)}</time>
                     </div>

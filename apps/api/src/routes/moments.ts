@@ -8,7 +8,7 @@ import { toPublicUser } from "../serializers.js";
 import { ownsMedia } from "../mediaAccess.js";
 import { deleteMediaIfUnreferenced } from "../storage.js";
 import { getBlockedUserIds } from "../visibility.js";
-import { ensureTodayMoment, utcDayKey } from "../moments.js";
+import { ensureTodayMoment, utcDayKey, visibleMoment } from "../moments.js";
 import { z } from "zod";
 import { createRateLimiter, rateLimitBy, byUser } from "../rateLimit.js";
 
@@ -87,7 +87,7 @@ async function friendIdsOf(userId: string): Promise<string[]> {
 export async function momentRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { postId: string } }>("/moments/posts/:postId/reactions", { preHandler: requireAuth }, async (request, reply) => {
     const post = await prisma.momentPost.findUnique({ where: { id: request.params.postId }, include: { moment: true } });
-    if (!post || post.moment.day !== utcDayKey(new Date()) || !(await canReadMoment(request.userId!, post))) {
+    if (!post || post.momentId !== (await visibleMoment())?.id || !(await canReadMoment(request.userId!, post))) {
       return reply.code(404).send({ error: "Moment unavailable" });
     }
     const blocked = await getBlockedUserIds(request.userId!);
@@ -102,7 +102,7 @@ export async function momentRoutes(app: FastifyInstance): Promise<void> {
     const parsed = reactionSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "Choose a valid reaction" });
     const post = await prisma.momentPost.findUnique({ where: { id: request.params.postId }, include: { moment: true } });
-    if (!post || post.moment.day !== utcDayKey(new Date()) || !(await canReadMoment(request.userId!, post))) {
+    if (!post || post.momentId !== (await visibleMoment())?.id || !(await canReadMoment(request.userId!, post))) {
       return reply.code(404).send({ error: "Moment unavailable" });
     }
     if (parsed.data.emoji === null) await prisma.momentReaction.deleteMany({ where: { postId: post.id, userId: request.userId! } });
@@ -116,10 +116,11 @@ export async function momentRoutes(app: FastifyInstance): Promise<void> {
     const now = new Date();
     const moment = await ensureTodayMoment(now);
     const status = statusFor(moment, now);
+    const displayMoment = await visibleMoment(now);
     const [myPost, streaks] = await Promise.all([
-      moment
+      displayMoment
         ? prisma.momentPost.findUnique({
-          where: { momentId_userId: { momentId: moment.id, userId: request.userId! } },
+          where: { momentId_userId: { momentId: displayMoment.id, userId: request.userId! } },
           include: { user: true },
         })
         : null,
@@ -132,7 +133,9 @@ export async function momentRoutes(app: FastifyInstance): Promise<void> {
       serverNow: now.toISOString(),
       startsAt: started ? moment!.startsAt.toISOString() : null,
       windowEndsAt: started ? new Date(moment!.startsAt.getTime() + WINDOW_MS).toISOString() : null,
-      myPost: moment && myPost ? toItem(myPost, moment) : null,
+      myPost: displayMoment && myPost ? toItem(myPost, displayMoment) : null,
+      momentId: displayMoment?.id ?? null,
+      previousMoment: !!displayMoment && displayMoment.id !== moment?.id,
       currentStreak: streaks.current,
       bestStreak: streaks.best,
     };
@@ -185,8 +188,8 @@ export async function momentRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/moments/today/feed", { preHandler: requireAuth }, async (request, reply) => {
     const now = new Date();
-    const moment = await prisma.moment.findUnique({ where: { day: utcDayKey(now) } });
-    if (!moment || now < moment.startsAt) {
+    const moment = await visibleMoment(now);
+    if (!moment) {
       const empty: MomentFeed = { locked: false, friendPostCount: 0, posts: [] };
       return reply.send(empty);
     }

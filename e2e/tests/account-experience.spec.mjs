@@ -17,6 +17,71 @@ async function upload(context) {
   return (await response.json()).key;
 }
 
+test("Chats offer compact rows, working filters, pins and responsive split view", async ({ page, context }, info) => {
+  const response = await context.request.post(`${API}/conversations`, { data: { username: "mia" } });
+  const { conversationId } = await response.json();
+  await page.goto("/dms");
+  await expect(page.getByRole("heading", { name: "Chats", exact: true })).toBeVisible();
+  const row = page.locator(`[data-conversation-id="${conversationId}"]`);
+  await expect(row).toBeVisible();
+  const pin = row.getByRole("button", { name: "Pin chat", exact: true });
+  if (await pin.count()) await pin.click();
+  await page.getByRole("button", { name: "Pinned", exact: true }).click();
+  await expect(row).toBeVisible();
+  await page.getByLabel("Search chats", { exact: true }).fill("no-such-person");
+  await expect(page.getByText("No chats found.", { exact: true })).toBeVisible();
+  await page.getByLabel("Search chats", { exact: true }).fill("");
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await page.screenshot({ path: `screenshots/${info.project.name}/chats-mobile.png`, fullPage: true, animations: "disabled" });
+  await row.getByRole("button").first().click();
+  await expect(page.getByRole("region", { name: "Conversation", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Back to Messages", exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(page.getByRole("region", { name: "No chat selected", exact: true })).toBeVisible();
+  await page.screenshot({ path: `screenshots/${info.project.name}/chats-desktop.png`, fullPage: true, animations: "disabled" });
+  await row.getByRole("button").first().click();
+  await expect(page.getByRole("region", { name: "Conversation", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("previous Moment stays accessible until the next drop without allowing early posts", async ({ page, context }, info) => {
+  await page.clock.install();
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const original = await database.moment.findUnique({ where: { day: today } });
+  const originalPrevious = await database.moment.findUnique({ where: { day: yesterday } });
+  const current = await database.moment.upsert({ where: { day: today }, create: { day: today, startsAt: new Date(Date.now() + 3600_000) }, update: { startsAt: new Date(Date.now() + 3600_000) } });
+  const previous = await database.moment.upsert({ where: { day: yesterday }, create: { day: yesterday, startsAt: new Date(Date.now() - 86_400_000) }, update: {} });
+  const leo = await database.user.findUniqueOrThrow({ where: { username: "leo" } });
+  const savedPost = await database.momentPost.findUnique({ where: { momentId_userId: { momentId: previous.id, userId: leo.id } } });
+  const imageKey = await upload(context);
+  const post = await database.momentPost.upsert({ where: { momentId_userId: { momentId: previous.id, userId: leo.id } }, create: { momentId: previous.id, userId: leo.id, imageKey }, update: { imageKey } });
+  try {
+    const summary = await (await context.request.get(`${API}/moments/today`)).json();
+    expect(summary.status).toBe("waiting"); expect(summary.previousMoment).toBe(true); expect(summary.myPost.id).toBe(post.id);
+    expect((await context.request.post(`${API}/moments/today/post`, { data: { imageKey } })).status()).toBe(409);
+    expect((await context.request.get(`${API}/moments/posts/${post.id}/reactions`)).status()).toBe(200);
+    expect((await context.request.get(`${API}/media/${imageKey}`)).status()).toBe(200);
+    await page.goto("/");
+    await page.getByRole("button", { name: "Open Previous Moment", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Previous Moment", exact: true }).getByRole("img", { name: "Moment from @leo" })).toBeVisible();
+    await page.screenshot({ path: `screenshots/${info.project.name}/previous-moment.png`, animations: "disabled" });
+    await database.moment.update({ where: { id: current.id }, data: { startsAt: new Date(Date.now() - 60_000) } });
+    const next = await (await context.request.get(`${API}/moments/today`)).json();
+    expect(next.previousMoment).toBe(false); expect(next.momentId).toBe(current.id);
+    expect((await context.request.get(`${API}/moments/posts/${post.id}/reactions`)).status()).toBe(404);
+    await page.clock.fastForward(21_000);
+    await expect(page.getByRole("dialog", { name: "Previous Moment", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^(Create|Open) Today's Moment$/ })).toBeVisible();
+  } finally {
+    if (original) await database.moment.update({ where: { id: current.id }, data: { startsAt: original.startsAt } });
+    else await database.moment.deleteMany({ where: { id: current.id } });
+    if (savedPost) await database.momentPost.update({ where: { id: post.id }, data: { imageKey: savedPost.imageKey } });
+    else await database.momentPost.deleteMany({ where: { id: post.id } });
+    if (!originalPrevious) await database.moment.deleteMany({ where: { id: previous.id } });
+  }
+});
+
 test("friends follow activity is paginated on Alerts and never enters the post feed", async ({ page, context }) => {
   const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
   const usernames = Array.from({ length: 22 }, (_, index) => `activity${Date.now()}${index}`);

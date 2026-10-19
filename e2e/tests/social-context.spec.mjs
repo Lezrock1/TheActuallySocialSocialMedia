@@ -39,7 +39,7 @@ async function prepare(context, username) {
   const page = await context.newPage();
   await page.goto("/dms", { waitUntil: "domcontentloaded" });
   await expect.poll(async () => (await context.request.get(`${API}/users/${username}/encryption-keys`)).json().then((data) => data.keys.length)).toBeGreaterThan(0);
-  await expect(page.getByRole("heading", { name: "Messages", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Chats", exact: true })).toBeVisible();
   return page;
 }
 
@@ -54,6 +54,32 @@ async function uploadImage(context) {
   expect(response.status()).toBe(201);
   return (await response.json()).key;
 }
+
+test("Chat messages stay encrypted with delivery ticks across light and dark conversation layouts", async ({ browser, context }, info) => {
+  const mia = await friend(browser);
+  try {
+    const recipient = await prepare(mia, "mia");
+    const sender = await prepare(context, "leo");
+    const conversationId = (await (await context.request.post(`${API}/conversations`, { data: { username: "mia" } })).json()).conversationId;
+    await sender.goto(`/dms?conversation=${conversationId}`);
+    await recipient.goto(`/dms?conversation=${conversationId}`);
+    await sender.getByRole("textbox", { name: "Message", exact: true }).fill("See you soon, Mia.");
+    await sender.getByRole("button", { name: "Send message", exact: true }).click();
+    await expect(recipient.getByText("See you soon, Mia.", { exact: true })).toBeVisible();
+    await recipient.getByRole("textbox", { name: "Message", exact: true }).fill("See you there!");
+    await recipient.getByRole("button", { name: "Send message", exact: true }).click();
+    await expect(sender.getByText("See you there!", { exact: true })).toBeVisible();
+    await expect(sender.getByRole("img", { name: "Read", exact: true }).first()).toBeVisible();
+    for (const theme of ["light", "dark"]) {
+      await sender.evaluate(async (value) => { (await import("/src/lib/theme.ts")).applyTheme(value); }, theme);
+      await expect(sender.locator("html")).toHaveAttribute("data-theme", theme);
+      expect(await sender.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await sender.screenshot({ path: `screenshots/${info.project.name}/chat-conversation-${theme}.png`, animations: "disabled" });
+    }
+    await sender.setViewportSize({ width: 1440, height: 1000 });
+    await sender.screenshot({ path: `screenshots/${info.project.name}/chat-conversation-desktop.png`, animations: "disabled" });
+  } finally { await mia.close(); }
+});
 
 test("Story reply sends directly and keeps its thumbnail after Story deletion", async ({ browser, context }, info) => {
   const mia = await friend(browser);

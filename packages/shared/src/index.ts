@@ -491,6 +491,8 @@ export interface MomentPostItem {
 // "waiting": the time is still a secret; "open": inside the on-time window; "late": window over, posting still allowed today.
 export interface MomentSummary {
   status: "none" | "waiting" | "open" | "late";
+  momentId?: string | null;
+  previousMoment?: boolean;
   serverNow: string;
   startsAt: string | null;
   windowEndsAt: string | null;

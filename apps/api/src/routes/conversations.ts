@@ -264,7 +264,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       if (!membership) {
         return reply.code(404).send({ error: "Conversation not found" });
       }
-      await prisma.notification.updateMany({
+      const read = await prisma.notification.updateMany({
         where: {
           recipientId: request.userId!,
           conversationId: request.params.id,
@@ -273,6 +273,10 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         },
         data: { readAt: new Date() },
       });
+      if (read.count > 0) {
+        const members = await prisma.conversationMember.findMany({ where: { conversationId: request.params.id }, select: { userId: true } });
+        emitToUsers(request.server.io, members.map((member) => member.userId), "message:updated", { conversationId: request.params.id });
+      }
       return reply.code(204).send();
     }
   );
