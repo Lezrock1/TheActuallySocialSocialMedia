@@ -201,6 +201,83 @@ test("Story rings persist only completed views and reopen at the first unseen St
   }
 });
 
+test("Story rings survive failed saves and refresh, synchronize devices and reveal new uploads live", async ({ browser, page, context }) => {
+  const mia = await browser.newContext({ baseURL: "http://localhost:5173", storageState: ".auth/mia.json", extraHTTPHeaders: { "x-forwarded-for": "198.51.100.78" } });
+  const otherDevice = await browser.newContext({ baseURL: "http://localhost:5173", storageState: ".auth/leo.json", serviceWorkers: "block", extraHTTPHeaders: { "x-forwarded-for": "198.51.100.79" } });
+  const created = [];
+  try {
+    const imageKey = await upload(mia);
+    const existing = (await (await context.request.get(`${API}/stories`)).json()).groups.find((group) => group.author.username === "mia");
+    for (const story of existing?.stories ?? []) await context.request.post(`${API}/stories/${story.id}/view`);
+    const create = async () => {
+      const response = await mia.request.post(`${API}/stories`, { data: { imageKey } });
+      expect(response.status()).toBe(201);
+      const story = (await response.json()).story; created.push(story.id); return story;
+    };
+    const first = await create();
+    await page.clock.install();
+    await page.goto(`/?story=${first.id}`);
+    const other = await otherDevice.newPage(); await other.goto("/");
+    await expect.poll(() => other.evaluate(async () => (await import("/src/lib/socket.ts")).getSocket().connected)).toBe(true);
+    await expect(page.getByRole("dialog", { name: "Stories from @mia" }).getByRole("img", { name: /^Story/ })).toBeVisible();
+    let failedWrites = 0;
+    const viewUrl = `**/stories/${first.id}/view`;
+    await page.route(viewUrl, (route) => { failedWrites++; return route.abort("failed"); });
+    await page.clock.fastForward(7500);
+    await expect.poll(() => failedWrites).toBeGreaterThan(0);
+    await expect(page.getByRole("button", { name: "Stories from @mia · All seen", exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Stories from @mia · All seen", exact: true })).toBeVisible();
+    await page.unroute(viewUrl);
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect.poll(async () => {
+      const groups = (await (await context.request.get(`${API}/stories`)).json()).groups;
+      return groups.flatMap((group) => group.stories).find((story) => story.id === first.id)?.viewedAt;
+    }).toBeTruthy();
+    await expect(other.getByRole("button", { name: "Stories from @mia · All seen", exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate(async () => (await import("/src/lib/socket.ts")).getSocket().connected)).toBe(true);
+    await create();
+    await expect(page.getByRole("button", { name: "Stories from @mia · Unseen stories", exact: true })).toBeVisible();
+    await expect(other.getByRole("button", { name: "Stories from @mia · Unseen stories", exact: true })).toBeVisible();
+  } finally {
+    for (const id of created) await mia.request.delete(`${API}/stories/${id}`);
+    await otherDevice.close(); await mia.close();
+  }
+});
+
+test("camera startup coalesces visibility restarts and releases a late permission after close", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    const tracks = [];
+    const makeStream = () => {
+      const track = { readyState: "live", stop() { this.readyState = "ended"; } };
+      tracks.push(track);
+      return { getTracks: () => [track], getVideoTracks: () => [track], clone: makeStream };
+    };
+    window.__permissionTest = { calls: 0, grant: null, tracks };
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", { configurable: true, value: () => {
+      window.__permissionTest.calls++;
+      return new Promise((resolve) => { window.__permissionTest.grant = () => resolve(makeStream()); });
+    } });
+  });
+  await page.goto("/");
+  await page.bringToFront();
+  await page.getByRole("button", { name: "Open camera", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Close camera", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__permissionTest.calls)).toBe(1);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.getByRole("button", { name: "Close camera", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Close camera", exact: true })).toHaveCount(0);
+  await page.evaluate(() => window.__permissionTest.grant());
+  await expect.poll(() => page.evaluate(() => window.__permissionTest.tracks.filter((track) => track.readyState === "live").length)).toBe(0);
+  expect(await page.evaluate(() => window.__permissionTest.calls)).toBe(1);
+});
+
 test("invites last thirty days and consumed links are not falsely reported as expired", async ({ context }) => {
   const response = await context.request.post(`${API}/invitations`);
   expect(response.status()).toBe(201);
@@ -234,6 +311,31 @@ test("invite link retains its code on refresh", async ({ browser }) => {
     await page.reload();
     await expect(page.getByPlaceholder("Invitation code", { exact: true })).toHaveValue(code);
   } finally { await context.close(); }
+});
+
+test("equivalent media requests reuse an active source but request again after every consumer stops", async ({ page }) => {
+  await page.goto("/");
+  const result = await page.evaluate(async () => {
+    const { requestUserMedia } = await import("/src/lib/mediaPermissions.ts");
+    let calls = 0;
+    const makeStream = () => {
+      const track = { readyState: "live", stop() { this.readyState = "ended"; } };
+      return { getTracks: () => [track], clone: makeStream };
+    };
+    navigator.mediaDevices.getUserMedia = async () => { calls++; return makeStream(); };
+    const first = await requestUserMedia({ audio: { noiseSuppression: true, echoCancellation: true } });
+    const second = await requestUserMedia({ video: false, audio: { echoCancellation: true, noiseSuppression: true } });
+    const during = calls;
+    first.getTracks().forEach((track) => track.stop());
+    const third = await requestUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+    const afterFirstStopped = calls;
+    second.getTracks().forEach((track) => track.stop());
+    third.getTracks().forEach((track) => track.stop());
+    const fresh = await requestUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    fresh.getTracks().forEach((track) => track.stop());
+    return { during, afterFirstStopped, afterAllStopped: calls };
+  });
+  expect(result).toEqual({ during: 1, afterFirstStopped: 1, afterAllStopped: 2 });
 });
 
 test("simultaneous media requests prompt only once and do not retain active hardware", async ({ page }) => {

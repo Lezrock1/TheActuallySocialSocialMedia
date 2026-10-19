@@ -155,6 +155,8 @@ export default function CameraCapture({
   useEffect(() => {
     let cancelled = false;
     let stream: MediaStream | null = null;
+    let starting = false;
+    let restartAfterVisibility = false;
 
     function stop() {
       stream?.getTracks().forEach((track) => track.stop());
@@ -164,12 +166,15 @@ export default function CameraCapture({
     }
 
     async function start() {
+      if (cancelled || starting || stream || document.hidden) return;
       setFailure(null);
       setReady(false);
       if (!navigator.mediaDevices?.getUserMedia) {
         setFailure("unsupported");
         return;
       }
+      starting = true;
+      restartAfterVisibility = false;
       try {
         const next = await requestUserMedia({
           video: {
@@ -181,10 +186,12 @@ export default function CameraCapture({
           },
           audio: false,
         });
-        if (cancelled) {
+        if (cancelled || document.hidden) {
           next.getTracks().forEach((track) => track.stop());
           return;
         }
+        restartAfterVisibility = false;
+        stream = next;
         // Device labels are only readable after permission was granted.
         if (facing === "environment") {
           const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
@@ -196,7 +203,10 @@ export default function CameraCapture({
           ultraWideIdRef.current = wide?.deviceId || null;
           setUltraWideAvailable(!!wide?.deviceId);
         }
-        stream = next;
+        if (cancelled || document.hidden || stream !== next) {
+          next.getTracks().forEach((track) => track.stop());
+          return;
+        }
         const track = next.getVideoTracks()[0];
         trackRef.current = track;
         const caps = (track.getCapabilities?.() ?? {}) as TrackCapabilities;
@@ -209,7 +219,9 @@ export default function CameraCapture({
         }
         if (!cancelled) setReady(true);
       } catch (error) {
+        stop();
         if (cancelled) return;
+        if (document.hidden) return;
         const name = error instanceof DOMException ? error.name : "";
         setFailure(
           name === "NotAllowedError" || name === "SecurityError"
@@ -218,11 +230,15 @@ export default function CameraCapture({
               ? "unavailable"
               : "error"
         );
+      } finally {
+        starting = false;
+        if (restartAfterVisibility && !cancelled && !document.hidden && !stream) void start();
       }
     }
 
     function onVisibility() {
       if (document.hidden) {
+        restartAfterVisibility = starting;
         stop();
         setReady(false);
       } else if (!stream) {
@@ -264,6 +280,7 @@ export default function CameraCapture({
   }
 
   function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest("button, input, select, textarea, a")) return;
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     pointerStartsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture(event.pointerId);

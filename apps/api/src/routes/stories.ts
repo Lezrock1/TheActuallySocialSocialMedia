@@ -14,6 +14,7 @@ import {
   visibleContentClauses,
 } from "../visibility.js";
 import { createUserNotification } from "../notifications.js";
+import { emitToUsers } from "../realtime.js";
 
 const STORY_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const MAX_MEETUP_LEAD_MS = 365 * 24 * 60 * 60 * 1000;
@@ -102,6 +103,21 @@ async function canInteractWithStory(
 }
 
 export async function storyRoutes(app: FastifyInstance): Promise<void> {
+  async function notifyStoryAudience(story: { authorId: string; visibility: string; circleId: string | null }) {
+    const [followers, blocked] = await Promise.all([
+      prisma.follow.findMany({ where: { followeeId: story.authorId }, select: { followerId: true } }),
+      getBlockedUserIds(story.authorId),
+    ]);
+    let audience = followers.map((follow) => follow.followerId);
+    if (story.visibility === "circle") {
+      audience = story.circleId ? (await prisma.circleMember.findMany({ where: { circleId: story.circleId }, select: { userId: true } })).map((member) => member.userId) : [];
+    } else if (story.visibility === "close_friends") {
+      const closeFriends = await prisma.closeFriend.findMany({ where: { ownerId: story.authorId }, select: { friendId: true } });
+      const allowed = new Set(closeFriends.map((friend) => friend.friendId));
+      audience = audience.filter((id) => allowed.has(id));
+    }
+    emitToUsers(app.io, [story.authorId, ...audience.filter((id) => !blocked.includes(id))], "stories:changed", {});
+  }
   app.post<{ Params: { id: string } }>("/stories/:id/view", { preHandler: requireAuth }, async (request, reply) => {
     const story = await prisma.story.findUnique({ where: { id: request.params.id } });
     if (!story || !(await canInteractWithStory(request.userId!, story))) return reply.code(404).send({ error: "Story unavailable" });
@@ -109,6 +125,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
       where: { storyId_userId: { storyId: story.id, userId: request.userId! } },
       create: { storyId: story.id, userId: request.userId! }, update: {},
     });
+    emitToUsers(app.io, [request.userId!], "stories:changed", {});
     return reply.code(204).send();
   });
   app.post("/stories", { preHandler: requireAuth }, async (request, reply) => {
@@ -169,6 +186,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
       },
       include: storyInclude,
     });
+    await notifyStoryAudience(story);
     return reply.code(201).send({ story: toStoryDto(story, request.userId!) });
   });
 
@@ -196,7 +214,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
         ],
       },
       include: storyInclude,
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
 
     const views = await prisma.storyView.findMany({ where: { userId: viewerId, storyId: { in: stories.map((story) => story.id) } }, select: { storyId: true, viewedAt: true } });
@@ -387,6 +405,7 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "Story not found" });
       }
       await prisma.story.delete({ where: { id: story.id } });
+      await notifyStoryAudience(story);
       await deleteMediaIfUnreferenced(story.imageKey);
       if (story.audioKey) await deleteMediaIfUnreferenced(story.audioKey);
       if (story.videoKey) await deleteMediaIfUnreferenced(story.videoKey);

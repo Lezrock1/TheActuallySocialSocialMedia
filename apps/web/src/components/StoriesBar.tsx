@@ -26,6 +26,8 @@ import { useCamera } from "./camera/CameraProvider.js";
 import MomentReactions from "./MomentReactions.js";
 import { encryptMessage, type PublicEncryptionKey } from "../lib/encryption.js";
 import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
+import { useStoryViews } from "../lib/storyViews.js";
+import { getSocket } from "../lib/socket.js";
 
 async function fetchStoryGroups(): Promise<StoryGroup[]> {
   const res = await apiFetch<{ groups: StoryGroup[] }>("/stories");
@@ -260,7 +262,7 @@ export default function StoriesBar() {
   const [storyHeld, setStoryHeld] = useState(false);
   const [replyFocused, setReplyFocused] = useState(false);
   const [videoDurationMs, setVideoDurationMs] = useState(7000);
-  const [seenStories, setSeenStories] = useState<Set<string>>(() => new Set());
+  const { completed: seenStories, complete: saveCompletedView } = useStoryViews(user?.id);
   const storyOrderRef = useRef<StoryGroup[]>([]);
   const storyGestureRef = useRef<{ x: number; y: number; startedAt: number } | null>(null);
   const suppressStoryTapRef = useRef(false);
@@ -269,8 +271,18 @@ export default function StoriesBar() {
   const { data: storyGroups = [] } = useQuery({
     queryKey: ["stories"],
     queryFn: fetchStoryGroups,
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    staleTime: 0,
   });
+  useEffect(() => {
+    const socket = getSocket();
+    const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["stories"] }); };
+    socket.on("stories:changed", refresh);
+    socket.on("connect", refresh);
+    return () => { socket.off("stories:changed", refresh); socket.off("connect", refresh); };
+  }, [queryClient]);
   const isSeen = (story: StoryGroup["stories"][number]) => !!story.viewedAt || seenStories.has(story.id);
   const groups = [...storyGroups].sort((first, second) => Number(first.stories.every(isSeen)) - Number(second.stories.every(isSeen)));
   const momentStarted = momentStatus === "open" || momentStatus === "late";
@@ -317,13 +329,7 @@ export default function StoriesBar() {
   }
   function completeStory() {
     if (!activeStory || isSeen(activeStory)) { advanceStory(1); return; }
-    const storyId = activeStory.id;
-    setSeenStories((current) => new Set([...current, storyId]));
-    void apiFetch(`/stories/${storyId}/view`, { method: "POST" }).then(() => {
-      void queryClient.invalidateQueries({ queryKey: ["stories"] });
-    }).catch(() => {
-      setSeenStories((current) => { const next = new Set(current); next.delete(storyId); return next; });
-    });
+    saveCompletedView(activeStory);
     advanceStory(1);
   }
 
