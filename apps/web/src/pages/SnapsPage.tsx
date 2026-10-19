@@ -78,6 +78,9 @@ export default function SnapsPage() {
   const [snapError, setSnapError] = useState<string | null>(null);
   const [quickReplyText, setQuickReplyText] = useState("");
   const [quickReplyBusy, setQuickReplyBusy] = useState(false);
+  const [friendSearch, setFriendSearch] = useState("");
+  const [listFilter, setListFilter] = useState<"all" | "unread" | "streaks">("all");
+  const [openingChat, setOpeningChat] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
@@ -87,7 +90,6 @@ export default function SnapsPage() {
     queryFn: fetchInbox,
   });
   const snaps = inbox?.snaps ?? [];
-  const inboxRows = snaps.filter((snap, index) => snaps.findIndex((candidate) => candidate.sender.id === snap.sender.id) === index);
   useEffect(() => {
     const upcoming = (inbox?.snaps ?? []).filter((snap) => !markedSnapsRef.current.has(snap.id)).slice(0, 2);
     const keys = new Set(upcoming.map((snap) => snap.imageKey));
@@ -110,7 +112,7 @@ export default function SnapsPage() {
     queryFn: () => fetchFollowing(user!.username),
     enabled: !!user,
   });
-  const { data: streaks = [], isLoading: streaksLoading } = useQuery({
+  const { data: streaks = [] } = useQuery({
     queryKey: ["snap-streaks"],
     queryFn: fetchStreaks,
   });
@@ -129,12 +131,25 @@ export default function SnapsPage() {
       return (aEntry.friend.displayName || aEntry.friend.username)
         .localeCompare(bEntry.friend.displayName || bEntry.friend.username);
     });
-  const waitingFriends = friendsWithStreaks.filter(({ streak }) => streak?.waitingForYou);
-  const activeStreakCount = streaks.filter((streak) => streak.currentStreak > 0).length;
   const dedupedSeenToday = useMemo(() => {
     const unreadIds = new Set(snaps.map((snap) => snap.id));
     return seenToday.filter((snap) => !unreadIds.has(snap.id));
   }, [seenToday, snaps]);
+  const snapFriends = [...new Map([...following, ...snaps.map((snap) => snap.sender), ...seenToday.map((snap) => snap.sender)].map((friend) => [friend.id, friend])).values()]
+    .map((friend) => ({ friend, snap: snaps.find((snap) => snap.sender.id === friend.id), seen: dedupedSeenToday.find((snap) => snap.sender.id === friend.id), streak: streakByFriend.get(friend.id) }))
+    .filter(({ friend, snap, streak }) => `${friend.username} ${friend.displayName ?? ""}`.toLowerCase().includes(friendSearch.toLowerCase().replace(/^@/, "")) && (listFilter !== "unread" || !!snap) && (listFilter !== "streaks" || !!streak?.currentStreak))
+    .sort((first, second) => Number(!!second.snap) - Number(!!first.snap) || (second.snap?.createdAt ?? second.streak?.lastExchangeAt ?? "").localeCompare(first.snap?.createdAt ?? first.streak?.lastExchangeAt ?? "") || first.friend.username.localeCompare(second.friend.username));
+
+  async function openFriendChat(username: string) {
+    if (openingChat) return;
+    setOpeningChat(username);
+    setSnapError(null);
+    try {
+      const result = await apiFetch<{ conversationId: string }>("/conversations", { method: "POST", body: JSON.stringify({ username }) });
+      navigate(`/dms?conversation=${result.conversationId}`);
+    } catch { setSnapError("Could not open this chat. Try again."); }
+    finally { setOpeningChat(null); }
+  }
 
   useEffect(() => {
     const interval = window.setInterval(() => setNowMs(Date.now()), 60_000);
@@ -365,126 +380,49 @@ export default function SnapsPage() {
 
       <main className="flex min-w-0 flex-col gap-4">
         <aside className="flex min-w-0 flex-col gap-4">
-          <section aria-label="Your turn" className={`${activityList} border-emerald-200`}>
-            <div className="flex items-center justify-between border-b border-emerald-100 bg-emerald-50/70 px-4 py-3">
-              <div>
-                <h2 className="text-sm font-bold text-gray-900">Your turn</h2>
-                <p className="mt-0.5 text-xs text-gray-600">
-                  {streaksLoading || followingLoading
-                    ? "Checking your streaks..."
-                    : waitingFriends.length > 0
-                    ? "A quick reply keeps the streak going."
-                    : "A little back-and-forth keeps streaks alive."}
-                </p>
-              </div>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${waitingFriends.length > 0 ? "bg-emerald-700 text-white" : "border border-emerald-200 bg-white text-emerald-800"}`}>
-                {streaksLoading || followingLoading
-                  ? "Checking"
-                  : waitingFriends.length > 0 ? `${waitingFriends.length} waiting` : "On track"}
-              </span>
+          <section aria-label="Snap filters" className="space-y-3">
+            <input type="search" aria-label="Search Snap friends" placeholder="Search friends" value={friendSearch} onChange={(event) => setFriendSearch(event.target.value)} className="min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900" />
+            <div role="tablist" aria-label="Snap list" className="flex gap-1 border-b border-gray-200">
+              {([ ["all", "All"], ["unread", "New Snaps"], ["streaks", "Streaks"] ] as const).map(([value, label]) => <button key={value} role="tab" type="button" aria-selected={listFilter === value} onClick={() => setListFilter(value)} className={`min-h-10 flex-1 border-b-2 px-2 text-sm font-semibold ${listFilter === value ? "border-sky-600 text-sky-700" : "border-transparent text-gray-500"}`}>{label}{value === "unread" && snaps.length ? ` (${snaps.length})` : ""}</button>)}
             </div>
-            {streaksLoading || followingLoading ? (
-              <p className="px-4 py-4 text-sm text-gray-500">Checking your streaks...</p>
-            ) : waitingFriends.length > 0 ? (
-              <div>
-                {waitingFriends.slice(0, 3).map(({ friend, streak }) => {
-                  const remaining = waitingWindowLabel(streak?.lastExchangeAt ?? null, nowMs);
-                  return (
-                    <div key={friend.id} className="flex min-h-[66px] items-center gap-3 border-b border-gray-100 px-3 py-2.5 last:border-b-0 sm:px-4">
-                      <Avatar avatarKey={friend.avatarKey} username={friend.username} size={42} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold text-gray-900">
-                          {friend.displayName || `@${friend.username}`}
-                        </span>
-                        <span className="mt-0.5 block truncate text-xs text-gray-500">
-                          {remaining === "now" ? "Reply window ending" : `Reply within ${remaining ?? "24h"}`}
-                          {streak?.currentStreak ? ` · 🔥 ${streak.currentStreak} day streak` : ""}
-                        </span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/snaps?camera=1&snapTo=${encodeURIComponent(friend.username)}`)}
-                        aria-label={`Send a Snap to @${friend.username}`}
-                        className="min-h-9 shrink-0 rounded-full bg-emerald-700 px-3 text-xs font-semibold text-white transition-colors hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
-                      >
-                        Send Snap
-                      </button>
-                    </div>
-                  );
-                })}
-                {waitingFriends.length > 3 && (
-                  <p className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500">
-                    +{waitingFriends.length - 3} more waiting
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 px-4 py-4">
-                <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-sm font-bold text-emerald-700">✓</span>
-                <p className="min-w-0 text-sm text-gray-700">
-                  You’re all caught up.
-                  <span className="mt-0.5 block text-xs text-gray-500">
-                    {activeStreakCount > 0
-                      ? `${activeStreakCount} active ${activeStreakCount === 1 ? "streak is" : "streaks are"} on track.`
-                      : "No one is waiting for a Snap right now."}
-                  </span>
-                </p>
-              </div>
-            )}
           </section>
-
-          <section aria-label="Received Snaps" className={activityList}>
+          <section aria-label="Received Snaps" className="divide-y divide-gray-200">
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-              <h2 className="text-sm font-bold text-gray-900">New Snaps</h2>
+              <h2 className="text-sm font-bold text-gray-900">Friends</h2>
               <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{snaps.length} new</span>
             </div>
             {snapError && <p role="alert" className="px-4 pt-3 text-sm text-red-600">{snapError}</p>}
             <div>
-              {inboxRows.map((snap) => (
+              {snapFriends.map(({ friend, snap, seen, streak }) => (
+                <div key={friend.id} className="flex items-center gap-2 border-b border-gray-100 py-2">
                 <button
-                  key={snap.id}
-                  onClick={() => void openSnap(snap)}
-                  disabled={!!openingSnapId}
-                  aria-busy={openingSnapId === snap.id}
-                  className={activityRow}
+                  onClick={() => snap ? void openSnap(snap) : void openFriendChat(friend.username)}
+                  disabled={!!openingSnapId || !!openingChat}
+                  aria-busy={!!snap && openingSnapId === snap.id}
+                  className="flex min-h-16 min-w-0 flex-1 items-center gap-3 px-1 text-left"
                 >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-yellow-400 bg-white p-0.5">
-                    <Avatar avatarKey={snap.sender.avatarKey} username={snap.sender.username} size={40} />
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white p-0.5">
+                    <Avatar avatarKey={friend.avatarKey} username={friend.username} size={44} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-gray-900">{snap.sender.displayName || `@${snap.sender.username}`}</span>
-                    <span className="block text-xs text-gray-500">New Snap · {snaps.filter((item) => item.sender.id === snap.sender.id).length > 1 ? `${snaps.filter((item) => item.sender.id === snap.sender.id).length} unread · ` : ""}{formatActivityTime(snap.createdAt)}</span>
-                    {snap.isEncrypted && (
-                      <span className="mt-1 block"><EncryptionNotice encrypted /></span>
-                    )}
+                    <span className="block truncate text-sm font-semibold text-gray-900">{friend.displayName || `@${friend.username}`}{streak?.currentStreak ? <span className="ml-2 text-xs text-amber-700">🔥 {streak.currentStreak}</span> : null}</span>
+                    <span className={`mt-1 flex items-center gap-1.5 text-xs ${snap ? "font-semibold text-red-600" : "text-gray-500"}`}><span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-sm border ${snap ? "border-red-500 bg-red-500" : streak?.waitingForThem ? "rotate-45 border-sky-500" : "border-gray-400"}`} />{snap ? `New Snap · ${snaps.filter((item) => item.sender.id === friend.id).length} unread · ${formatActivityTime(snap.createdAt)}` : seen ? `Opened · ${formatActivityTime(seen.viewedAt || seen.createdAt)}` : streak?.waitingForThem ? "Delivered" : "Tap to chat"}</span>
+                    {snap?.isEncrypted && <span className="sr-only">End-to-end encrypted</span>}
                   </span>
-                  {openingSnapId === snap.id ? (
+                  {snap && openingSnapId === snap.id ? (
                     <span aria-label="Opening" className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-yellow-500 border-t-transparent" />
                   ) : (
-                    <span className="sr-only">Unopened</span>
+                    <span className="sr-only">{snap ? "Unopened" : "Open chat"}</span>
                   )}
                 </button>
-              ))}
-              {snaps.length === 0 && (
-                <p className="px-4 py-4 text-sm text-gray-500">You’re all caught up. New Snaps show up here.</p>
-              )}
-
-              <div className="px-4 pb-1 pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">Today’s activity</p>
-              </div>
-              {dedupedSeenToday.map((snap) => (
-                <div key={`seen-${snap.id}`} className="flex min-h-[58px] items-center gap-3 border-t border-gray-100 px-4 py-2.5">
-                  <Avatar avatarKey={snap.sender.avatarKey} username={snap.sender.username} size={40} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-gray-800">{snap.sender.displayName || `@${snap.sender.username}`}</span>
-                    <span className="block text-xs text-gray-500">Seen {formatActivityTime(snap.viewedAt || snap.createdAt)} · streak-relevant</span>
-                  </span>
-                  <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-500">Seen</span>
+                <button type="button" aria-label={`Chat with @${friend.username}`} title={`Chat with @${friend.username}`} onClick={() => void openFriendChat(friend.username)} className="min-h-10 px-2 text-xs font-semibold text-sky-700">Chat</button>
+                <button type="button" aria-label={`Send a Snap to @${friend.username}`} title={`Send a Snap to @${friend.username}`} onClick={() => navigate(`/snaps?camera=1&snapTo=${encodeURIComponent(friend.username)}`)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-700"><CameraIcon /></button>
                 </div>
               ))}
-              {dedupedSeenToday.length === 0 && (
-                <p className="px-4 pb-5 pt-1 text-xs text-gray-500">Seen Snaps from today appear here to keep streak context clear.</p>
+              {!snapFriends.length && !followingLoading && (
+                <p className="px-4 py-4 text-sm text-gray-500">{friendSearch ? "No matching friends." : listFilter === "unread" ? "No unopened Snaps." : listFilter === "streaks" ? "No active streaks yet." : "Follow friends to start a conversation."}</p>
               )}
+
             </div>
           </section>
 

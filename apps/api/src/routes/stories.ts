@@ -102,6 +102,15 @@ async function canInteractWithStory(
 }
 
 export async function storyRoutes(app: FastifyInstance): Promise<void> {
+  app.post<{ Params: { id: string } }>("/stories/:id/view", { preHandler: requireAuth }, async (request, reply) => {
+    const story = await prisma.story.findUnique({ where: { id: request.params.id } });
+    if (!story || !(await canInteractWithStory(request.userId!, story))) return reply.code(404).send({ error: "Story unavailable" });
+    await prisma.storyView.upsert({
+      where: { storyId_userId: { storyId: story.id, userId: request.userId! } },
+      create: { storyId: story.id, userId: request.userId! }, update: {},
+    });
+    return reply.code(204).send();
+  });
   app.post("/stories", { preHandler: requireAuth }, async (request, reply) => {
     const parsed = createStorySchema.safeParse(request.body);
     if (!parsed.success) {
@@ -190,9 +199,11 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
       orderBy: { createdAt: "asc" },
     });
 
+    const views = await prisma.storyView.findMany({ where: { userId: viewerId, storyId: { in: stories.map((story) => story.id) } }, select: { storyId: true, viewedAt: true } });
+    const viewedAt = new Map(views.map((view) => [view.storyId, view.viewedAt.toISOString()]));
     const groups = new Map<string, StoryGroup>();
     for (const story of stories) {
-      const storyDto = toStoryDto(story, viewerId);
+      const storyDto = { ...toStoryDto(story, viewerId), viewedAt: viewedAt.get(story.id) ?? null };
       const existing = groups.get(story.authorId);
       if (existing) {
         existing.stories.push(storyDto);

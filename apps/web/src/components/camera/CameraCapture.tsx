@@ -8,6 +8,7 @@ import {
   videoFileExtension,
 } from "../../lib/video.js";
 import { formatDuration } from "../../lib/useAudioRecorder.js";
+import { requestUserMedia } from "../../lib/mediaPermissions.js";
 
 type CameraFailure = "denied" | "unavailable" | "unsupported" | "error";
 type FacingMode = "environment" | "user";
@@ -170,7 +171,7 @@ export default function CameraCapture({
         return;
       }
       try {
-        const next = await navigator.mediaDevices.getUserMedia({
+        const next = await requestUserMedia({
           video: {
             ...(facing === "environment" && useUltraWide && ultraWideIdRef.current
               ? { deviceId: { exact: ultraWideIdRef.current } }
@@ -388,7 +389,7 @@ export default function CameraCapture({
     // The microphone is only requested once the user actually starts a video.
     let audio: MediaStream | null = null;
     try {
-      audio = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audio = await requestUserMedia({ audio: true });
     } catch {
       setNotice("Recording without sound – microphone access is off.");
     }

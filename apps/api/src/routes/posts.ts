@@ -60,6 +60,25 @@ function compareFeedItems(a: FeedItem, b: FeedItem): number {
 }
 
 export async function postRoutes(app: FastifyInstance): Promise<void> {
+  app.get<{ Querystring: { cursor?: string } }>("/notifications/friends-activity", { preHandler: requireAuth }, async (request, reply) => {
+    const cursor = parseFeedCursor(request.query.cursor);
+    if (request.query.cursor && (!cursor || cursor.type !== "follow")) return reply.code(400).send({ error: "Invalid activity cursor" });
+    const [following, blockedIds] = await Promise.all([
+      prisma.follow.findMany({ where: { followerId: request.userId! }, select: { followeeId: true } }),
+      getBlockedUserIds(request.userId!),
+    ]);
+    const rows = await prisma.follow.findMany({
+      where: {
+        followerId: { in: following.map((follow) => follow.followeeId).filter((id) => !blockedIds.includes(id)) },
+        followeeId: { notIn: blockedIds },
+        ...(cursor ? { OR: [{ createdAt: { lt: new Date(cursor.createdAt) } }, { createdAt: new Date(cursor.createdAt), id: { lt: cursor.id } }] } : {}),
+      },
+      include: { follower: true, followee: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: DEFAULT_LIMIT + 1,
+    });
+    const activities = rows.slice(0, DEFAULT_LIMIT).map((follow): Extract<FeedItem, { type: "follow" }> => ({ type: "follow", id: follow.id, createdAt: follow.createdAt.toISOString(), follower: toPublicUser(follow.follower), followee: toPublicUser(follow.followee) }));
+    return reply.send({ activities, nextCursor: rows.length > DEFAULT_LIMIT ? encodeFeedCursor(activities[activities.length - 1]) : null });
+  });
   app.get<{ Params: { tag: string }; Querystring: { cursor?: string } }>("/hashtags/:tag/posts", { preHandler: requireAuth }, async (request, reply) => {
     const tag = normalizeHashtag(request.params.tag);
     if (!/^[\p{L}\p{N}_]{1,64}$/u.test(tag)) return reply.code(400).send({ error: "Invalid hashtag" });
@@ -274,8 +293,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       ].filter((id) => !blockedIds.includes(id));
 
       const cursorDate = cursor ? new Date(cursor.createdAt) : null;
-      const [posts, follows] = await Promise.all([
-        prisma.post.findMany({
+      const posts = await prisma.post.findMany({
           where: {
             AND: [
               {
@@ -299,31 +317,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           include: postWithCountsInclude,
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: limit + 1,
-        }),
-        prisma.follow.findMany({
-          where: {
-            followerId: { in: authorIds },
-            followeeId: { notIn: blockedIds },
-            ...(cursor && cursorDate
-              ? {
-                  AND: [
-                    {
-                      OR: [
-                        { createdAt: { lt: cursorDate } },
-                        ...(cursor.type === "post"
-                          ? [{ createdAt: cursorDate }]
-                          : [{ createdAt: cursorDate, id: { lt: cursor.id } }]),
-                      ],
-                    },
-                  ],
-                }
-              : {}),
-          },
-          include: { follower: true, followee: true },
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          take: limit + 1,
-        }),
-      ]);
+        });
 
       const items: FeedItem[] = [
         ...posts.map((post): FeedItem => ({
@@ -331,13 +325,6 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           id: post.id,
           createdAt: post.createdAt.toISOString(),
           post: toFeedPost(post),
-        })),
-        ...follows.map((follow): FeedItem => ({
-          type: "follow",
-          id: follow.id,
-          createdAt: follow.createdAt.toISOString(),
-          follower: toPublicUser(follow.follower),
-          followee: toPublicUser(follow.followee),
         })),
       ].sort(compareFeedItems);
 

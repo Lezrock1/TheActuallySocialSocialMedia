@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
-import type { NotificationsPage as NotificationsPageData, UserNotification } from "@app/shared";
+import type { FeedItem, NotificationsPage as NotificationsPageData, UserNotification } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import { activityList, activityRow, btnSecondary, formatActivityTime } from "../lib/ui.js";
 import Avatar from "../components/Avatar.js";
@@ -73,7 +73,14 @@ export default function NotificationsPage() {
   const queryClient = useQueryClient();
   const notificationsListRef = useRef<HTMLDivElement>(null);
   const [virtualScrollMargin, setVirtualScrollMargin] = useState(0);
-  const [filter, setFilter] = useState<"all" | "unread" | "direct" | "social">("all");
+  const [filter, setFilter] = useState<"all" | "unread" | "direct" | "social" | "friends">("all");
+  const friendsActivity = useInfiniteQuery({
+    queryKey: ["notifications", "friends-activity"],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => apiFetch<{ activities: Extract<FeedItem, { type: "follow" }>[]; nextCursor: string | null }>(`/notifications/friends-activity${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    enabled: filter === "friends",
+  });
   const query = useInfiniteQuery({
     queryKey: ["notifications", "list"],
     queryFn: ({ pageParam }) => fetchNotifications(pageParam),
@@ -104,7 +111,7 @@ export default function NotificationsPage() {
       window.removeEventListener("resize", updateScrollMargin);
       window.removeEventListener("orientationchange", updateScrollMargin);
     };
-  }, [notifications.length]);
+  }, [notifications.length, filter]);
 
   const rowVirtualizer = useWindowVirtualizer({
     count: filteredNotifications.length,
@@ -192,6 +199,7 @@ export default function NotificationsPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["notifications", "list"] }),
         queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications", "friends-activity"] }),
       ]);
     } catch {
       if (previous) queryClient.setQueryData(["notifications", "list"], previous);
@@ -232,13 +240,24 @@ export default function NotificationsPage() {
           <button type="button" onClick={() => setFilter("social")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "social" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
             Social ({socialUnread})
           </button>
+          <button type="button" aria-pressed={filter === "friends"} onClick={() => setFilter("friends")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "friends" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>Your friends activity</button>
         </div>
       </section>
 
-      {query.isLoading && <CardListSkeleton rows={3} />}
-      {query.isError && <p role="alert" className="py-6 text-center text-sm text-red-600">Could not load notifications.</p>}
+      {filter === "friends" && <section aria-label="Your friends activity">
+        {friendsActivity.isPending && <CardListSkeleton rows={3} />}
+        {friendsActivity.isError && <p role="alert" className="py-6 text-sm text-red-600">Could not load friends activity. <button type="button" onClick={() => void friendsActivity.refetch()} className="underline">Retry</button></p>}
+        <div className={activityList}>{friendsActivity.data?.pages.flatMap((page) => page.activities).map((activity) => <div key={activity.id} className={activityRow}>
+          <Avatar avatarKey={activity.follower.avatarKey} username={activity.follower.username} size={40} />
+          <span className="min-w-0 flex-1 text-sm"><Link className="font-semibold" to={`/u/${activity.follower.username}`}>@{activity.follower.username}</Link>{" followed "}<Link className="font-semibold" to={`/u/${activity.followee.username}`}>@{activity.followee.username}</Link><time className="mt-1 block text-xs text-gray-500">{formatActivityTime(activity.createdAt)}</time></span>
+        </div>)}</div>
+        {friendsActivity.isSuccess && !friendsActivity.data.pages[0]?.activities.length && <p className="py-8 text-sm text-gray-500">No recent friends activity.</p>}
+        {friendsActivity.hasNextPage && <button type="button" disabled={friendsActivity.isFetchingNextPage} onClick={() => void friendsActivity.fetchNextPage()} className={`${btnSecondary} mt-4 w-full`}>{friendsActivity.isFetchingNextPage ? "Loading..." : "Load more activity"}</button>}
+      </section>}
+      {filter !== "friends" && query.isLoading && <CardListSkeleton rows={3} />}
+      {filter !== "friends" && query.isError && <p role="alert" className="py-6 text-center text-sm text-red-600">Could not load notifications.</p>}
 
-      <div ref={notificationsListRef} className={activityList} style={{ position: "relative", height: `${rowVirtualizer.getTotalSize()}px` }}>
+      <div hidden={filter === "friends"} ref={notificationsListRef} className={activityList} style={{ position: "relative", height: `${rowVirtualizer.getTotalSize()}px` }}>
         {virtualRows.map((virtualRow) => {
           const notification = filteredNotifications[virtualRow.index];
           if (!notification) return null;
@@ -294,12 +313,12 @@ export default function NotificationsPage() {
         })}
       </div>
 
-      {!query.isLoading && !query.isError && filteredNotifications.length === 0 && (
+      {filter !== "friends" && !query.isLoading && !query.isError && filteredNotifications.length === 0 && (
         <p className="py-12 text-center text-sm text-gray-500">
           {filter === "all" ? "No notifications yet." : "No notifications match this filter."}
         </p>
       )}
-      {query.hasNextPage && (
+      {filter !== "friends" && query.hasNextPage && (
         <button
           onClick={() => void query.fetchNextPage()}
           disabled={query.isFetchingNextPage}

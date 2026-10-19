@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
+import { requestUserMedia } from "../lib/mediaPermissions.js";
 import QRCode from "qrcode";
 import { safetyNumberQrPayload } from "@app/shared";
 import type { PublicUser } from "@app/shared";
@@ -24,9 +25,12 @@ function QrScanner({ onResult, onClose }: { onResult: (text: string) => void; on
     const canvas = document.createElement("canvas");
     void (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        stream = await requestUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
         const video = videoRef.current;
-        if (!video || stopped) return;
+        if (!video || stopped) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         video.srcObject = stream;
         await video.play();
         const scan = () => {

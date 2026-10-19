@@ -49,6 +49,7 @@ export default function AppearanceSettingsPage() {
               <button
                 key={option}
                 type="button"
+                aria-label={option === "light" ? "Light" : "Dark"}
                 onClick={() => setTheme(option)}
                 aria-pressed={selected}
                 className="min-w-0 text-left"
@@ -56,7 +57,7 @@ export default function AppearanceSettingsPage() {
                 <ThemePreview dark={option === "dark"} selected={selected} />
                 <span className="mt-2 flex items-center justify-between gap-2 px-1">
                   <span className="text-sm font-medium text-gray-800">{option === "light" ? "Light" : "Dark"}</span>
-                  <span className={`flex h-5 w-5 items-center justify-center rounded-full border text-xs ${selected ? "border-[#007AFF] bg-[#007AFF] text-white" : "border-gray-300 text-transparent"}`}>
+                  <span aria-hidden="true" className={`flex h-5 w-5 items-center justify-center rounded-full border text-xs ${selected ? "border-[#007AFF] bg-[#007AFF] text-white" : "border-gray-300 text-transparent"}`}>
                     ✓
                   </span>
                 </span>

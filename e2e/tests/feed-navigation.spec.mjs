@@ -1,12 +1,34 @@
 import { test, expect } from "@playwright/test";
 import { PrismaClient } from "../../apps/api/node_modules/@prisma/client/default.js";
 import { API } from "../seed.mjs";
+import { readFile } from "node:fs/promises";
 
 const database = new PrismaClient({ datasourceUrl: "postgresql://app:app@localhost:5432/e2e" });
 test.afterAll(() => database.$disconnect());
 test.beforeEach(async ({ context }, info) => {
   await context.setExtraHTTPHeaders({ "x-forwarded-for": `203.0.113.${info.testId.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0) % 240 + 1}` });
   await context.request.post(`${API}/users/me/update-notice/acknowledge`);
+});
+
+test("post photos open full screen and close with Escape or the close button", async ({ page, context }) => {
+  const media = await context.request.post(`${API}/media`, { multipart: { file: { name: "post-photo.png", mimeType: "image/png", buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)) } } });
+  expect(media.status()).toBe(201);
+  const imageKey = (await media.json()).key;
+  const response = await context.request.post(`${API}/posts`, { data: { imageKey, text: "Enlarge this photo" } });
+  expect(response.status()).toBe(201);
+  const { post } = await response.json();
+  try {
+    await page.goto(`/post/${post.id}`);
+    const open = page.getByRole("button", { name: "Enlarge photo by @leo" });
+    await open.click();
+    const dialog = page.getByRole("dialog", { name: "Photo", exact: true });
+    await expect(dialog.getByRole("img", { name: "Photo", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await open.click();
+    await page.getByRole("button", { name: "Close photo", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+  } finally { await context.request.delete(`${API}/posts/${post.id}`); }
 });
 
 test("installable app requests a fixed upright portrait orientation", async ({ page }) => {

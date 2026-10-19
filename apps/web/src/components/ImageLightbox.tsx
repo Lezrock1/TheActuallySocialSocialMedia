@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { mediaUrl } from "../lib/upload.js";
+import DecodedImage from "./DecodedImage.js";
 
 // Full-screen view of an image; tap anywhere, the close button or Esc to dismiss.
 export default function ImageLightbox({ mediaKey, onClose }: { mediaKey: string; onClose: () => void }) {
@@ -17,7 +18,7 @@ export default function ImageLightbox({ mediaKey, onClose }: { mediaKey: string;
       role="dialog"
       aria-modal="true"
       aria-label="Photo"
-      className="snap-viewer-enter fixed inset-0 z-[75] flex items-center justify-center bg-black/95"
+      className="fixed inset-0 z-[75] flex items-center justify-center bg-black"
       onClick={onClose}
     >
       <button
@@ -28,12 +29,9 @@ export default function ImageLightbox({ mediaKey, onClose }: { mediaKey: string;
       >
         ×
       </button>
-      <img
-        src={mediaUrl(mediaKey)}
-        alt="Photo"
-        className="snap-media-enter max-h-full max-w-full object-contain"
-        onClick={(event) => event.stopPropagation()}
-      />
+      <div className="h-full w-full" onClick={(event) => event.stopPropagation()}>
+        <DecodedImage key={mediaKey} src={mediaUrl(mediaKey)} alt="Photo" className="h-full w-full" />
+      </div>
     </div>,
     document.body
   );

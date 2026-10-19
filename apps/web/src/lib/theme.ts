@@ -48,4 +48,11 @@ export function initializeTheme(): void {
   const theme = readTheme();
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
+  window.addEventListener("storage", (event) => {
+    if (event.key !== STORAGE_KEY && event.key !== null) return;
+    const next = readTheme();
+    document.documentElement.dataset.theme = next;
+    document.documentElement.style.colorScheme = next;
+    window.dispatchEvent(new Event(CHANGE_EVENT));
+  });
 }

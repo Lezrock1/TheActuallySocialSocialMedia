@@ -44,6 +44,7 @@ model User {
   encryptionKeys    EncryptionKey[]
   pollVotes         PollVote[]
   storyReactions    StoryReaction[]
+  storyViews        StoryView[]
   snapStreaksAs     SnapStreak[]        @relation("SnapStreakUserA")
   snapStreaksBs     SnapStreak[]        @relation("SnapStreakUserB")
   invitations       Invitation[]
@@ -284,9 +285,21 @@ model Story {
   author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
   circle Circle? @relation(fields: [circleId], references: [id], onDelete: SetNull)
   reactions StoryReaction[]
+  views StoryView[]
   meetup Meetup?
 
   @@index([authorId, expiresAt])
+}
+
+model StoryView {
+  storyId String
+  userId String
+  viewedAt DateTime @default(now())
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([storyId, userId])
+  @@index([userId, viewedAt])
 }
 
 model Circle {

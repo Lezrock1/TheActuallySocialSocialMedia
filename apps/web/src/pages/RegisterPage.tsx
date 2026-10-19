@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { useAuth, ApiError } from "../auth/AuthContext.js";
@@ -12,14 +12,9 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [inviteCode, setInviteCode] = useState(
-    () => new URLSearchParams(location.hash.slice(1)).get("invite") ?? ""
+    () => new URLSearchParams(location.hash.slice(1)).get("invite") ?? new URLSearchParams(location.search).get("invite") ?? ""
   );
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!location.hash) return;
-    window.history.replaceState(null, "", `${location.pathname}${location.search}`);
-  }, [location.hash, location.pathname, location.search]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

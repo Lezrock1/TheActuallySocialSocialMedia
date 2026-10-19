@@ -104,10 +104,8 @@ function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-// Lightest luminance that still gives muted gray text (#6b7280) 3:1, and darkest that keeps muted light text (#a4abb8) 3:1.
-const MIN_LIGHT_LUMINANCE = 0.43;
-const MAX_DARK_LUMINANCE = 0.1;
-const TONE_SWITCH_LUMINANCE = 0.3;
+const MIN_LIGHT_LUMINANCE = 0.78;
+const MAX_DARK_LUMINANCE = 0.06;
 
 // Keeps the chosen hue but nudges lightness until page text stays readable.
 function clampColorForTone(color: string, tone: Tone): string {
@@ -123,9 +121,14 @@ function clampColorForTone(color: string, tone: Tone): string {
 }
 
 function resolveBackground(preference: PageBackgroundPreference): { preference: PageBackgroundPreference; tone: Tone } {
-  if (readTheme() === "dark") return { preference: { ...preference, color: "#111318" }, tone: "dark" };
-  const tone: Tone = luminance(preference.color) >= TONE_SWITCH_LUMINANCE ? "light" : "dark";
-  return { preference: { ...preference, color: clampColorForTone(preference.color, tone) }, tone };
+  const tone = readTheme();
+  const color = tone === "dark" && preference.color === DEFAULT_BACKGROUND.color ? "#111318" : clampColorForTone(preference.color, tone);
+  return { preference: { ...preference, color }, tone };
+}
+
+function mixColor(color: string, base: string, amount: number): string {
+  const rgb = hexToRgb(color);
+  return rgbToHex(hexToRgb(base).map((channel, index) => channel * (1 - amount) + rgb[index] * amount));
 }
 
 function backgroundStyle(preference: PageBackgroundPreference, imageOverlayOpacity: number, tone: Tone): CSSProperties {
@@ -143,6 +146,9 @@ function backgroundStyle(preference: PageBackgroundPreference, imageOverlayOpaci
 export function usePageBackground(surface: PageSurface): void {
   useEffect(() => {
     const body = document.body;
+    const root = document.documentElement;
+    const paletteKeys = ["--page-background", "--surface", "--surface-muted", "--surface-strong", "--surface-border", "--secondary-text"];
+    const previousPalette = paletteKeys.map((key) => [key, root.style.getPropertyValue(key)] as const);
     const previous = {
       backgroundColor: body.style.backgroundColor,
       backgroundImage: body.style.backgroundImage,
@@ -153,8 +159,13 @@ export function usePageBackground(surface: PageSurface): void {
     const apply = () => {
       const key = readBackgroundMode() === "shared" ? "all" : surface;
       const resolved = resolveBackground(readPageBackground(key));
-      document.documentElement.dataset.theme = resolved.tone;
-      document.documentElement.style.colorScheme = resolved.tone;
+      const dark = resolved.tone === "dark";
+      root.style.setProperty("--page-background", resolved.preference.color);
+      root.style.setProperty("--surface", mixColor(resolved.preference.color, dark ? "#191c23" : "#ffffff", 0.08));
+      root.style.setProperty("--surface-muted", mixColor(resolved.preference.color, dark ? "#222630" : "#f3f4f6", 0.08));
+      root.style.setProperty("--surface-strong", mixColor(resolved.preference.color, dark ? "#2d323d" : "#e5e7eb", 0.08));
+      root.style.setProperty("--surface-border", mixColor(resolved.preference.color, dark ? "#48505e" : "#cbd0d8", 0.08));
+      root.style.setProperty("--secondary-text", dark ? "#bdc4d0" : "#4b5563");
       Object.assign(body.style, backgroundStyle(resolved.preference, 0.78, resolved.tone));
       body.style.backgroundSize = "cover";
       body.style.backgroundPosition = "center";
@@ -169,15 +180,19 @@ export function usePageBackground(surface: PageSurface): void {
       window.removeEventListener(THEME_CHANGE_EVENT, apply);
       window.removeEventListener("storage", apply);
       Object.assign(body.style, previous);
+      for (const [key, value] of previousPalette) {
+        if (value) root.style.setProperty(key, value);
+        else root.style.removeProperty(key);
+      }
     };
   }, [surface]);
 }
 
 function readConversationStyle(): CSSProperties {
-  const tone: Tone = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  const tone = readTheme();
   const preference = readPageBackground("conversation");
-  const color = readTheme() === "dark" ? "#111318" : clampColorForTone(preference.color, tone);
-  return backgroundStyle({ ...preference, color }, 0.38, tone);
+  const resolved = resolveBackground(preference);
+  return backgroundStyle(resolved.preference, 0.38, tone);
 }
 
 export function useConversationBackground(): CSSProperties {

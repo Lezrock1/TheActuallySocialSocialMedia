@@ -377,6 +377,7 @@ export interface StoryMeetup {
 
 export interface Story {
   id: string;
+  viewedAt?: string | null;
   imageKey: string;
   audioKey: string | null;
   audioDurationMs: number | null;

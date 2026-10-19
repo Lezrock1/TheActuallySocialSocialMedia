@@ -67,7 +67,7 @@ export default function InvitationsPage() {
 
       <section className={`${card} flex flex-col gap-3`}>
         <p className="text-sm text-gray-600">
-          Each invitation link lets up to {status?.maxUsesPerInvitation ?? 5} friends join and expires after 14 days.
+          Each invitation link lets up to {status?.maxUsesPerInvitation ?? 5} friends join and expires after 30 days.
           Invited members can invite more friends themselves.
         </p>
         <p className="text-xs text-gray-500">

@@ -1,0 +1,194 @@
+import { test, expect } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { PrismaClient } from "../../apps/api/node_modules/@prisma/client/default.js";
+import { API } from "../seed.mjs";
+
+const database = new PrismaClient({ datasourceUrl: "postgresql://app:app@localhost:5432/e2e" });
+test.afterAll(() => database.$disconnect());
+test.beforeEach(async ({ context }) => {
+  await context.setExtraHTTPHeaders({ "x-forwarded-for": `203.0.113.${Math.floor(Math.random() * 240) + 10}` });
+  await context.request.post(`${API}/users/me/update-notice/acknowledge`);
+});
+
+async function upload(context) {
+  const response = await context.request.post(`${API}/media`, { multipart: { file: { name: "experience.png", mimeType: "image/png", buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)) } } });
+  expect(response.status()).toBe(201);
+  return (await response.json()).key;
+}
+
+test("friends follow activity is paginated on Alerts and never enters the post feed", async ({ page, context }) => {
+  const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+  const usernames = Array.from({ length: 22 }, (_, index) => `activity${Date.now()}${index}`);
+  await database.user.createMany({ data: usernames.map((username) => ({ username, usernameCanonical: username, email: `${username}@example.com`, passwordHash: "test-only-no-login" })) });
+  const people = await database.user.findMany({ where: { username: { in: usernames } }, select: { id: true } });
+  await database.follow.createMany({ data: people.map((person) => ({ followerId: mia.id, followeeId: person.id })) });
+  try {
+  const feed = await (await context.request.get(`${API}/feed`)).json();
+  expect(feed.items.every((item) => item.type === "post")).toBe(true);
+  const response = await context.request.get(`${API}/notifications/friends-activity`);
+  expect(response.status()).toBe(200);
+  const activity = await response.json();
+  expect(activity.activities.length).toBeGreaterThan(0);
+  expect(activity.nextCursor).toBeTruthy();
+  const next = await (await context.request.get(`${API}/notifications/friends-activity?cursor=${encodeURIComponent(activity.nextCursor)}`)).json();
+  expect(next.activities.length).toBeGreaterThan(0);
+  expect(next.activities.every((item) => !activity.activities.some((previous) => previous.id === item.id))).toBe(true);
+  expect(activity.activities.every((item) => item.type === "follow" && item.follower.username !== "leo")).toBe(true);
+  await page.goto("/notifications");
+  await page.getByRole("button", { name: "Your friends activity", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Your friends activity" }).getByText("followed", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load more activity", exact: true })).toBeVisible();
+  } finally { await database.user.deleteMany({ where: { username: { in: usernames } } }); }
+});
+
+test("Snap friends support unread and streak filters, search and direct chat", async ({ page, context }, info) => {
+  const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+  const imageKey = await upload(context);
+  const headers = { "access-control-allow-origin": "http://localhost:5173", "access-control-allow-credentials": "true" };
+  const friend = { id: mia.id, username: mia.username, displayName: mia.displayName, avatarKey: mia.avatarKey, createdAt: mia.createdAt.toISOString() };
+  await page.route(/\/snaps\/inbox$/, (route) => route.fulfill({ headers, json: { snaps: [{ id: "list-snap", sender: friend, imageKey, text: null, isEncrypted: false, createdAt: new Date().toISOString(), viewedAt: null }], recentlyViewed: [] } }));
+  await page.route(/\/snaps\/streaks$/, (route) => route.fulfill({ headers, json: { streaks: [{ friend, currentStreak: 4, bestStreak: 6, waitingForYou: true, waitingForThem: false, lastExchangeAt: new Date().toISOString() }] } }));
+  await page.goto("/snaps");
+  const list = page.getByRole("region", { name: "Received Snaps" });
+  await page.getByRole("tab", { name: /New Snaps/ }).click();
+  await expect(list.getByRole("button", { name: /New Snap/ })).toHaveCount(1);
+  await page.getByLabel("Search Snap friends").fill("not-a-friend");
+  await expect(list.getByText("No matching friends.", { exact: true })).toBeVisible();
+  await page.getByLabel("Search Snap friends").fill("");
+  await page.getByRole("tab", { name: "Streaks", exact: true }).click();
+  await expect(list).toContainText("4");
+  await page.getByRole("tab", { name: "All", exact: true }).click();
+  await expect(list.getByRole("button", { name: "Send a Snap to @mia", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: `screenshots/${info.project.name}/snap-friends-mobile.png`, fullPage: true, animations: "disabled" });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: `screenshots/${info.project.name}/snap-friends-desktop.png`, fullPage: true, animations: "disabled" });
+  await list.getByRole("button", { name: "Chat with @mia", exact: true }).click();
+  await expect(page).toHaveURL(/\/dms\?conversation=/);
+});
+
+test("Appearance keeps theme stable through color changes, navigation and repeated toggles", async ({ page }, info) => {
+  await page.goto("/settings/appearance");
+  await page.getByRole("button", { name: "Same on all pages", exact: true }).click();
+  for (const theme of ["dark", "light", "dark", "light"]) {
+    await page.getByRole("button", { name: theme === "dark" ? "Dark" : "Light", exact: true }).click();
+    for (const color of ["#ff0011", "#120033", "#00ff33"]) {
+      await page.getByLabel("All pages background color", { exact: true }).fill(color);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      const colors = await page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement);
+        return { text: root.getPropertyValue("--secondary-text").trim(), surface: root.getPropertyValue("--surface").trim() };
+      });
+      const contrast = (first, second) => {
+        const lum = (hex) => [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255).map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+        const values = [lum(first), lum(second)].sort((left, right) => right - left);
+        return (values[0] + 0.05) / (values[1] + 0.05);
+      };
+      expect(contrast(colors.text, colors.surface)).toBeGreaterThanOrEqual(4.5);
+    }
+    await page.screenshot({ path: `screenshots/${info.project.name}/appearance-${theme}.png`, fullPage: true, animations: "disabled" });
+    await page.getByRole("link", { name: "Feed", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    await page.goto("/settings/appearance");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+  }
+});
+
+test("Story rings persist only completed views and reopen at the first unseen Story", async ({ browser, page, context }) => {
+  const mia = await browser.newContext({ baseURL: "http://localhost:5173", storageState: ".auth/mia.json", extraHTTPHeaders: { "x-forwarded-for": "198.51.100.77" } });
+  const created = [];
+  try {
+    const imageKey = await upload(mia);
+    const createStory = async () => {
+      const response = await mia.request.post(`${API}/stories`, { data: { imageKey, visibility: "public" } });
+      expect(response.status()).toBe(201);
+      const story = (await response.json()).story; created.push(story.id); return story;
+    };
+    const first = await createStory();
+    await page.clock.install();
+    await page.goto(`/?story=${first.id}`);
+    const dialog = page.getByRole("dialog", { name: "Stories from @mia" });
+    await expect(dialog.getByRole("img", { name: /^Story/ })).toBeVisible();
+    await page.getByRole("button", { name: "Close stories" }).click();
+    let groups = (await (await context.request.get(`${API}/stories`)).json()).groups;
+    expect(groups.flatMap((group) => group.stories).find((story) => story.id === first.id).viewedAt).toBeNull();
+    await page.goto(`/?story=${first.id}`);
+    await expect(dialog.getByRole("img", { name: /^Story/ })).toBeVisible();
+    await page.clock.fastForward(7500);
+    await expect.poll(async () => {
+      groups = (await (await context.request.get(`${API}/stories`)).json()).groups;
+      return groups.flatMap((group) => group.stories).find((story) => story.id === first.id).viewedAt;
+    }).toBeTruthy();
+    const second = await createStory();
+    await page.reload();
+    const ring = page.getByRole("button", { name: "Stories from @mia · Unseen stories", exact: true });
+    await expect(ring).toBeVisible();
+    await ring.click();
+    const latest = (await (await context.request.get(`${API}/stories`)).json()).groups.find((group) => group.author.username === "mia");
+    const expectedIndex = latest.stories.findIndex((story) => !story.viewedAt);
+    await expect(dialog.getByRole("img", { name: `Story ${expectedIndex + 1} from @mia`, exact: true })).toBeVisible();
+    expect(latest.stories.find((story) => story.id === second.id).viewedAt).toBeNull();
+  } finally {
+    for (const id of created) await mia.request.delete(`${API}/stories/${id}`);
+    await mia.close();
+  }
+});
+
+test("invites last thirty days and consumed links are not falsely reported as expired", async ({ context }) => {
+  const response = await context.request.post(`${API}/invitations`);
+  expect(response.status()).toBe(201);
+  const invitation = await response.json();
+  expect(Date.parse(invitation.expiresAt) - Date.now()).toBeGreaterThan(29.9 * 86_400_000);
+  const tokenHash = createHash("sha256").update(invitation.code).digest("hex");
+  const usernames = [];
+  try {
+    await database.invitation.update({ where: { tokenHash }, data: { createdAt: new Date(Date.now() - 2 * 86_400_000) } });
+    for (let index = 0; index < 5; index++) {
+      const username = `invite${Date.now()}${index}`; usernames.push(username);
+      const registration = await context.request.post(`${API}/auth/register`, { data: { username, email: `${username}@example.com`, password: "Passw0rd!e2e", inviteCode: invitation.code } });
+      expect(registration.status()).toBe(201);
+    }
+    const used = await context.request.post(`${API}/auth/register`, { data: { username: `extra${Date.now()}`, email: `extra${Date.now()}@example.com`, password: "Passw0rd!e2e", inviteCode: invitation.code } });
+    expect(used.status()).toBe(400);
+    expect((await used.json()).error).toContain("already been used 5 times");
+  } finally {
+    await database.user.deleteMany({ where: { username: { in: usernames } } });
+    await database.invitation.deleteMany({ where: { tokenHash } });
+  }
+});
+
+test("invite link retains its code on refresh", async ({ browser }) => {
+  const context = await browser.newContext({ baseURL: "http://localhost:5173", serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    const code = "refresh-safe-invitation-code-1234567890";
+    await page.goto(`/register#invite=${code}`);
+    await expect(page.getByPlaceholder("Invitation code", { exact: true })).toHaveValue(code);
+    await page.reload();
+    await expect(page.getByPlaceholder("Invitation code", { exact: true })).toHaveValue(code);
+  } finally { await context.close(); }
+});
+
+test("simultaneous media requests prompt only once and do not retain active hardware", async ({ page }) => {
+  await page.goto("/");
+  const result = await page.evaluate(async () => {
+    const { requestUserMedia } = await import("/src/lib/mediaPermissions.ts");
+    let count = 0, sourceStops = 0;
+    const cloneStops = [];
+    let resolve;
+    const pending = new Promise((done) => { resolve = done; });
+    navigator.mediaDevices.getUserMedia = async () => { count++; return pending; };
+    const first = requestUserMedia({ audio: true });
+    const second = requestUserMedia({ audio: true });
+    resolve({ getTracks: () => [{ stop: () => { sourceStops++; } }], clone: () => { const id = cloneStops.length; cloneStops.push(0); return { getTracks: () => [{ stop: () => { cloneStops[id]++; } }] }; } });
+    const streams = await Promise.all([first, second]);
+    await Promise.resolve();
+    streams[0].getTracks().forEach((track) => track.stop());
+    const before = [...cloneStops];
+    streams[1].getTracks().forEach((track) => track.stop());
+    return { count, sourceStops, before, after: cloneStops };
+  });
+  expect(result).toEqual({ count: 1, sourceStops: 1, before: [1, 0], after: [1, 1] });
+});

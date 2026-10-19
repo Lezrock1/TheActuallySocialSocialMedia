@@ -16,6 +16,7 @@ import LinkedMentions from "./LinkedMentions.js";
 import { detectPostLanguage } from "../lib/translationLanguage.js";
 import type { TranslationLanguage } from "@app/shared";
 import AppDialog from "./AppDialog.js";
+import ImageLightbox from "./ImageLightbox.js";
 
 const languageCodes: Record<string, string> = {
   de: "deu",
@@ -47,6 +48,7 @@ function PostCard({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [photoOpen, setPhotoOpen] = useState(false);
   const { data: translationPreferences } = useQuery({
     queryKey: ["user-preferences"],
     queryFn: () => apiFetch<{ translationLanguage: TranslationLanguage }>("/users/me/preferences"),
@@ -169,8 +171,11 @@ function PostCard({
           className="mx-auto mt-2 block h-auto max-h-[32rem] w-auto max-w-full rounded-lg"
         />
       ) : post.imageKey && (
-        <ProgressiveImage mediaKey={post.imageKey} className="mt-2 rounded-lg" />
+        <button type="button" aria-label={`Enlarge photo by @${post.author.username}`} onClick={() => setPhotoOpen(true)} className="mt-2 block w-full cursor-zoom-in rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+          <ProgressiveImage mediaKey={post.imageKey} className="rounded-lg" />
+        </button>
       )}
+      {photoOpen && post.imageKey && <ImageLightbox mediaKey={post.imageKey} onClose={() => setPhotoOpen(false)} />}
       <div className="mt-3 flex min-w-0 items-center justify-between gap-2">
         <time dateTime={post.createdAt} className="shrink-0 text-[11px] text-gray-400">
           {new Date(post.createdAt).toLocaleString("en-US", {

@@ -1,3 +1,4 @@
+import { requestUserMedia } from "./mediaPermissions.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface AudioRecording {
@@ -35,6 +36,7 @@ export function useAudioRecorder({
   const frameRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
   const onFinishedRef = useRef(onFinished);
+  const mountedRef = useRef(true);
   onFinishedRef.current = onFinished;
 
   const teardown = useCallback(() => {
@@ -47,10 +49,14 @@ export function useAudioRecorder({
     setLevel(0);
   }, []);
 
-  useEffect(() => () => {
-    cancelledRef.current = true;
-    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
-    teardown();
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cancelledRef.current = true;
+      if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+      teardown();
+    };
   }, [teardown]);
 
   const start = useCallback(async () => {
@@ -61,9 +67,10 @@ export function useAudioRecorder({
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = await requestUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
       });
+      if (!mountedRef.current) { stream.getTracks().forEach((track) => track.stop()); return; }
       streamRef.current = stream;
       const mimeType = pickMimeType();
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);

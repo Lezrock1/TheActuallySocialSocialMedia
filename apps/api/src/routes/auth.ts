@@ -13,7 +13,7 @@ import { signAuthToken } from "../auth/token.js";
 import { AUTH_COOKIE_NAME, requireAuth } from "../auth/middleware.js";
 import { env } from "../env.js";
 import { toPublicUser } from "../serializers.js";
-import { hashInvitationCode } from "../invitations.js";
+import { hashInvitationCode, invitationProblem } from "../invitations.js";
 import { purgeQueuedMediaDeletions } from "../storage.js";
 import { byIp, byUser, createRateLimiter, rateLimitBy, sendRateLimited } from "../rateLimit.js";
 
@@ -45,17 +45,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     // Cheap invitation check first, so callers without a valid invitation
     // cannot trigger the expensive password hash.
-    const invitation = await prisma.invitation.findFirst({
-      where: {
-        tokenHash: hashInvitationCode(inviteCode),
-        redeemedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      select: { id: true },
-    });
-    if (!invitation) {
-      return reply.code(400).send({ error: "Invitation code is invalid, expired, or already used" });
-    }
+    const invitation = await prisma.invitation.findUnique({ where: { tokenHash: hashInvitationCode(inviteCode.trim()) } });
+    const invitationError = invitationProblem(invitation);
+    if (invitationError) return reply.code(400).send({ error: invitationError });
 
     const existing = await prisma.user.findFirst({
       where: {
@@ -78,7 +70,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           UPDATE "Invitation"
           SET "useCount" = "useCount" + 1,
               "redeemedAt" = CASE WHEN "useCount" + 1 >= "maxUses" THEN NOW() ELSE NULL END
-          WHERE "tokenHash" = ${hashInvitationCode(inviteCode)}
+          WHERE "tokenHash" = ${hashInvitationCode(inviteCode.trim())}
             AND "redeemedAt" IS NULL
             AND "useCount" < "maxUses"
             AND "expiresAt" > NOW()`;
@@ -89,7 +81,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       });
     } catch (error) {
       if (error instanceof InvalidInvitationError) {
-        return reply.code(400).send({ error: "Invitation code is invalid, expired, or already used" });
+        const latest = await prisma.invitation.findUnique({ where: { tokenHash: hashInvitationCode(inviteCode.trim()) } });
+        return reply.code(400).send({ error: invitationProblem(latest) ?? "Invitation unavailable. Please request a new link." });
       }
       if (
         typeof error === "object" &&

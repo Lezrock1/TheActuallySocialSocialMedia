@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveRoom, LiveRoomAudience } from "@app/shared";
 import { getSocket } from "./socket.js";
+import { requestUserMedia } from "./mediaPermissions.js";
 
 export type CallType = "audio" | "video";
 
@@ -278,7 +279,7 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
     if (!userId || activeCallRef.current) return;
     setCallError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = await requestUserMedia({
         audio: true,
         video: callType === "video" ? { facingMode: { ideal: "user" } } : false,
       });
@@ -307,7 +308,7 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
     if (!userId || activeCallRef.current) return;
     setCallError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      const stream = await requestUserMedia({ audio: true, video: true });
       localStreamRef.current = stream;
       setLocalStream(stream);
       updateIncomingCall(null);
@@ -343,7 +344,7 @@ export function useWebRtcCall(userId: string | undefined, ignoreIncomingCalls = 
     if (!userId || !incoming || activeCallRef.current) return;
     setCallError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = await requestUserMedia({
         audio: true,
         video: incoming.callType === "video" ? { facingMode: { ideal: "user" } } : false,
       });

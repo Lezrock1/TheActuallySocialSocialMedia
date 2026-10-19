@@ -260,14 +260,18 @@ export default function StoriesBar() {
   const [replyFocused, setReplyFocused] = useState(false);
   const [videoDurationMs, setVideoDurationMs] = useState(7000);
   const [seenStories, setSeenStories] = useState<Set<string>>(() => new Set());
+  const storyOrderRef = useRef<StoryGroup[]>([]);
   const storyGestureRef = useRef<{ x: number; y: number; startedAt: number } | null>(null);
   const suppressStoryTapRef = useRef(false);
   const [loadingPolicy, setLoadingPolicy] = useState(getStoryLoadingPolicy);
 
-  const { data: groups = [] } = useQuery({
+  const { data: storyGroups = [] } = useQuery({
     queryKey: ["stories"],
     queryFn: fetchStoryGroups,
+    refetchInterval: 30_000,
   });
+  const isSeen = (story: StoryGroup["stories"][number]) => !!story.viewedAt || seenStories.has(story.id);
+  const groups = [...storyGroups].sort((first, second) => Number(first.stories.every(isSeen)) - Number(second.stories.every(isSeen)));
   const momentStarted = momentStatus === "open" || momentStatus === "late";
   const { data: momentFeed } = useQuery({
     queryKey: ["moment", "stories-bar-feed", momentSummary?.myPost?.id ?? "none"],
@@ -284,6 +288,7 @@ export default function StoriesBar() {
     const group = groups.find((candidate) => candidate.stories.some((story) => story.id === requestedStoryId));
     if (!group) return;
     const index = group.stories.findIndex((story) => story.id === requestedStoryId);
+    storyOrderRef.current = [...groups];
     setViewing(group);
     setStoryIndex(index);
     setSearchParams({}, { replace: true });
@@ -305,7 +310,17 @@ export default function StoriesBar() {
     if (!activeStory) return;
     setStoryReadyId(activeStory.id);
     if (durationMs) setVideoDurationMs(durationMs);
-    setSeenStories((current) => current.has(activeStory.id) ? current : new Set([...current, activeStory.id]));
+  }
+  function completeStory() {
+    if (!activeStory || isSeen(activeStory)) { advanceStory(1); return; }
+    const storyId = activeStory.id;
+    setSeenStories((current) => new Set([...current, storyId]));
+    void apiFetch(`/stories/${storyId}/view`, { method: "POST" }).then(() => {
+      void queryClient.invalidateQueries({ queryKey: ["stories"] });
+    }).catch(() => {
+      setSeenStories((current) => { const next = new Set(current); next.delete(storyId); return next; });
+    });
+    advanceStory(1);
   }
 
   useEffect(() => {
@@ -368,7 +383,9 @@ export default function StoriesBar() {
       return;
     }
 
-    const nextGroup = groups[viewingGroupIndex + direction];
+    const order = storyOrderRef.current.length ? storyOrderRef.current : groups;
+    const groupIndex = order.findIndex((group) => group.author.id === viewing.author.id);
+    const nextGroup = order[groupIndex + direction];
     if (!nextGroup) {
       setViewing(null);
       return;
@@ -378,11 +395,13 @@ export default function StoriesBar() {
   }
 
   function openStoryGroup(group: StoryGroup) {
+    storyOrderRef.current = [...groups];
     setStoryReadyId(null);
     setStoryHeld(false);
     setReplyFocused(false);
     setViewing(group);
-    setStoryIndex(0);
+    const firstUnseen = group.stories.findIndex((story) => !isSeen(story));
+    setStoryIndex(firstUnseen >= 0 ? firstUnseen : 0);
     setReplyText("");
     setReactionError(null);
   }
@@ -594,10 +613,12 @@ export default function StoriesBar() {
         {groups.map((group) => (
           <button
             key={group.author.id}
+            aria-label={`Stories from @${group.author.username}${group.stories.some((story) => !isSeen(story)) ? " · Unseen stories" : " · All seen"}`}
+            data-unseen-count={group.stories.filter((story) => !isSeen(story)).length}
             onClick={() => openStoryGroup(group)}
             className="flex shrink-0 flex-col items-center gap-1"
           >
-            <span className={`rounded-full p-0.5 ${group.stories.every((story) => seenStories.has(story.id)) ? "bg-gray-300" : "bg-emerald-600"}`}>
+            <span className={`rounded-full p-0.5 ${group.stories.every(isSeen) ? "bg-gray-300" : "bg-emerald-600"}`}>
               <span className="block rounded-full border-2 border-white">
                 <DecodedImage key={group.stories[0].imageKey} src={mediaUrl(group.stories[0].imageKey)} alt={group.author.username} className="h-[52px] w-[52px] rounded-full" imageClassName="object-cover" />
               </span>
@@ -622,7 +643,7 @@ export default function StoriesBar() {
               {viewing.stories.map((story, index) => (
                 <span key={story.id} className="h-0.5 flex-1 overflow-hidden rounded-full bg-white/35">
                   {index < storyIndex && <span className="block h-full bg-white" />}
-                  {index === storyIndex && <PlaybackProgress key={story.id} label="Story progress" durationMs={activeStory.videoKey ? videoDurationMs : activeStory.audioDurationMs || 7000} paused={storyPaused} ready={storyReadyId === activeStory.id} onComplete={() => { if (!activeStory.videoKey) advanceStory(1); }} />}
+                  {index === storyIndex && <PlaybackProgress key={story.id} label="Story progress" durationMs={activeStory.videoKey ? videoDurationMs : activeStory.audioDurationMs || 7000} paused={storyPaused} ready={storyReadyId === activeStory.id} onComplete={() => { if (!activeStory.videoKey) completeStory(); }} />}
                 </span>
               ))}
             </div>
@@ -677,7 +698,7 @@ export default function StoriesBar() {
                   paused={storyPaused}
                   onReady={storyLoaded}
                   onWaiting={() => setStoryReadyId(null)}
-                  onEnd={() => advanceStory(1)}
+                  onEnd={completeStory}
                 />
               ) : (
               <DecodedImage
