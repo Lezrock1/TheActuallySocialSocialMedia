@@ -9,14 +9,14 @@ import { useCamera } from "./camera/CameraProvider.js";
 const primaryLinkClass = ({ isActive }: { isActive: boolean }) =>
   `inline-flex h-10 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors ${isActive ? "border-[#1D9BF0] text-gray-900" : "border-transparent text-gray-600 hover:text-gray-900"}`;
 
-const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-[10px] font-medium leading-none transition-[color,transform] duration-300 ease-out active:scale-95 ${
-    isActive ? "text-[#1DA1F2]" : "text-gray-500 hover:text-gray-800"
+const mobileLinkClass = ({ isActive }: { isActive: boolean }, activeColor = "text-[#1DA1F2]") =>
+  `flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 py-1 text-[10px] font-medium leading-none transition-[color,transform] duration-300 ease-out active:scale-95 ${
+    isActive ? activeColor : "text-gray-500 hover:text-gray-800"
   }`;
 
 function MobileTabIcon({
   name,
-  className = "h-[23px] w-[23px]",
+  className = "h-6 w-6",
 }: {
   name: "feed" | "snaps" | "messages" | "alerts";
   className?: string;
@@ -45,7 +45,7 @@ function CountBadge({
   tone,
 }: {
   count: number;
-  tone: "red" | "green" | "yellow" | "blue";
+  tone: "red" | "green" | "yellow" | "blue" | "magenta";
 }) {
   if (!count) return null;
   const toneClass = {
@@ -53,6 +53,7 @@ function CountBadge({
     green: "bg-green-600 text-white",
     yellow: "bg-[#FFFC00] text-black ring-1 ring-yellow-500/60",
     blue: "bg-[#1D9BF0] text-white",
+    magenta: "bg-[#c0268a] text-white",
   }[tone];
   return (
     <span className={`absolute -right-2 -top-1.5 z-10 inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-4 shadow-sm ring-2 ring-white ${toneClass}`}>
@@ -121,11 +122,11 @@ export default function NavBar() {
           </NavLink>
           <NavLink
             to="/notifications"
-            className={({ isActive }) => `inline-flex h-10 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors ${isActive ? "border-[#1D9BF0] text-gray-900" : "border-transparent text-gray-600 hover:text-gray-900"}`}
+            className={({ isActive }) => `inline-flex h-10 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors ${isActive ? "border-[#c0268a] alerts-command" : "border-transparent text-gray-600 hover:text-gray-900"}`}
           >
             <span className="relative inline-flex">
               <MobileTabIcon name="alerts" className="h-5 w-5" />
-              <CountBadge count={notificationCount} tone="red" />
+              <CountBadge count={notificationCount} tone="magenta" />
             </span>
             <span>Notifications</span>
           </NavLink>
@@ -161,8 +162,8 @@ export function MobileNav() {
   return createPortal(
       <nav
         aria-label="Primary navigation"
-        className={`${keyboardOpen ? "hidden" : "grid"} fixed inset-x-0 z-40 mx-auto w-[90%] max-w-lg grid-cols-5 items-stretch gap-1 rounded-2xl border border-white/70 bg-white/85 px-3 pb-2 pt-1 shadow-[0_-8px_28px_rgba(15,23,42,0.09)] backdrop-blur-xl sm:hidden`}
-        style={{ bottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        className={`${keyboardOpen ? "hidden" : "grid"} fixed inset-x-0 bottom-0 z-40 w-full grid-cols-5 items-stretch gap-1 border-t border-gray-200 bg-white/95 px-4 pt-1 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:hidden`}
+        style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
         <NavLink to="/" end className={mobileLinkClass}>
           <span className="relative inline-flex">
@@ -171,7 +172,7 @@ export function MobileNav() {
           </span>
           <span>Feed</span>
         </NavLink>
-        <NavLink to="/snaps" className={mobileLinkClass}>
+        <NavLink to="/snaps" className={(state) => mobileLinkClass(state, "snap-nav-active")}>
           <span className="relative inline-flex">
             <MobileTabIcon name="snaps" />
             <CountBadge count={snapUnreadCount} tone="yellow" />
@@ -179,17 +180,17 @@ export function MobileNav() {
           <span>Snaps</span>
         </NavLink>
         <span aria-hidden="true" className="min-w-0" />
-        <NavLink to="/dms" className={mobileLinkClass}>
+        <NavLink to="/dms" className={(state) => mobileLinkClass(state, "messages-nav-active")}>
           <span className="relative inline-flex">
             <MobileTabIcon name="messages" />
             <CountBadge count={messageUnreadCount} tone="green" />
           </span>
           <span>Messages</span>
         </NavLink>
-        <NavLink to="/notifications" className={mobileLinkClass}>
+        <NavLink to="/notifications" className={(state) => mobileLinkClass(state, "alerts-command")}>
           <span className="relative inline-flex">
             <MobileTabIcon name="alerts" />
-            <CountBadge count={notificationCount} tone="red" />
+            <CountBadge count={notificationCount} tone="magenta" />
           </span>
           <span>Alerts</span>
         </NavLink>
@@ -197,7 +198,7 @@ export function MobileNav() {
           type="button"
           onClick={camera.open}
           aria-label="Open camera"
-          className="absolute left-1/2 top-0 z-50 flex h-[3.675rem] w-[3.675rem] -translate-x-1/2 -translate-y-[15%] items-center justify-center rounded-full bg-gradient-to-br from-fuchsia-500 via-fuchsia-600 to-purple-600 text-white shadow-[0_8px_18px_-4px_rgba(192,38,211,0.55),inset_0_1px_0_rgba(255,255,255,0.3)] transition-[transform,box-shadow,filter] duration-200 hover:brightness-110 active:scale-90 active:brightness-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-fuchsia-300/60"
+          className="absolute left-1/2 top-0 z-50 flex h-[3.85rem] w-[3.85rem] -translate-x-1/2 -translate-y-[15%] items-center justify-center rounded-full bg-gradient-to-br from-fuchsia-500 via-fuchsia-600 to-purple-600 text-white shadow-[0_8px_18px_-4px_rgba(192,38,211,0.55),inset_0_1px_0_rgba(255,255,255,0.3)] transition-[transform,box-shadow,filter] duration-200 hover:brightness-110 active:scale-90 active:brightness-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-fuchsia-300/60"
         >
           <CameraIcon />
         </button>

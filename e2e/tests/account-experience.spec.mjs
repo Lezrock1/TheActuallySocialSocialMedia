@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { PrismaClient } from "../../apps/api/node_modules/@prisma/client/default.js";
 import { API } from "../seed.mjs";
+import { runInNewContext } from "node:vm";
 
 const database = new PrismaClient({ datasourceUrl: "postgresql://app:app@localhost:5432/e2e" });
 test.afterAll(() => database.$disconnect());
@@ -20,10 +21,24 @@ async function upload(context) {
 test("Chats offer compact rows, working filters, pins and responsive split view", async ({ page, context }, info) => {
   const response = await context.request.post(`${API}/conversations`, { data: { username: "mia" } });
   const { conversationId } = await response.json();
+  await page.route(/\/conversations$/, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const body = await response.json();
+    const previews = ["Are we still meeting at the park? I can bring something for everyone.", "See you there!", "Saturday at 3 works for everyone."];
+    body.conversations = body.conversations.map((conversation, index) => ({
+      ...conversation,
+      unreadCount: conversation.id === conversationId ? 2 : 0,
+      lastMessage: { id: `preview-${index}`, text: previews[index % previews.length], isEncrypted: false, createdAt: new Date(Date.now() - (index + 1) * 180_000).toISOString() },
+    }));
+    await route.fulfill({ response, json: body });
+  });
   await page.goto("/dms");
   await expect(page.getByRole("heading", { name: "Chats", exact: true })).toBeVisible();
   const row = page.locator(`[data-conversation-id="${conversationId}"]`);
   await expect(row).toBeVisible();
+  await expect(row.getByLabel("2 unread messages", { exact: true })).toBeVisible();
+  await row.getByLabel("Chat actions", { exact: true }).click();
   const pin = row.getByRole("button", { name: "Pin chat", exact: true });
   if (await pin.count()) await pin.click();
   await page.getByRole("button", { name: "Pinned", exact: true }).click();
@@ -33,6 +48,15 @@ test("Chats offer compact rows, working filters, pins and responsive split view"
   await page.getByLabel("Search chats", { exact: true }).fill("");
   await page.getByRole("button", { name: "All", exact: true }).click();
   await page.screenshot({ path: `screenshots/${info.project.name}/chats-mobile.png`, fullPage: true, animations: "disabled" });
+  await page.evaluate(async () => (await import("/src/lib/theme.ts")).applyTheme("dark"));
+  await page.screenshot({ path: `screenshots/${info.project.name}/chats-mobile-dark.png`, fullPage: true, animations: "disabled" });
+  await page.evaluate(async () => (await import("/src/lib/theme.ts")).applyTheme("light"));
+  await expect(page.getByRole("tab", { name: "Create a Group", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByRole("button", { name: "New group", exact: true }).click();
+  await expect(page.getByPlaceholder("Group name (optional)")).toBeVisible();
+  await page.screenshot({ path: `screenshots/${info.project.name}/new-group-mobile.png`, fullPage: true, animations: "disabled" });
+  await page.getByRole("button", { name: "Close new chat", exact: true }).click();
   await row.getByRole("button").first().click();
   await expect(page.getByRole("region", { name: "Conversation", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Back to Messages", exact: true }).click();
@@ -82,7 +106,7 @@ test("previous Moment stays accessible until the next drop without allowing earl
   }
 });
 
-test("friends follow activity is paginated on Alerts and never enters the post feed", async ({ page, context }) => {
+test("friends follow activity is paginated on Alerts and never enters the post feed", async ({ page, context }, info) => {
   const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
   const usernames = Array.from({ length: 22 }, (_, index) => `activity${Date.now()}${index}`);
   await database.user.createMany({ data: usernames.map((username) => ({ username, usernameCanonical: username, email: `${username}@example.com`, passwordHash: "test-only-no-login" })) });
@@ -104,7 +128,85 @@ test("friends follow activity is paginated on Alerts and never enters the post f
   await page.getByRole("button", { name: "Your friends activity", exact: true }).click();
   await expect(page.getByRole("region", { name: "Your friends activity" }).getByText("followed", { exact: false }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Load more activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Filter alerts", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Alerts", exact: true }).click();
+  const unread = page.getByRole("switch", { name: "Unread only", exact: true });
+  await expect(unread).toBeVisible();
+  await unread.click();
+  await expect(unread).toBeChecked();
+  await expect(page.getByRole("button", { name: /^Direct/ })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: `screenshots/${info.project.name}/alerts-controls.png`, animations: "disabled" });
   } finally { await database.user.deleteMany({ where: { username: { in: usernames } } }); }
+});
+
+test("notification center clears completed tags without showing another notification", async () => {
+  const handlers = {};
+  let displayed = 0;
+  const closed = [];
+  const source = await readFile(new URL("../../apps/web/public/sw.js", import.meta.url), "utf8");
+  const notifications = ["completed", "active", "moment", "quiet-hours-digest"].map((tag) => ({ tag, close: () => closed.push(tag) }));
+  runInNewContext(source, { URL, self: { location: { origin: "http://localhost:5173" }, addEventListener: (type, handler) => { handlers[type] = handler; }, registration: { getNotifications: async () => notifications, showNotification: async () => { displayed++; } } } });
+  let pending;
+  handlers.push({ data: { json: () => ({ type: "notifications:clear", tags: ["completed"] }) }, waitUntil: (promise) => { pending = promise; } });
+  await pending;
+  expect(closed).toEqual(["completed"]);
+  expect(displayed).toBe(0);
+  closed.length = 0;
+  handlers.message({ data: { type: "notifications:sync", tags: ["active"] }, waitUntil: (promise) => { pending = promise; } });
+  await pending;
+  expect(closed).toEqual(["completed"]);
+  closed.length = 0;
+  handlers.message({ data: { type: "notifications:sync", tags: [] }, waitUntil: (promise) => { pending = promise; } });
+  await pending;
+  expect(closed).toEqual(["completed", "active", "quiet-hours-digest"]);
+});
+
+test("Story alerts include emoji, respect ownership and disappear after completion", async ({ browser, page, context }) => {
+  const mia = await browser.newContext({ baseURL: "http://localhost:5173", storageState: ".auth/mia.json", serviceWorkers: "block" });
+  const imageKey = await upload(context);
+  const created = await context.request.post(`${API}/stories`, { data: { imageKey } });
+  expect(created.status()).toBe(201);
+  const { story } = await created.json();
+  let notificationId;
+  try {
+    expect((await mia.request.post(`${API}/stories/${story.id}/reactions`, { data: { emoji: "🔥" } })).ok()).toBe(true);
+    const notification = await database.notification.findFirstOrThrow({ where: { storyId: story.id, type: "story_reaction" } });
+    notificationId = notification.id;
+    expect(notification.reactionEmoji).toBe("🔥");
+    await mia.request.post(`${API}/notifications/${notification.id}/read`);
+    expect((await database.notification.findUniqueOrThrow({ where: { id: notification.id } })).dismissedAt).toBeNull();
+    await page.goto("/notifications");
+    const alert = page.locator(`[data-notification-id="${notification.id}"]`);
+    await expect(alert).toContainText("reacted to your story 🔥");
+    await alert.click();
+    await expect.poll(async () => (await database.notification.findUniqueOrThrow({ where: { id: notification.id } })).dismissedAt).toBeTruthy();
+    await page.goto("/notifications");
+    await expect(alert).toHaveCount(0);
+    await page.reload();
+    await expect(alert).toHaveCount(0);
+  } finally {
+    if (notificationId) await database.notification.deleteMany({ where: { id: notificationId } });
+    await context.request.delete(`${API}/stories/${story.id}`);
+    await mia.close();
+  }
+});
+
+test("Alerts unread toggle keeps read and completed states distinct", async ({ page }) => {
+  const leo = await database.user.findUniqueOrThrow({ where: { username: "leo" } });
+  const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+  const notification = await database.notification.create({ data: { recipientId: leo.id, actorId: mia.id, type: "follow", dedupeKey: `read-filter-${Date.now()}`, readAt: new Date() } });
+  try {
+    await page.goto("/notifications");
+    const alert = page.locator(`[data-notification-id="${notification.id}"]`);
+    await expect(alert).toBeVisible();
+    await page.getByRole("switch", { name: "Unread only" }).click();
+    await expect(alert).toHaveCount(0);
+    await page.getByRole("switch", { name: "Unread only" }).click();
+    await expect(alert).toBeVisible();
+    await alert.click();
+    await expect.poll(async () => (await database.notification.findUniqueOrThrow({ where: { id: notification.id } })).dismissedAt).toBeTruthy();
+  } finally { await database.notification.deleteMany({ where: { id: notification.id } }); }
 });
 
 test("Snap friends support unread and streak filters, search and direct chat", async ({ page, context }, info) => {
@@ -116,7 +218,12 @@ test("Snap friends support unread and streak filters, search and direct chat", a
   await page.route(/\/snaps\/streaks$/, (route) => route.fulfill({ headers, json: { streaks: [{ friend, currentStreak: 4, bestStreak: 6, waitingForYou: true, waitingForThem: false, lastExchangeAt: new Date().toISOString() }] } }));
   await page.goto("/snaps");
   const list = page.getByRole("region", { name: "Received Snaps" });
+  await expect(list.getByRole("heading", { name: "Friends", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Search Snap friends")).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await page.getByRole("tab", { name: /New Snaps/ }).click();
+  await expect(page.getByRole("tab", { name: /New Snaps/ })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(page.getByRole("tab", { name: /New Snaps/ })).toHaveCSS("border-bottom-color", "rgb(255, 252, 0)");
+  await expect(page.getByRole("tab", { name: /New Snaps/ })).toHaveCSS("color", "rgb(17, 24, 39)");
   await expect(list.getByRole("button", { name: /New Snap/ })).toHaveCount(1);
   await page.getByLabel("Search Snap friends").fill("not-a-friend");
   await expect(list.getByText("No matching friends.", { exact: true })).toBeVisible();
@@ -132,6 +239,32 @@ test("Snap friends support unread and streak filters, search and direct chat", a
   await page.screenshot({ path: `screenshots/${info.project.name}/snap-friends-desktop.png`, fullPage: true, animations: "disabled" });
   await list.getByRole("button", { name: "Chat with @mia", exact: true }).click();
   await expect(page).toHaveURL(/\/dms\?conversation=/);
+});
+
+test("feed music controls preserve the post draft and expose all music features", async ({ page }, info) => {
+  await page.goto("/");
+  const draft = page.locator("textarea").first();
+  await draft.fill("Keep this post draft while choosing music");
+  const musicButton = page.getByRole("button", { name: "Open music", exact: true });
+  const order = await musicButton.evaluate((button) => {
+    const photo = button.previousElementSibling;
+    const post = button.nextElementSibling;
+    return { photo: photo?.getAttribute("aria-label"), post: post?.getAttribute("type") };
+  });
+  expect(order).toEqual({ photo: "Add photo or video", post: "submit" });
+  await musicButton.click();
+  const music = page.getByRole("dialog", { name: "Music", exact: true });
+  await expect(music).toBeVisible();
+  await expect(music.getByRole("region", { name: "Now playing", exact: true })).toBeVisible();
+  for (const name of ["Music taste", "Mixes & sets", "Now playing"]) {
+    await music.getByRole("tab", { name, exact: true }).click();
+    await expect(music.getByRole("tab", { name, exact: true })).toHaveAttribute("aria-selected", "true");
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: `screenshots/${info.project.name}/feed-music-controls.png`, animations: "disabled" });
+  await music.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(music).toHaveCount(0);
+  await expect(draft).toHaveValue("Keep this post draft while choosing music");
 });
 
 test("Appearance keeps theme stable through color changes, navigation and repeated toggles", async ({ page }, info) => {
@@ -159,6 +292,74 @@ test("Appearance keeps theme stable through color changes, navigation and repeat
     await page.goto("/settings/appearance");
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
   }
+});
+
+test("mobile list preferences persist and chat ordering lives in Settings", async ({ page }, info) => {
+  await page.goto("/notifications");
+  const unread = page.getByRole("switch", { name: "Unread only", exact: true });
+  await expect(unread).toHaveAttribute("aria-checked", "false");
+  await unread.click();
+  await page.reload();
+  await expect(unread).toHaveAttribute("aria-checked", "true");
+  await page.screenshot({ path: `screenshots/${info.project.name}/alerts-switch.png`, animations: "disabled" });
+  await page.goto("/settings/appearance");
+  const ordering = page.getByRole("switch", { name: "Unread first", exact: true });
+  await ordering.click();
+  await page.reload();
+  await expect(ordering).toHaveAttribute("aria-checked", "true");
+  await page.screenshot({ path: `screenshots/${info.project.name}/messages-settings.png`, animations: "disabled" });
+  await page.goto("/dms");
+  await expect(page.getByRole("button", { name: "Unread first", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("intouch:unread-first"))).toBe("1");
+  const messages = page.locator('nav[aria-label="Primary navigation"]:visible').getByRole("link", { name: /Messages/ });
+  await expect(messages).toHaveClass(/messages-nav-active/);
+  await page.goto("/snaps");
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(async (theme) => (await import("/src/lib/theme.ts")).applyTheme(theme), theme);
+    await expect(page.getByRole("tab", { name: "All", exact: true })).toHaveCSS("color", theme === "light" ? "rgb(17, 24, 39)" : "rgb(236, 238, 243)");
+    const snapLink = page.locator('nav[aria-label="Primary navigation"]:visible').getByRole("link", { name: /Snaps/ });
+    const accent = theme === "light" ? "rgb(143, 107, 0)" : "rgb(255, 225, 77)";
+    await expect(snapLink).toHaveCSS("color", accent);
+    await expect(snapLink.locator("svg")).toHaveCSS("color", accent);
+    const search = page.getByLabel("Search Snap friends");
+    await search.focus();
+    await expect(search).toHaveCSS("outline-color", theme === "light" ? "rgb(184, 138, 0)" : "rgb(255, 225, 77)");
+    await page.screenshot({ path: `screenshots/${info.project.name}/snaps-contrast-${theme}.png`, animations: "disabled" });
+  }
+});
+
+test("Alerts omit the caught-up status when no notifications are unread", async ({ page }) => {
+  await page.route(/\/notifications\?/, (route) => route.fulfill({
+    headers: { "access-control-allow-origin": "http://localhost:5173", "access-control-allow-credentials": "true" },
+    json: { notifications: [], unreadCount: 0, nextCursor: null },
+  }));
+  await page.goto("/notifications");
+  await expect(page.getByText("No notifications yet.", { exact: true })).toBeVisible();
+  const controls = page.getByRole("region", { name: "Alert controls", exact: true });
+  await expect(controls.getByText("You're all caught up", { exact: true })).toHaveCount(0);
+  await expect(controls.getByRole("status")).toHaveCount(0);
+});
+
+test("saved dark appearance survives direct message entry and page resume", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    localStorage.setItem("intouch:theme", "dark");
+    localStorage.setItem("intouch:page-background-mode", "shared");
+    localStorage.setItem("intouch:page-background:all", JSON.stringify({ color: "#123456", imageKey: null }));
+  });
+  await page.goto("/dms");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByLabel("Search chats", { exact: true })).toHaveClass(/app-search/);
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "light";
+    window.dispatchEvent(new Event("pageshow"));
+  });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#111318");
+  await page.goto("/snaps");
+  await expect(page.getByLabel("Search Snap friends")).toHaveClass(/app-search/);
+  await expect(page.getByLabel("All Snap streaks", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Streaks", exact: true })).toBeVisible();
 });
 
 test("Story rings persist as soon as media is viewed and reopen at the first unseen Story", async ({ browser, page, context }) => {

@@ -9,7 +9,7 @@ import {
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
-import { createUserNotification } from "../notifications.js";
+import { completeUserNotifications, createUserNotification } from "../notifications.js";
 import { emitToUsers } from "../realtime.js";
 import { isBlocked, canViewContent } from "../visibility.js";
 import { ownsMedia } from "../mediaAccess.js";
@@ -264,16 +264,8 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       if (!membership) {
         return reply.code(404).send({ error: "Conversation not found" });
       }
-      const read = await prisma.notification.updateMany({
-        where: {
-          recipientId: request.userId!,
-          conversationId: request.params.id,
-          type: "message",
-          readAt: null,
-        },
-        data: { readAt: new Date() },
-      });
-      if (read.count > 0) {
+      const read = await completeUserNotifications(request.server.io, request.userId!, { conversationId: request.params.id, type: "message" });
+      if (read > 0) {
         const members = await prisma.conversationMember.findMany({ where: { conversationId: request.params.id }, select: { userId: true } });
         emitToUsers(request.server.io, members.map((member) => member.userId), "message:updated", { conversationId: request.params.id });
       }

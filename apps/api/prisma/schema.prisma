@@ -211,8 +211,11 @@ model Notification {
   commentId   String?
   conversationId String?
   snapId      String?
+  storyId     String?
+  reactionEmoji String?
   createdAt   DateTime @default(now())
   readAt      DateTime?
+  dismissedAt DateTime?
 
   recipient User     @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
   actor     User     @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
@@ -223,6 +226,7 @@ model Notification {
 
   @@index([recipientId, createdAt])
   @@index([recipientId, readAt])
+  @@index([recipientId, dismissedAt, createdAt])
 }
 
 model WebPushSubscription {

@@ -20,6 +20,8 @@ import PullToRefresh from "../components/PullToRefresh.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 import { NowPlayingFeed } from "../components/music/MusicProfile.js";
 import { MusicMixFeed } from "../components/music/Mixes.js";
+import MusicControls, { MusicIcon } from "../components/music/MusicControls.js";
+import Sheet from "../components/Sheet.js";
 
 const MAX_VIDEO_UPLOAD_BYTES = 50 * 1024 * 1024;
 
@@ -112,6 +114,7 @@ export default function FeedPage() {
   const [mediaNotice, setMediaNotice] = useState<string | null>(null);
   const [audience, setAudience] = useState<Audience>(PUBLIC_AUDIENCE);
   const [posting, setPosting] = useState(false);
+  const [musicOpen, setMusicOpen] = useState(false);
   const [postSuccess, setPostSuccess] = useState(false);
   const [pollEnabled, setPollEnabled] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
@@ -471,6 +474,9 @@ export default function FeedPage() {
                   </svg>
                 )}
               </button>
+              <button type="button" aria-label="Open music" title="Music" aria-haspopup="dialog" aria-expanded={musicOpen} onClick={() => setMusicOpen(true)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+                <MusicIcon />
+              </button>
               <button
                 type="submit"
                 disabled={posting || mediaUploading || (!canPost && !postSuccess)}
@@ -498,6 +504,10 @@ export default function FeedPage() {
           onChange={(e) => void onSelectImage(e)}
         />
       </form>
+
+      {user && <Sheet open={musicOpen} title="Music" onClose={() => setMusicOpen(false)} tall>
+        <MusicControls username={user.username} isOwnProfile />
+      </Sheet>}
 
       {postSendError && (
         <div role="alert" className="mb-4 flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

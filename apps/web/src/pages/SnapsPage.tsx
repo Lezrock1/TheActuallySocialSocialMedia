@@ -19,7 +19,7 @@ import EncryptionNotice from "../components/EncryptionNotice.js";
 import DecodedImage from "../components/DecodedImage.js";
 import PlaybackProgress from "../components/PlaybackProgress.js";
 import CameraIcon from "../components/CameraIcon.js";
-import { activityList, activityRow, card, formatActivityTime } from "../lib/ui.js";
+import { card, formatActivityTime } from "../lib/ui.js";
 
 interface SnapInboxData {
   snaps: InboxSnap[];
@@ -38,16 +38,6 @@ async function fetchFollowing(username: string): Promise<PublicUser[]> {
 async function fetchStreaks(): Promise<SnapStreakSummary[]> {
   const res = await apiFetch<{ streaks: SnapStreakSummary[] }>("/snaps/streaks");
   return res.streaks;
-}
-
-function waitingWindowLabel(lastExchangeAt: string | null, nowMs: number): string | null {
-  if (!lastExchangeAt) return null;
-  const remainingMs = Date.parse(lastExchangeAt) + 24 * 60 * 60 * 1000 - nowMs;
-  if (remainingMs <= 0) return "now";
-  const totalMinutes = Math.ceil(remainingMs / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return hours > 0 ? `${hours}h ${String(minutes).padStart(2, "0")}m` : `${minutes}m`;
 }
 
 export default function SnapsPage() {
@@ -81,11 +71,8 @@ export default function SnapsPage() {
   const [friendSearch, setFriendSearch] = useState("");
   const [listFilter, setListFilter] = useState<"all" | "unread" | "streaks">("all");
   const [openingChat, setOpeningChat] = useState<string | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressTriggeredRef = useRef(false);
 
-  const { data: inbox } = useQuery({
+  const { data: inbox, isLoading: inboxLoading, isError: inboxFailed, refetch: retryInbox } = useQuery({
     queryKey: ["snaps-inbox"],
     queryFn: fetchInbox,
   });
@@ -107,7 +94,7 @@ export default function SnapsPage() {
     }
   }, [inbox]);
   const seenToday = inbox?.recentlyViewed ?? [];
-  const { data: following = [], isLoading: followingLoading } = useQuery({
+  const { data: following = [], isLoading: followingLoading, isError: followingFailed, refetch: retryFollowing } = useQuery({
     queryKey: ["following", user?.username],
     queryFn: () => fetchFollowing(user!.username),
     enabled: !!user,
@@ -118,19 +105,6 @@ export default function SnapsPage() {
   });
 
   const streakByFriend = new Map(streaks.map((streak) => [streak.friend.id, streak]));
-  const waitingForYouCount = streaks.filter((streak) => streak.waitingForYou).length;
-  const friendsWithStreaks = following
-    .map((friend) => ({ friend, streak: streakByFriend.get(friend.id) }))
-    .sort((aEntry, bEntry) => {
-      const waitingDifference = Number(bEntry.streak?.waitingForYou ?? false) -
-        Number(aEntry.streak?.waitingForYou ?? false);
-      if (waitingDifference) return waitingDifference;
-      const currentDifference = (bEntry.streak?.currentStreak ?? 0) -
-        (aEntry.streak?.currentStreak ?? 0);
-      if (currentDifference) return currentDifference;
-      return (aEntry.friend.displayName || aEntry.friend.username)
-        .localeCompare(bEntry.friend.displayName || bEntry.friend.username);
-    });
   const dedupedSeenToday = useMemo(() => {
     const unreadIds = new Set(snaps.map((snap) => snap.id));
     return seenToday.filter((snap) => !unreadIds.has(snap.id));
@@ -150,11 +124,6 @@ export default function SnapsPage() {
     } catch { setSnapError("Could not open this chat. Try again."); }
     finally { setOpeningChat(null); }
   }
-
-  useEffect(() => {
-    const interval = window.setInterval(() => setNowMs(Date.now()), 60_000);
-    return () => window.clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -352,21 +321,6 @@ export default function SnapsPage() {
       }
     : undefined;
 
-  function startFriendLongPress(username: string) {
-    if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current);
-    longPressTriggeredRef.current = false;
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressTriggeredRef.current = true;
-      navigate(`/snaps?camera=1&snapTo=${encodeURIComponent(username)}`);
-    }, 500);
-  }
-
-  function cancelFriendLongPress() {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  }
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-4 pb-28 sm:py-8 sm:pb-8">
@@ -381,20 +335,18 @@ export default function SnapsPage() {
       <main className="flex min-w-0 flex-col gap-4">
         <aside className="flex min-w-0 flex-col gap-4">
           <section aria-label="Snap filters" className="space-y-3">
-            <input type="search" aria-label="Search Snap friends" placeholder="Search friends" value={friendSearch} onChange={(event) => setFriendSearch(event.target.value)} className="min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900" />
+            <input type="search" aria-label="Search Snap friends" placeholder="Search friends" value={friendSearch} onChange={(event) => setFriendSearch(event.target.value)} className="app-search snap-search w-full" />
             <div role="tablist" aria-label="Snap list" className="flex gap-1 border-b border-gray-200">
-              {([ ["all", "All"], ["unread", "New Snaps"], ["streaks", "Streaks"] ] as const).map(([value, label]) => <button key={value} role="tab" type="button" aria-selected={listFilter === value} onClick={() => setListFilter(value)} className={`min-h-10 flex-1 border-b-2 px-2 text-sm font-semibold ${listFilter === value ? "border-sky-600 text-sky-700" : "border-transparent text-gray-500"}`}>{label}{value === "unread" && snaps.length ? ` (${snaps.length})` : ""}</button>)}
+              {([ ["all", "All"], ["unread", "New Snaps"], ["streaks", "Streaks"] ] as const).map(([value, label]) => <button key={value} role="tab" type="button" aria-selected={listFilter === value} onClick={() => setListFilter(value)} className={`snap-tab min-h-11 flex-1 border-b-2 px-2 text-sm font-semibold ${listFilter === value ? "snap-tab-active" : "border-transparent text-gray-500"}`}>{label}{value === "unread" && snaps.length ? ` (${snaps.length})` : ""}</button>)}
             </div>
           </section>
           <section aria-label="Received Snaps" className="divide-y divide-gray-200">
-            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-              <h2 className="text-sm font-bold text-gray-900">Friends</h2>
-              <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{snaps.length} new</span>
-            </div>
             {snapError && <p role="alert" className="px-4 pt-3 text-sm text-red-600">{snapError}</p>}
+            {(inboxLoading || followingLoading) && <p role="status" className="px-4 py-4 text-sm text-gray-500">Loading Snaps...</p>}
+            {(inboxFailed || followingFailed) && <div role="alert" className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-red-600"><span>Could not load all Snap friends.</span><button type="button" onClick={() => { void retryInbox(); void retryFollowing(); }} className="min-h-11 shrink-0 px-2 font-semibold">Retry</button></div>}
             <div>
               {snapFriends.map(({ friend, snap, seen, streak }) => (
-                <div key={friend.id} className="flex items-center gap-2 border-b border-gray-100 py-2">
+                <div key={friend.id} className="flex items-center gap-1 border-b border-gray-100 py-2">
                 <button
                   onClick={() => snap ? void openSnap(snap) : void openFriendChat(friend.username)}
                   disabled={!!openingSnapId || !!openingChat}
@@ -405,9 +357,13 @@ export default function SnapsPage() {
                     <Avatar avatarKey={friend.avatarKey} username={friend.username} size={44} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-gray-900">{friend.displayName || `@${friend.username}`}{streak?.currentStreak ? <span className="ml-2 text-xs text-amber-700">🔥 {streak.currentStreak}</span> : null}</span>
-                    <span className={`mt-1 flex items-center gap-1.5 text-xs ${snap ? "font-semibold text-red-600" : "text-gray-500"}`}><span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-sm border ${snap ? "border-red-500 bg-red-500" : streak?.waitingForThem ? "rotate-45 border-sky-500" : "border-gray-400"}`} />{snap ? `New Snap · ${snaps.filter((item) => item.sender.id === friend.id).length} unread · ${formatActivityTime(snap.createdAt)}` : seen ? `Opened · ${formatActivityTime(seen.viewedAt || seen.createdAt)}` : streak?.waitingForThem ? "Delivered" : "Tap to chat"}</span>
+                    <span className={`block truncate text-sm text-gray-900 ${snap ? "font-bold" : "font-medium"}`}>{friend.displayName || `@${friend.username}`}</span>
+                    <span className={`mt-1 flex items-center gap-1.5 text-xs ${snap ? "font-semibold text-red-600" : "text-gray-500"}`}><span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-sm border ${snap ? "border-red-500 bg-red-500" : streak?.waitingForThem ? "rotate-45 border-sky-500" : "border-gray-400"}`} /><span className="truncate">{snap ? `New Snap · ${snaps.filter((item) => item.sender.id === friend.id).length}` : seen ? "Opened" : streak?.waitingForThem ? "Delivered" : "Tap to chat"}</span></span>
                     {snap?.isEncrypted && <span className="sr-only">End-to-end encrypted</span>}
+                  </span>
+                  <span className="flex w-14 shrink-0 flex-col items-end gap-1 whitespace-nowrap text-[11px] text-gray-500">
+                    {(snap || seen) && <time dateTime={snap?.createdAt || seen?.viewedAt || seen?.createdAt}>{formatActivityTime(snap?.createdAt || seen?.viewedAt || seen!.createdAt)}</time>}
+                    {!!streak?.currentStreak && <span aria-label={`${streak.currentStreak} day streak`} className="text-[10px]">🔥 {streak.currentStreak}</span>}
                   </span>
                   {snap && openingSnapId === snap.id ? (
                     <span aria-label="Opening" className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-yellow-500 border-t-transparent" />
@@ -415,80 +371,17 @@ export default function SnapsPage() {
                     <span className="sr-only">{snap ? "Unopened" : "Open chat"}</span>
                   )}
                 </button>
-                <button type="button" aria-label={`Chat with @${friend.username}`} title={`Chat with @${friend.username}`} onClick={() => void openFriendChat(friend.username)} className="min-h-10 px-2 text-xs font-semibold text-sky-700">Chat</button>
-                <button type="button" aria-label={`Send a Snap to @${friend.username}`} title={`Send a Snap to @${friend.username}`} onClick={() => navigate(`/snaps?camera=1&snapTo=${encodeURIComponent(friend.username)}`)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-700"><CameraIcon /></button>
+                <button type="button" aria-label={`Chat with @${friend.username}`} title={`Chat with @${friend.username}`} disabled={!!openingChat} onClick={() => void openFriendChat(friend.username)} className="list-icon-action"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-3 3V11.5A8.5 8.5 0 0 1 9.5 3h3A8.5 8.5 0 0 1 21 11.5Z" /></svg></button>
+                <button type="button" aria-label={`Send a Snap to @${friend.username}`} title={`Send a Snap to @${friend.username}`} onClick={() => navigate(`/snaps?camera=1&snapTo=${encodeURIComponent(friend.username)}`)} className="list-icon-action"><CameraIcon /></button>
                 </div>
               ))}
-              {!snapFriends.length && !followingLoading && (
+              {!snapFriends.length && !followingLoading && !inboxLoading && !inboxFailed && !followingFailed && (
                 <p className="px-4 py-4 text-sm text-gray-500">{friendSearch ? "No matching friends." : listFilter === "unread" ? "No unopened Snaps." : listFilter === "streaks" ? "No active streaks yet." : "Follow friends to start a conversation."}</p>
               )}
 
             </div>
           </section>
 
-          <details aria-label="All Snap streaks" className={`${activityList} group`}>
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600 [&::-webkit-details-marker]:hidden">
-              <div>
-                <h2 className="text-sm font-bold text-gray-900">All streaks</h2>
-                <p className="mt-0.5 text-xs text-gray-500">Your friends and their current streaks</p>
-              </div>
-              <span className="flex shrink-0 items-center gap-2">
-                <span aria-hidden="true" className="rounded-full bg-orange-50 px-2 py-0.5 text-xs font-bold text-orange-700">
-                {waitingForYouCount > 0 ? `${waitingForYouCount} waiting` : "🔥 Active"}
-                </span>
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-              </span>
-            </summary>
-            <div>
-              {friendsWithStreaks.map(({ friend, streak }) => (
-                <button
-                  key={friend.id}
-                  type="button"
-                  onPointerDown={() => startFriendLongPress(friend.username)}
-                  onPointerUp={cancelFriendLongPress}
-                  onPointerCancel={cancelFriendLongPress}
-                  onPointerLeave={cancelFriendLongPress}
-                  onClick={() => {
-                    if (longPressTriggeredRef.current) {
-                      longPressTriggeredRef.current = false;
-                      return;
-                    }
-                    navigate(`/u/${friend.username}`);
-                  }}
-                  className={activityRow}
-                >
-                  <Avatar avatarKey={friend.avatarKey} username={friend.username} size={38} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">
-                      {friend.displayName || `@${friend.username}`}
-                    </span>
-                    <span className="block truncate text-xs text-gray-500">
-                      {streak?.waitingForYou
-                        ? `They sent a Snap. Reply in ${waitingWindowLabel(streak.lastExchangeAt, nowMs) ?? "time"}.`
-                        : streak?.waitingForThem
-                          ? "Your turn is done. Waiting for them."
-                          : streak?.currentStreak
-                            ? "Keep it going today"
-                            : streak?.bestStreak
-                              ? `No current streak · Best streak: ${streak.bestStreak}`
-                              : "No current streak"}
-                    </span>
-                  </span>
-                  <span className={`shrink-0 text-sm font-bold ${streak?.currentStreak ? "text-orange-600" : "text-gray-400"}`}>
-                    🔥 {streak?.currentStreak ?? 0}
-                  </span>
-                </button>
-              ))}
-              {friendsWithStreaks.length === 0 && (
-                <p className="px-4 py-5 text-sm text-gray-500">Follow friends to see them here and start a Snap streak.</p>
-              )}
-            </div>
-            {streaks.some((streak) => streak.bestStreak > 0) && (
-              <p className="border-t border-gray-100 px-4 py-2 text-[11px] text-gray-500">
-                Best streaks are saved even after a current streak ends.
-              </p>
-            )}
-          </details>
         </aside>
       </main>
       <details className="mt-4 text-[11px] leading-5 text-gray-500">

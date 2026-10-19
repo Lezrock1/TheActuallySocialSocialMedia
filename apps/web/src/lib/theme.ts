@@ -15,6 +15,8 @@ export function readTheme(): AppTheme {
 export function applyTheme(theme: AppTheme): void {
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
+  document.documentElement.style.backgroundColor = theme === "dark" ? "#111318" : "#f7f7f8";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#111318" : "#f7f7f8");
   try {
     localStorage.setItem(STORAGE_KEY, theme);
   } catch {
@@ -45,9 +47,12 @@ export function useThemePreference(): [AppTheme, (theme: AppTheme) => void] {
 }
 
 export function initializeTheme(): void {
-  const theme = readTheme();
-  document.documentElement.dataset.theme = theme;
-  document.documentElement.style.colorScheme = theme;
+  const restore = () => applyTheme(readTheme());
+  restore();
+  window.addEventListener("pageshow", restore);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) restore();
+  });
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY && event.key !== null) return;
     const next = readTheme();

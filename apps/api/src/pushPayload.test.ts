@@ -52,4 +52,10 @@ describe("createPushPayload", () => {
     expect(payload.body).toBe("@taylor started a Live Room you can join");
     expect(payload.url).toBe("/dms?view=live_rooms");
   });
+
+  it("includes the Story reaction emoji and opens that Story", () => {
+    const payload = createPushPayload({ notificationId: "reaction", actorUsername: "jules", type: "story_reaction", storyId: "story/1", reactionEmoji: "🔥" });
+    expect(payload.body).toBe("@jules reacted to your story 🔥");
+    expect(payload.url).toBe("/?story=story%2F1");
+  });
 });

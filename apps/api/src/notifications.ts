@@ -5,6 +5,29 @@ import { sendWebPushNotification } from "./pushNotifications.js";
 import { isNotificationEnabled, notificationPreferenceSelect } from "./notificationPreferences.js";
 import { selectPostNotificationRecipients } from "./postNotifications.js";
 import { isQuietNow } from "./quietHours.js";
+import type { Prisma } from "@prisma/client";
+import type { Server } from "socket.io";
+import { emitToUsers } from "./realtime.js";
+import { dismissWebPushNotifications } from "./pushNotifications.js";
+
+export async function completeUserNotifications(io: Server, recipientId: string, where: Prisma.NotificationWhereInput, dismiss = true): Promise<number> {
+  const ids = await prisma.$transaction(async (transaction) => {
+    const notifications = await transaction.notification.findMany({
+      where: { ...where, recipientId, dismissedAt: null },
+      select: { id: true },
+    });
+    if (!notifications.length) return [];
+    const ids = notifications.map((notification) => notification.id);
+    const now = new Date();
+    await transaction.notification.updateMany({ where: { id: { in: ids }, recipientId }, data: { readAt: now, ...(dismiss ? { dismissedAt: now } : {}) } });
+    return ids;
+  });
+  if (ids.length) {
+    emitToUsers(io, [recipientId], "notifications:cleared", { ids });
+    void dismissWebPushNotifications(recipientId, ids).catch(() => console.error("Could not synchronize notification dismissal"));
+  }
+  return ids.length;
+}
 
 export async function createUserNotification(input: {
   recipientId: string;
@@ -15,12 +38,16 @@ export async function createUserNotification(input: {
   commentId?: string;
   conversationId?: string;
   snapId?: string;
+  storyId?: string;
+  reactionEmoji?: string;
 }): Promise<void> {
   if (input.recipientId === input.actorId) return;
   const preferences = await getNotificationPreferences(input.recipientId);
   if (!isNotificationEnabled(input.type, preferences)) return;
   try {
-    const notification = await prisma.notification.create({ data: input });
+    const notification = input.type === "story_reaction"
+      ? await prisma.notification.upsert({ where: { dedupeKey: input.dedupeKey }, create: input, update: { reactionEmoji: input.reactionEmoji, storyId: input.storyId, readAt: null, dismissedAt: null, createdAt: new Date() } })
+      : await prisma.notification.create({ data: input });
     const inQuietHours = preferences !== null && isQuietNow({
       enabled: preferences.quietHoursEnabled,
       startMinute: preferences.quietStartMinute,
@@ -37,6 +64,8 @@ export async function createUserNotification(input: {
       postId: input.postId,
       conversationId: input.conversationId,
       snapId: input.snapId,
+      storyId: input.storyId,
+      reactionEmoji: input.reactionEmoji,
     }).catch(() => {
       console.error("Could not send web push notification");
     });

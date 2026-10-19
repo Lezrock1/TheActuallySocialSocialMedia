@@ -280,6 +280,8 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
           recipientId: story.authorId,
           actorId: request.userId!,
           type: "story_reaction",
+          storyId: story.id,
+          reactionEmoji: parsed.data.emoji,
           dedupeKey: `story-reaction:${story.id}:${request.userId}`,
         }).catch((error) => request.log.error(error, "Story reaction notification creation failed"));
       }

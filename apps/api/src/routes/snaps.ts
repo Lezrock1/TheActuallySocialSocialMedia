@@ -10,7 +10,7 @@ import { toPublicUser } from "../serializers.js";
 import { deleteMediaIfUnreferenced } from "../storage.js";
 import { ownsMedia } from "../mediaAccess.js";
 import { isBlocked } from "../visibility.js";
-import { createUserNotification } from "../notifications.js";
+import { completeUserNotifications, createUserNotification } from "../notifications.js";
 import { recordSnapInStreak } from "../snapStreak.js";
 
 const SNAP_LIFETIME_MS = 24 * 60 * 60 * 1000;
@@ -270,6 +270,7 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
       if (!snap || snap.expiresAt <= new Date()) {
         return reply.code(404).send({ error: "Snap not found" });
       }
+      await completeUserNotifications(request.server.io, request.userId!, { snapId: snap.id, type: "snap" });
       if (!recipient.viewedAt) {
         await prisma.snapRecipient.update({
           where: { id: recipient.id },

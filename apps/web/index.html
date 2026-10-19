@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f7f7f8" />
+    <script>
+      try {
+        const theme = localStorage.getItem("intouch:theme") === "dark" ? "dark" : "light";
+        const background = theme === "dark" ? "#111318" : "#f7f7f8";
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+        document.documentElement.style.backgroundColor = background;
+        document.querySelector('meta[name="theme-color"]').content = background;
+      } catch {}
+    </script>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

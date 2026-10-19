@@ -320,6 +320,9 @@ export interface UserNotification {
   conversationId: string | null;
   snapId: string | null;
   commentText: string | null;
+  storyId?: string | null;
+  reactionEmoji?: string | null;
+  dismissedAt?: string | null;
   createdAt: string;
   readAt: string | null;
 }

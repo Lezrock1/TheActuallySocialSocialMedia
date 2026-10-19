@@ -399,6 +399,9 @@ test("Music suggestion selection and corrections keep all service links accurate
     spotify: "https://open.spotify.com/track/one", apple_music: "https://music.apple.com/us/album/one-more-time/1", soundcloud: "https://soundcloud.com/daft-punk/one-more-time",
   } } }));
   await page.goto("/u/leo");
+  await expect(page.getByText("Music", { exact: true })).toBeVisible();
+  await page.screenshot({ path: `screenshots/${info.project.name}/profile-music-collapsed.png`, animations: "disabled" });
+  await page.getByText("Music", { exact: true }).click();
   const panel = page.getByRole("region", { name: "Now playing", exact: true });
   await panel.getByRole("button", { name: /Share|Edit/, exact: true }).click();
   await page.getByRole("textbox", { name: "Track title", exact: true }).fill("One More");
@@ -410,8 +413,8 @@ test("Music suggestion selection and corrections keep all service links accurate
   await page.getByRole("textbox", { name: "Artist", exact: true }).fill("Corrected Artist");
   await expect(page.getByRole("textbox", { name: "Preferred service link", exact: true })).toHaveValue(/Corrected%20Artist.*Corrected%20Song/);
   await panel.getByRole("button", { name: "Share track" }).click();
-  await expect(panel.getByRole("link", { name: "Spotify · Search", exact: true })).toBeVisible();
-  await expect(panel.getByRole("link", { name: "Apple Music · Search", exact: true })).toBeVisible();
+  await expect(panel.getByRole("link", { name: "Spotify", exact: true })).toBeVisible();
+  await expect(panel.getByRole("link", { name: "Apple Music", exact: true })).toBeVisible();
   await expect(panel.getByRole("link", { name: "SoundCloud", exact: true })).toHaveCount(0);
   await page.screenshot({ path: `screenshots/${info.project.name}/music-correction.png` });
   for (const width of [390, 1440]) {

@@ -51,8 +51,8 @@ export default function PageHeader({
     <header className="page-header-enter relative z-50 mb-2 flex items-center justify-between">
       <h1 className="min-w-0 flex-1 truncate text-xl font-semibold">{title}</h1>
       <div className="flex shrink-0 items-center gap-1 text-sm sm:gap-2">
-        <Link to={`/u/${user?.username}`} className="max-w-20 truncate underline sm:max-w-none">
-          @{user?.username}
+        <Link to={`/u/${user?.username}`} aria-label={`Your profile: @${user?.username}`} className="profile-link max-w-28 sm:max-w-none">
+          <span className="truncate">@{user?.username}</span>
         </Link>
         {showSearch && (
           <Link

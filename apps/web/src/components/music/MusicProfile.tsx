@@ -35,8 +35,8 @@ function searchLinks(title: string, artist: string): ServiceLinks {
 }
 function ServiceButtons({ links }: { links: ServiceLinks }) {
   return <div className="mt-2 flex flex-wrap gap-2">{PROVIDERS.map(({ value, label }) => links[value] && (
-    <a key={value} href={links[value]} target="_blank" rel="noreferrer" className="rounded-full border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-50">
-      {label}{links[value]?.includes("/search") ? " · Search" : ""}
+    <a key={value} href={links[value]} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+      {label}
     </a>
   ))}</div>;
 }
@@ -228,7 +228,7 @@ export function NowPlayingFeed() {
       </div>
       <div className="flex snap-x gap-2 overflow-x-auto pb-1">
         {statuses.map((status) => (
-          <article key={status.id} className="w-72 shrink-0 snap-start rounded-xl border border-gray-200 bg-white p-3 shadow-[0_2px_12px_rgba(15,23,42,0.05)]">
+          <article key={status.id} className="w-56 max-w-full shrink-0 snap-start rounded-lg border border-gray-200 bg-white p-3">
           <div className="flex items-center gap-2.5">
             <Avatar avatarKey={status.user.avatarKey} username={status.user.username} size={38} />
             <span className="min-w-0 flex-1">

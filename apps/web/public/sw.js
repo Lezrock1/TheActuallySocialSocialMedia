@@ -81,12 +81,31 @@ self.addEventListener("fetch", (event) => {
   })());
 });
 
+async function clearDisplayedNotifications(tags, activeTags) {
+  const notifications = await self.registration.getNotifications();
+  const selected = new Set(tags || []);
+  const active = activeTags ? new Set(activeTags) : null;
+  for (const notification of notifications) {
+    const managed = notification.tag && notification.tag !== "moment" && notification.tag !== "quiet-hours-digest";
+    if (selected.has(notification.tag) || (active && managed && !active.has(notification.tag)) || (active?.size === 0 && notification.tag === "quiet-hours-digest")) notification.close();
+  }
+}
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "notifications:clear" && Array.isArray(event.data.tags)) event.waitUntil(clearDisplayedNotifications(event.data.tags));
+  if (event.data?.type === "notifications:sync" && Array.isArray(event.data.tags)) event.waitUntil(clearDisplayedNotifications([], event.data.tags));
+});
+
 self.addEventListener("push", (event) => {
   let payload = {};
   try {
     payload = event.data?.json() ?? {};
   } catch {
     payload = {};
+  }
+  if (payload.type === "notifications:clear" && Array.isArray(payload.tags)) {
+    event.waitUntil(clearDisplayedNotifications(payload.tags));
+    return;
   }
 
   event.waitUntil(self.registration.showNotification(payload.title || "InTouch", {
@@ -105,11 +124,20 @@ self.addEventListener("notificationclick", (event) => {
 
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    if (windows.length) {
-      await windows[0].navigate(targetUrl.href);
-      await windows[0].focus();
-    } else {
-      await self.clients.openWindow(targetUrl.href);
+    const controlled = await self.clients.matchAll({ type: "window" });
+    const candidates = windows.filter((client) => new URL(client.url).origin === self.location.origin);
+    const existing = candidates.find((client) => client.focused)
+      || candidates.find((client) => client.visibilityState === "visible")
+      || candidates[0];
+    if (existing) {
+      await existing.focus();
+      if (controlled.some((client) => client.id === existing.id)) {
+        existing.postMessage({ type: "intouch:notification-open", url: targetUrl.href });
+        return;
+      }
+      const navigated = await existing.navigate(targetUrl.href);
+      if (navigated) return;
     }
+    await self.clients.openWindow(targetUrl.href);
   })());
 });

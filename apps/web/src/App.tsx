@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 const LoginPage = lazy(() => import("./pages/LoginPage.js"));
@@ -221,8 +221,51 @@ function titleForPath(pathname: string): string {
 
 function AppRoutes() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   usePageBackground(pageSurfaceForPath(location.pathname));
+  useEffect(() => {
+    if (!user || !("serviceWorker" in navigator)) return;
+    let cancelled = false;
+    const send = async (type: string, tags: string[]) => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (!cancelled) registration?.active?.postMessage({ type, tags });
+    };
+    const sync = () => {
+      if (document.hidden) return;
+      void apiFetch<{ tags: string[] }>("/notifications/push/active").then(({ tags }) => send("notifications:sync", tags)).catch(() => undefined);
+    };
+    const cleared = ({ ids }: { ids: string[] }) => {
+      void send("notifications:clear", ids).catch(() => undefined);
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    };
+    const socket = getSocket();
+    socket.on("notifications:cleared", cleared);
+    socket.on("connect", sync);
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+    sync();
+    return () => {
+      cancelled = true;
+      socket.off("notifications:cleared", cleared);
+      socket.off("connect", sync);
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, [user?.id, queryClient]);
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const openNotification = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.data?.type !== "intouch:notification-open" || typeof event.data.url !== "string") return;
+      try {
+        const target = new URL(event.data.url, window.location.origin);
+        if (target.origin === window.location.origin) navigate(`${target.pathname}${target.search}${target.hash}`);
+      } catch {}
+    };
+    navigator.serviceWorker.addEventListener("message", openNotification);
+    return () => navigator.serviceWorker.removeEventListener("message", openNotification);
+  }, [navigate]);
   useEffect(() => {
     document.title = `${titleForPath(location.pathname)} · InTouch`;
   }, [location.pathname]);

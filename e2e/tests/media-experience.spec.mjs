@@ -201,7 +201,7 @@ test("Snaps load without consuming, pause for hold and reply, and advance withou
   await page.goto("/snaps");
   const row = page.getByRole("region", { name: "Received Snaps" }).getByRole("button", { name: /New Snap/ });
   await expect(row).toHaveCount(1);
-  await expect(row).toContainText("2 unread");
+  await expect(row).toContainText("New Snap · 2");
   await row.click();
   await expect(page.getByRole("dialog", { name: "Opening Snap", exact: true })).toBeVisible();
   await page.clock.fastForward(12_000);

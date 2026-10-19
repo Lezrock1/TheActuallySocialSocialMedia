@@ -64,10 +64,10 @@ import { captureVideoPoster } from "../lib/video.js";
 import { formatDuration, isAudioRecordingSupported, useAudioRecorder } from "../lib/useAudioRecorder.js";
 import type { AudioRecording } from "../lib/useAudioRecorder.js";
 import { MAX_VOICE_MESSAGE_MS } from "@app/shared";
+import { UNREAD_FIRST_KEY, useListPreference } from "../lib/listPreferences.js";
 
 const MESSAGE_PAGE_LIMIT = 40;
 const PINNED_CHATS_KEY = "intouch:pinned-chats";
-const UNREAD_FIRST_KEY = "intouch:unread-first";
 
 interface PendingMessage {
   id: string;
@@ -269,13 +269,7 @@ export default function DMsPage() {
       return [];
     }
   });
-  const [unreadFirst, setUnreadFirst] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(UNREAD_FIRST_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
+  const [unreadFirst] = useListPreference(UNREAD_FIRST_KEY);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(() => new Set());
   const [friendSearch, setFriendSearch] = useState("");
   const [friendPickerOpen, setFriendPickerOpen] = useState(false);
@@ -326,10 +320,6 @@ export default function DMsPage() {
   useEffect(() => {
     localStorage.setItem(PINNED_CHATS_KEY, JSON.stringify(pinnedChatIds.slice(0, 30)));
   }, [pinnedChatIds]);
-
-  useEffect(() => {
-    localStorage.setItem(UNREAD_FIRST_KEY, unreadFirst ? "1" : "0");
-  }, [unreadFirst]);
 
   useEffect(() => {
     const state = location.state as {
@@ -388,7 +378,7 @@ export default function DMsPage() {
     };
   }, []);
 
-  const { data: conversations = [] } = useQuery({
+  const { data: conversations = [], isLoading: conversationsLoading, isError: conversationsFailed, refetch: retryConversations } = useQuery({
     queryKey: ["conversations"],
     queryFn: fetchConversations,
   });
@@ -712,7 +702,7 @@ export default function DMsPage() {
     if (!friendPickerOpen) return;
     friendSearchInputRef.current?.focus();
     function closeOnOutsidePointer(event: PointerEvent) {
-      if (event.target instanceof Node && !friendPickerRef.current?.contains(event.target)) {
+      if (event.target instanceof Node && !friendPickerRef.current?.closest("form")?.contains(event.target)) {
         setFriendPickerOpen(false);
       }
     }
@@ -1059,23 +1049,14 @@ export default function DMsPage() {
             <button
               type="button"
               role="tab"
-              aria-selected={messageView === "chats"}
+              aria-selected={messageView === "chats" || groupMode}
               onClick={() => {
                 setMessageView("chats");
                 setSelectedGroupUsernames([]);
               }}
-              className={`min-h-9 rounded-full px-3 text-sm font-semibold transition-colors ${messageView === "chats" ? "bg-emerald-50 text-emerald-800" : "text-gray-500 hover:text-gray-800"}`}
+              className={`min-h-9 rounded-full px-3 text-sm font-semibold transition-colors ${messageView === "chats" || groupMode ? "bg-emerald-50 text-emerald-800" : "text-gray-500 hover:text-gray-800"}`}
             >
               Chats
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={messageView === "create_group"}
-              onClick={() => setMessageView("create_group")}
-              className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${messageView === "create_group" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
-            >
-              Create a Group
             </button>
             <button
               type="button"
@@ -1095,6 +1076,11 @@ export default function DMsPage() {
             }}
             className="mb-3 flex flex-col gap-3"
           >
+            <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
+              <button type="button" aria-pressed={!groupMode} onClick={() => { setMessageView("chats"); setSelectedGroupUsernames([]); setFriendPickerOpen(true); }} className={`min-h-11 flex-1 rounded-lg px-3 text-sm font-semibold ${!groupMode ? "bg-emerald-50 text-emerald-800" : "text-gray-500"}`}>Direct message</button>
+              <button type="button" aria-pressed={groupMode} onClick={() => { setMessageView("create_group"); setFriendPickerOpen(true); }} className={`min-h-11 flex-1 rounded-lg px-3 text-sm font-semibold ${groupMode ? "bg-emerald-50 text-emerald-800" : "text-gray-500"}`}>New group</button>
+              <button type="button" aria-label="Close new chat" className="list-icon-action" onClick={() => { setMessageView("chats"); setFriendPickerOpen(false); setSelectedGroupUsernames([]); }}>×</button>
+            </div>
             {groupMode && (
               <input
                 value={groupName}
@@ -1187,7 +1173,8 @@ export default function DMsPage() {
                   value={chatSearch}
                   onChange={(e) => setChatSearch(e.target.value)}
                   placeholder="Search"
-                  className="min-h-11 min-w-0 flex-1 rounded-full border-0 bg-gray-100 px-5 text-sm text-gray-900 outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  type="search"
+                  className="app-search min-w-0 flex-1"
                 />
                 <button
                   type="button"
@@ -1228,17 +1215,12 @@ export default function DMsPage() {
                   Groups
                 </button>
                 <button type="button" onClick={() => setChatFilter("pinned")} aria-pressed={chatFilter === "pinned"} className={`chat-filter ${chatFilter === "pinned" ? "chat-filter-active" : ""}`}>Pinned</button>
-                <button
-                  type="button"
-                  onClick={() => setUnreadFirst((value) => !value)}
-                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${unreadFirst ? "border-emerald-700 bg-emerald-700 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
-                >
-                  Unread first
-                </button>
               </div>
             </div>
           )}
           {messageView === "chats" && <div aria-label="Chat list" className="chat-list lg:max-h-[calc(100dvh-19rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-3">
+            {conversationsLoading && <p role="status" className="px-4 py-4 text-sm text-gray-500">Loading chats...</p>}
+            {conversationsFailed && <div role="alert" className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-red-600"><span>Could not load chats.</span><button type="button" onClick={() => void retryConversations()} className="min-h-11 shrink-0 px-2 font-semibold">Retry</button></div>}
             {visibleConversations.map((c) => (
               <div key={c.id} data-conversation-id={c.id} className={`chat-list-row ${activeId === c.id ? "chat-list-selected" : ""}`}>
                 <button
@@ -1266,11 +1248,6 @@ export default function DMsPage() {
                           ? c.name ?? c.members.map((member) => `@${member.username}`).join(", ")
                           : c.otherMember?.displayName || `@${c.otherMember?.username ?? "Unknown"}`}
                       </span>
-                      {c.lastMessage && (
-                        <time className={`shrink-0 text-[11px] ${c.unreadCount > 0 ? "font-semibold text-green-600" : "text-gray-400"}`}>
-                          {formatActivityTime(c.lastMessage.createdAt)}
-                        </time>
-                      )}
                     </span>
                     <span className="mt-0.5 flex min-w-0 items-center gap-2">
                       {c.lastMessage?.isEncrypted && (
@@ -1281,32 +1258,41 @@ export default function DMsPage() {
                       <span className={`min-w-0 flex-1 truncate text-[13px] leading-5 ${c.unreadCount > 0 ? "font-medium text-gray-800" : "text-gray-500"}`}>
                         {chatPreview(c.lastMessage)}
                       </span>
-                      {c.unreadCount > 0 && (
+                    </span>
+                  </span>
+                  <span className="flex w-14 shrink-0 flex-col items-end gap-1.5 self-center">
+                    {c.lastMessage && (
+                      <time dateTime={c.lastMessage.createdAt} className={`text-[11px] ${c.unreadCount > 0 ? "font-semibold text-green-600" : "text-gray-400"}`}>{formatActivityTime(c.lastMessage.createdAt)}</time>
+                    )}
+                    {c.unreadCount > 0 ? (
                         <span
                           aria-label={`${c.unreadCount} unread messages`}
                           className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-green-600 px-1.5 text-[11px] font-bold text-white"
                         >
                           {c.unreadCount > 99 ? "99+" : c.unreadCount}
                         </span>
-                      )}
-                    </span>
+                    ) : pinnedSet.has(c.id) ? <span className="text-[10px] text-gray-500">Pinned</span> : null}
                   </span>
                 </button>
+                <details className="relative shrink-0">
+                  <summary aria-label="Chat actions" title="Chat actions" className="list-icon-action cursor-pointer list-none [&::-webkit-details-marker]:hidden"><svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg></summary>
                 <button
                   type="button"
-                  onClick={() => togglePinnedChat(c.id)}
+                  onClick={(event) => { togglePinnedChat(c.id); event.currentTarget.closest("details")?.removeAttribute("open"); }}
                   aria-label={pinnedSet.has(c.id) ? "Unpin chat" : "Pin chat"}
                   aria-pressed={pinnedSet.has(c.id)}
                   title={pinnedSet.has(c.id) ? "Unpin chat" : "Pin chat"}
-                  className={`ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${pinnedSet.has(c.id) ? "bg-emerald-50 text-emerald-700" : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"}`}
+                  className="absolute right-0 top-full z-30 flex min-h-11 w-36 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                 >
                   <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M8 3.5h8l-1 5 3 3v2h-5v6.5L12 22l-1-2v-6.5H6v-2l3-3-1-5Z" />
                   </svg>
+                  {pinnedSet.has(c.id) ? "Unpin chat" : "Pin chat"}
                 </button>
+                </details>
               </div>
             ))}
-            {visibleConversations.length === 0 && (
+            {visibleConversations.length === 0 && !conversationsLoading && !conversationsFailed && (
               <p className="px-4 py-6 text-center text-sm text-gray-500">{chatSearch ? "No chats found." : chatFilter === "all" ? "No conversations yet." : "No chats in this filter."}</p>
             )}
           </div>}

@@ -10,6 +10,14 @@ type PushInput = Omit<PushPayloadInput, "actorUsername"> & {
 
 const DIGEST_TTL_SECONDS = 12 * 60 * 60;
 
+export async function dismissWebPushNotifications(userId: string, ids: string[]): Promise<void> {
+  if (!ids.length || !configureWebPush()) return;
+  const subscriptions = await prisma.webPushSubscription.findMany({ where: { userId } });
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    await deliver(subscriptions, JSON.stringify({ type: "notifications:clear", tags: ids.slice(offset, offset + 100) }), 60);
+  }
+}
+
 function configureWebPush(): boolean {
   if (!env.webPushPublicKey || !env.webPushPrivateKey) return false;
   webpush.setVapidDetails(env.webPushSubject, env.webPushPublicKey, env.webPushPrivateKey);

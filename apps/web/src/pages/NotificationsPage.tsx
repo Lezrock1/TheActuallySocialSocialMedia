@@ -11,6 +11,8 @@ import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import PullToRefresh from "../components/PullToRefresh.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import PreferenceSwitch from "../components/PreferenceSwitch.js";
+import { ALERTS_UNREAD_ONLY_KEY, useListPreference } from "../lib/listPreferences.js";
 
 async function fetchNotifications(cursor: string | null): Promise<NotificationsPageData> {
   const params = new URLSearchParams();
@@ -33,7 +35,7 @@ function notificationText(notification: UserNotification): string {
     case "comment_like":
       return "liked your comment";
     case "story_reaction":
-      return "reacted to your story";
+      return `reacted to your story${notification.reactionEmoji ? ` ${notification.reactionEmoji}` : ""}`;
     case "mention":
       return "mentioned you";
     case "message":
@@ -59,21 +61,12 @@ function notificationText(notification: UserNotification): string {
   }
 }
 
-function isDirectActivity(notification: UserNotification): boolean {
-  return notification.type === "message" ||
-    notification.type === "call" ||
-    notification.type === "snap" ||
-    notification.type === "live_room" ||
-    notification.type === "meetup_response" ||
-    notification.type === "meetup_update" ||
-    notification.type === "meetup_cancelled";
-}
-
 export default function NotificationsPage() {
   const queryClient = useQueryClient();
   const notificationsListRef = useRef<HTMLDivElement>(null);
   const [virtualScrollMargin, setVirtualScrollMargin] = useState(0);
-  const [filter, setFilter] = useState<"all" | "unread" | "direct" | "social" | "friends">("all");
+  const [filter, setFilter] = useState<"all" | "friends">("all");
+  const [unreadOnly, setUnreadOnly] = useListPreference(ALERTS_UNREAD_ONLY_KEY);
   const friendsActivity = useInfiniteQuery({
     queryKey: ["notifications", "friends-activity"],
     initialPageParam: null as string | null,
@@ -89,14 +82,7 @@ export default function NotificationsPage() {
   });
   const notifications = query.data?.pages.flatMap((page) => page.notifications) ?? [];
   const unreadCount = query.data?.pages[0]?.unreadCount ?? 0;
-  const directUnread = notifications.filter((notification) => isDirectActivity(notification) && !notification.readAt).length;
-  const socialUnread = notifications.filter((notification) => !isDirectActivity(notification) && !notification.readAt).length;
-  const filteredNotifications = notifications.filter((notification) => {
-    if (filter === "unread") return !notification.readAt;
-    if (filter === "direct") return isDirectActivity(notification);
-    if (filter === "social") return !isDirectActivity(notification);
-    return true;
-  });
+  const filteredNotifications = notifications.filter((notification) => !notification.dismissedAt && (!unreadOnly || !notification.readAt));
 
   useEffect(() => {
     function updateScrollMargin() {
@@ -111,7 +97,7 @@ export default function NotificationsPage() {
       window.removeEventListener("resize", updateScrollMargin);
       window.removeEventListener("orientationchange", updateScrollMargin);
     };
-  }, [notifications.length, filter]);
+  }, [notifications.length, filter, unreadOnly]);
 
   const rowVirtualizer = useWindowVirtualizer({
     count: filteredNotifications.length,
@@ -147,17 +133,17 @@ export default function NotificationsPage() {
 
   function markRead(notificationId: string) {
     const previous = queryClient.getQueryData<InfiniteData<NotificationsPageData>>(["notifications", "list"]);
-    const decremented = Boolean(previous?.pages[0]?.notifications.some(
+    const decremented = Boolean(previous?.pages.some((page) => page.notifications.some(
       (notification) => notification.id === notificationId && !notification.readAt
-    ));
+    )));
     queryClient.setQueryData<InfiniteData<NotificationsPageData>>(["notifications", "list"], (current) => {
       if (!current) return current;
       return {
         ...current,
         pages: current.pages.map((page, pageIndex) => {
           const next = page.notifications.map((notification) => {
-            if (notification.id !== notificationId || notification.readAt) return notification;
-            return { ...notification, readAt: new Date().toISOString() };
+            if (notification.id !== notificationId) return notification;
+            return { ...notification, readAt: notification.readAt ?? new Date().toISOString(), dismissedAt: new Date().toISOString() };
           });
           return {
             ...page,
@@ -216,32 +202,20 @@ export default function NotificationsPage() {
       <PageHeader title="Notifications" />
       <NavBar />
 
-      <section className="mb-3 rounded-2xl border border-gray-200 bg-[linear-gradient(140deg,#eef6ff_0%,#f8fafc_50%,#fff_100%)] p-3">
-        <div className="flex min-h-10 items-center justify-between gap-3">
-          <p className="text-sm text-gray-600">
-            {unreadCount > 0 ? `${unreadCount} unread` : "You're all caught up"}
+      <section aria-label="Alert controls" className="alerts-controls mb-4 space-y-3">
+        <div role="group" aria-label="Alert views" className="segmented-control">
+          <button type="button" aria-pressed={filter !== "friends"} onClick={() => setFilter("all")} className="segmented-option">Alerts</button>
+          <button type="button" aria-label="Your friends activity" aria-pressed={filter === "friends"} onClick={() => setFilter("friends")} className="segmented-option">Friends activity</button>
+        </div>
+        {filter !== "friends" && <PreferenceSwitch label="Unread only" checked={unreadOnly} onChange={setUnreadOnly} tone="magenta" />}
+        {unreadCount > 0 && <div className="flex min-h-11 items-center justify-between gap-3 border-b border-gray-200 pb-2">
+          <p role="status" className="text-xs text-gray-500">
+            {unreadCount} unread
           </p>
-          {unreadCount > 0 && (
-            <button onClick={() => void markAllRead()} className={btnSecondary}>
-              Mark all as read
-            </button>
-          )}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button type="button" onClick={() => setFilter("all")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "all" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
-            All
+          <button type="button" onClick={() => void markAllRead()} className="alerts-command min-h-11 shrink-0 px-1 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c0268a]">
+            Mark all as read
           </button>
-          <button type="button" onClick={() => setFilter("unread")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "unread" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
-            Unread ({unreadCount})
-          </button>
-          <button type="button" onClick={() => setFilter("direct")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "direct" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
-            Direct ({directUnread})
-          </button>
-          <button type="button" onClick={() => setFilter("social")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "social" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
-            Social ({socialUnread})
-          </button>
-          <button type="button" aria-pressed={filter === "friends"} onClick={() => setFilter("friends")} className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter === "friends" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>Your friends activity</button>
-        </div>
+        </div>}
       </section>
 
       {filter === "friends" && <section aria-label="Your friends activity">
@@ -261,7 +235,9 @@ export default function NotificationsPage() {
         {virtualRows.map((virtualRow) => {
           const notification = filteredNotifications[virtualRow.index];
           if (!notification) return null;
-          const target = notification.type === "live_room"
+          const target = notification.storyId
+            ? `/?story=${encodeURIComponent(notification.storyId)}`
+            : notification.type === "live_room"
             ? "/dms?view=live_rooms"
             : notification.postId
             ? `/post/${notification.postId}`
@@ -279,10 +255,11 @@ export default function NotificationsPage() {
               style={{ transform: `translateY(${virtualRow.start - virtualScrollMargin}px)` }}
             >
               <Link
+                data-notification-id={notification.id}
                 to={target}
-                onClick={() => { if (!notification.readAt) markRead(notification.id); }}
+                onClick={() => markRead(notification.id)}
                 className={`${activityRow} items-start ${
-                  notification.readAt ? "" : "bg-blue-50/60 hover:bg-blue-50"
+                  notification.readAt ? "" : "alert-unread-row"
                 }`}
               >
                 <Avatar
@@ -305,7 +282,7 @@ export default function NotificationsPage() {
                   </time>
                 </span>
                 {!notification.readAt && (
-                  <span aria-label="Unread" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+                  <span aria-label="Unread" className="alert-unread-dot mt-1.5 h-2 w-2 shrink-0 rounded-full" />
                 )}
               </Link>
             </div>

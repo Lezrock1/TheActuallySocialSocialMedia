@@ -6,6 +6,7 @@ import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { env } from "../env.js";
 import { isValidTimeZone } from "../quietHours.js";
+import { completeUserNotifications } from "../notifications.js";
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
@@ -164,6 +165,11 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
+  app.get("/notifications/push/active", { preHandler: requireAuth }, async (request, reply) => {
+    const notifications = await prisma.notification.findMany({ where: { recipientId: request.userId!, readAt: null, dismissedAt: null }, select: { id: true } });
+    return reply.header("Cache-Control", "no-store").send({ tags: notifications.map((notification) => notification.id) });
+  });
+
   app.get<{ Querystring: { cursor?: string; limit?: string } }>(
     "/notifications",
     { preHandler: requireAuth },
@@ -171,7 +177,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
       const limit = Math.min(Math.max(Number(request.query.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
       const [rows, unreadCount] = await Promise.all([
         prisma.notification.findMany({
-          where: { recipientId: request.userId!, type: { notIn: ["message", "snap", ...FEED_NOTIFICATION_TYPES] } },
+          where: { recipientId: request.userId!, dismissedAt: null, type: { notIn: ["message", "snap", ...FEED_NOTIFICATION_TYPES] } },
           include: { actor: true, comment: { select: { text: true } } },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: limit + 1,
@@ -198,6 +204,9 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
         conversationId: row.conversationId,
         snapId: row.snapId,
         commentText: row.comment?.text ?? null,
+        storyId: row.storyId,
+        reactionEmoji: row.reactionEmoji,
+        dismissedAt: row.dismissedAt?.toISOString() ?? null,
         createdAt: row.createdAt.toISOString(),
         readAt: row.readAt?.toISOString() ?? null,
       }));
@@ -214,10 +223,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     "/notifications/:id/read",
     { preHandler: requireAuth },
     async (request, reply) => {
-      await prisma.notification.updateMany({
-        where: { id: request.params.id, recipientId: request.userId!, readAt: null },
-        data: { readAt: new Date() },
-      });
+      await completeUserNotifications(request.server.io, request.userId!, { id: request.params.id });
       return reply.code(204).send();
     }
   );
@@ -226,15 +232,8 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     "/notifications/feed/read",
     { preHandler: requireAuth },
     async (request, reply) => {
-      const result = await prisma.notification.updateMany({
-        where: {
-          recipientId: request.userId!,
-          readAt: null,
-          type: { in: FEED_NOTIFICATION_TYPES },
-        },
-        data: { readAt: new Date() },
-      });
-      return reply.send({ updated: result.count });
+      const updated = await completeUserNotifications(request.server.io, request.userId!, { readAt: null, type: { in: FEED_NOTIFICATION_TYPES } });
+      return reply.send({ updated });
     }
   );
 
@@ -242,15 +241,8 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     "/notifications/read-all",
     { preHandler: requireAuth },
     async (request, reply) => {
-      const result = await prisma.notification.updateMany({
-        where: {
-          recipientId: request.userId!,
-          readAt: null,
-          type: { notIn: ["message", "snap", ...FEED_NOTIFICATION_TYPES] },
-        },
-        data: { readAt: new Date() },
-      });
-      return reply.send({ updated: result.count });
+      const updated = await completeUserNotifications(request.server.io, request.userId!, { readAt: null, type: { notIn: ["message", "snap", ...FEED_NOTIFICATION_TYPES] } }, false);
+      return reply.send({ updated });
     }
   );
 }

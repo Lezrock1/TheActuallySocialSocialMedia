@@ -117,7 +117,9 @@ test("mobile navigation stays at viewport bottom, outside transformed content, a
     window.scrollTo(0, 600);
   });
   let box = await nav.boundingBox();
-  expect(Math.abs(page.viewportSize().height - box.y - box.height)).toBeLessThan(45);
+  expect(Math.abs(page.viewportSize().height - box.y - box.height)).toBeLessThan(2);
+  expect(Math.abs(box.x)).toBeLessThan(2);
+  expect(Math.abs(box.width - page.viewportSize().width)).toBeLessThan(2);
   const field = page.getByRole("textbox").first();
   await field.focus();
   await page.evaluate(() => {
@@ -133,7 +135,7 @@ test("mobile navigation stays at viewport bottom, outside transformed content, a
   });
   await expect(nav).toBeVisible();
   box = await nav.boundingBox();
-  expect(Math.abs(page.viewportSize().height - box.y - box.height)).toBeLessThan(45);
+  expect(Math.abs(page.viewportSize().height - box.y - box.height)).toBeLessThan(2);
   await page.screenshot({ path: `screenshots/${info.project.name}/navigation-fixed.png` });
 });
 

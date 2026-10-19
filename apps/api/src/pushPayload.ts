@@ -7,6 +7,8 @@ export interface PushPayloadInput {
   postId?: string;
   conversationId?: string;
   snapId?: string;
+  storyId?: string;
+  reactionEmoji?: string;
 }
 
 const activityText: Record<NotificationType, string> = {
@@ -33,6 +35,8 @@ const activityText: Record<NotificationType, string> = {
 export function createPushPayload(input: PushPayloadInput) {
   const url = input.type === "live_room"
     ? "/dms?view=live_rooms"
+    : input.storyId
+    ? `/?story=${encodeURIComponent(input.storyId)}`
     : input.conversationId
     ? `/dms?conversation=${encodeURIComponent(input.conversationId)}`
     : input.snapId
@@ -43,7 +47,7 @@ export function createPushPayload(input: PushPayloadInput) {
 
   return {
     title: "InTouch",
-    body: `@${input.actorUsername} ${activityText[input.type]}`,
+    body: `@${input.actorUsername} ${activityText[input.type]}${input.type === "story_reaction" && input.reactionEmoji ? ` ${input.reactionEmoji}` : ""}`,
     url,
     tag: input.notificationId,
   };

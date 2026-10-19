@@ -19,8 +19,7 @@ import type { PublicEncryptionKey } from "../lib/encryption.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 import { InlineSkeletonText } from "../components/LoadingSkeleton.js";
 import { card, input, btnPrimary, btnSecondary } from "../lib/ui.js";
-import { MusicTastePanel, NowPlayingProfile } from "../components/music/MusicProfile.js";
-import { MusicMixesProfile } from "../components/music/Mixes.js";
+import MusicControls, { MusicIcon } from "../components/music/MusicControls.js";
 
 async function fetchProfile(username: string): Promise<UserProfile> {
   const res = await apiFetch<{ profile: UserProfile }>(`/users/${username}`);
@@ -359,11 +358,16 @@ export default function ProfilePage() {
             )}
           </div>
 
-          <div className="mb-6 grid gap-3 sm:grid-cols-2">
-            <NowPlayingProfile username={profile.username} isOwnProfile={profile.isMe} canViewStatus={profile.isFollowedByMe} />
-            <MusicTastePanel username={profile.username} isOwnProfile={profile.isMe} />
-          </div>
-          <MusicMixesProfile username={profile.username} isOwnProfile={profile.isMe} />
+          <details className="music-disclosure group mb-6">
+            <summary>
+              <span className="music-disclosure-icon"><MusicIcon /></span>
+              <span className="flex-1 text-[15px] font-semibold">Music</span>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-90 motion-reduce:transition-none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 5 7 7-7 7" /></svg>
+            </summary>
+            <div className="pt-3">
+              <MusicControls key={profile.username} username={profile.username} isOwnProfile={profile.isMe} canViewStatus={profile.isFollowedByMe} />
+            </div>
+          </details>
 
           {reportStatus && <p role="status" className="mb-3 text-sm text-green-700">{reportStatus}</p>}          {profileActionError && <p role="alert" className="mb-3 text-sm text-red-600">{profileActionError}</p>}
 
