@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { TRANSLATION_LANGUAGES } from "@app/shared";
@@ -34,11 +34,13 @@ function PostCard({
   seen,
   currentUserId,
   onDeleted,
+  mediaPriority = false,
 }: {
   post: FeedPost;
   seen?: boolean;
   currentUserId?: string;
   onDeleted?: (postId: string) => void;
+  mediaPriority?: boolean;
 }) {
   const [commentCount, setCommentCount] = useState(post.commentCount);
   const [translation, setTranslation] = useState<string | null>(null);
@@ -162,17 +164,10 @@ function PostCard({
       )}
       {post.pollId && <PollCard pollId={post.pollId} />}
       {post.imageKey && post.mediaType === "video" ? (
-        <video
-          src={`${mediaUrl(post.imageKey)}#t=0.1`}
-          poster={mediaPosterUrl(post.imageKey)}
-          controls
-          playsInline
-          preload="metadata"
-          className="mx-auto mt-2 block h-auto max-h-[32rem] w-auto max-w-full rounded-lg"
-        />
+        <PostVideo key={`${post.id}:${post.imageKey}`} mediaKey={post.imageKey} priority={mediaPriority} />
       ) : post.imageKey && (
         <button type="button" aria-label={`Enlarge photo by @${post.author.username}`} onClick={() => setPhotoOpen(true)} className="mt-2 block w-full cursor-zoom-in rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
-          <ProgressiveImage mediaKey={post.imageKey} className="rounded-lg" />
+          <ProgressiveImage mediaKey={post.imageKey} className="rounded-lg" priority={mediaPriority} />
         </button>
       )}
       {photoOpen && post.imageKey && <ImageLightbox mediaKey={post.imageKey} onClose={() => setPhotoOpen(false)} />}
@@ -206,6 +201,48 @@ function PostCard({
         onConfirm={() => void onDelete()}
       />
     </article>
+  );
+}
+
+function PostVideo({ mediaKey, priority }: { mediaKey: string; priority: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const poster = mediaPosterUrl(mediaKey);
+  return (
+    <div className="relative mx-auto mt-2 flex min-h-48 max-h-[32rem] w-full items-center justify-center overflow-hidden rounded-lg bg-gray-950">
+      <img
+        src={poster}
+        alt=""
+        aria-hidden="true"
+        loading={priority ? "eager" : "lazy"}
+        fetchPriority={priority ? "high" : "low"}
+        decoding="async"
+        className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${ready ? "opacity-0" : "opacity-100"}`}
+      />
+      <video
+        ref={videoRef}
+        src={`${mediaUrl(mediaKey)}#t=0.1`}
+        poster={poster}
+        aria-label="Post video"
+        controls
+        playsInline
+        preload="metadata"
+        onLoadedData={() => { setReady(true); setFailed(false); }}
+        onError={() => setFailed(true)}
+        className={`relative mx-auto block h-auto min-h-48 max-h-[32rem] w-auto max-w-full object-contain transition-opacity duration-300 ${ready && !failed ? "opacity-100" : "opacity-0"}`}
+      />
+      {!ready && !failed && (
+        <span role="status" aria-label="Loading post video" className="absolute inset-0 flex items-center justify-center bg-black/10">
+          <span aria-hidden="true" className="h-10 w-10 animate-spin rounded-full border-[3px] border-white/30 border-t-white shadow-lg motion-reduce:animate-none" />
+        </span>
+      )}
+      {failed && (
+        <button type="button" onClick={() => { setFailed(false); videoRef.current?.load(); }} className="absolute z-10 rounded bg-black/70 px-4 py-2 text-sm text-white">
+          Retry video
+        </button>
+      )}
+    </div>
   );
 }
 

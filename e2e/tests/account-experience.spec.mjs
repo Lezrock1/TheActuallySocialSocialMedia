@@ -161,7 +161,7 @@ test("Appearance keeps theme stable through color changes, navigation and repeat
   }
 });
 
-test("Story rings persist only completed views and reopen at the first unseen Story", async ({ browser, page, context }) => {
+test("Story rings persist as soon as media is viewed and reopen at the first unseen Story", async ({ browser, page, context }) => {
   const mia = await browser.newContext({ baseURL: "http://localhost:5173", storageState: ".auth/mia.json", extraHTTPHeaders: { "x-forwarded-for": "198.51.100.77" } });
   const created = [];
   try {
@@ -176,9 +176,13 @@ test("Story rings persist only completed views and reopen at the first unseen St
     await page.goto(`/?story=${first.id}`);
     const dialog = page.getByRole("dialog", { name: "Stories from @mia" });
     await expect(dialog.getByRole("img", { name: /^Story/ })).toBeVisible();
+    await expect.poll(async () => {
+      const groups = (await (await context.request.get(`${API}/stories`)).json()).groups;
+      return groups.flatMap((group) => group.stories).find((story) => story.id === first.id).viewedAt;
+    }).toBeTruthy();
     await page.getByRole("button", { name: "Close stories" }).click();
     let groups = (await (await context.request.get(`${API}/stories`)).json()).groups;
-    expect(groups.flatMap((group) => group.stories).find((story) => story.id === first.id).viewedAt).toBeNull();
+    expect(groups.flatMap((group) => group.stories).find((story) => story.id === first.id).viewedAt).toBeTruthy();
     await page.goto(`/?story=${first.id}`);
     await expect(dialog.getByRole("img", { name: /^Story/ })).toBeVisible();
     await page.clock.fastForward(7500);
@@ -190,11 +194,11 @@ test("Story rings persist only completed views and reopen at the first unseen St
     await page.reload();
     const ring = page.getByRole("button", { name: "Stories from @mia · Unseen stories", exact: true });
     await expect(ring).toBeVisible();
-    await ring.click();
     const latest = (await (await context.request.get(`${API}/stories`)).json()).groups.find((group) => group.author.username === "mia");
     const expectedIndex = latest.stories.findIndex((story) => !story.viewedAt);
+    expect(expectedIndex).toBeGreaterThanOrEqual(0);
+    await ring.click();
     await expect(dialog.getByRole("img", { name: `Story ${expectedIndex + 1} from @mia`, exact: true })).toBeVisible();
-    expect(latest.stories.find((story) => story.id === second.id).viewedAt).toBeNull();
   } finally {
     for (const id of created) await mia.request.delete(`${API}/stories/${id}`);
     await mia.close();
@@ -216,14 +220,13 @@ test("Story rings survive failed saves and refresh, synchronize devices and reve
     };
     const first = await create();
     await page.clock.install();
+    let failedWrites = 0;
+    const viewUrl = `**/stories/${first.id}/view`;
+    await page.route(viewUrl, (route) => { failedWrites++; return route.abort("failed"); });
     await page.goto(`/?story=${first.id}`);
     const other = await otherDevice.newPage(); await other.goto("/");
     await expect.poll(() => other.evaluate(async () => (await import("/src/lib/socket.ts")).getSocket().connected)).toBe(true);
     await expect(page.getByRole("dialog", { name: "Stories from @mia" }).getByRole("img", { name: /^Story/ })).toBeVisible();
-    let failedWrites = 0;
-    const viewUrl = `**/stories/${first.id}/view`;
-    await page.route(viewUrl, (route) => { failedWrites++; return route.abort("failed"); });
-    await page.clock.fastForward(7500);
     await expect.poll(() => failedWrites).toBeGreaterThan(0);
     await expect(page.getByRole("button", { name: "Stories from @mia · All seen", exact: true })).toBeVisible();
     await page.reload();
@@ -245,7 +248,8 @@ test("Story rings survive failed saves and refresh, synchronize devices and reve
   }
 });
 
-test("camera startup coalesces visibility restarts and releases a late permission after close", async ({ page }) => {
+test("camera startup coalesces visibility restarts and releases a late permission after close", async ({ page }, info) => {
+  test.skip(info.project.name !== "android", "WebKit does not allow overriding its native camera permission prompt");
   await page.addInitScript(() => {
     Object.defineProperty(document, "hidden", { configurable: true, value: false });
     const tracks = [];
@@ -317,10 +321,21 @@ test("equivalent media requests reuse an active source but request again after e
   await page.goto("/");
   const result = await page.evaluate(async () => {
     const { requestUserMedia } = await import("/src/lib/mediaPermissions.ts");
+    class TestMediaStream {
+      constructor(tracks = []) { this.tracks = tracks; }
+      getTracks() { return this.tracks; }
+      getAudioTracks() { return this.tracks.filter((track) => track.kind === "audio"); }
+      getVideoTracks() { return this.tracks.filter((track) => track.kind === "video"); }
+      clone() { return new TestMediaStream(this.tracks.map((track) => track.clone())); }
+    }
+    Object.defineProperty(window, "MediaStream", { configurable: true, value: TestMediaStream });
     let calls = 0;
+    const makeTrack = () => {
+      let readyState = "live";
+      return { kind: "audio", get readyState() { return readyState; }, stop() { readyState = "ended"; }, clone: makeTrack };
+    };
     const makeStream = () => {
-      const track = { readyState: "live", stop() { this.readyState = "ended"; } };
-      return { getTracks: () => [track], clone: makeStream };
+      return new TestMediaStream([makeTrack()]);
     };
     navigator.mediaDevices.getUserMedia = async () => { calls++; return makeStream(); };
     const first = await requestUserMedia({ audio: { noiseSuppression: true, echoCancellation: true } });
@@ -342,6 +357,13 @@ test("simultaneous media requests prompt only once and do not retain active hard
   await page.goto("/");
   const result = await page.evaluate(async () => {
     const { requestUserMedia } = await import("/src/lib/mediaPermissions.ts");
+    class TestMediaStream {
+      constructor(tracks = []) { this.tracks = tracks; }
+      getTracks() { return this.tracks; }
+      getAudioTracks() { return this.tracks.filter((track) => track.kind === "audio"); }
+      getVideoTracks() { return this.tracks.filter((track) => track.kind === "video"); }
+    }
+    Object.defineProperty(window, "MediaStream", { configurable: true, value: TestMediaStream });
     let count = 0, sourceStops = 0;
     const cloneStops = [];
     let resolve;
@@ -358,4 +380,46 @@ test("simultaneous media requests prompt only once and do not retain active hard
     return { count, sourceStops, before, after: cloneStops };
   });
   expect(result).toEqual({ count: 1, sourceStops: 1, before: [1, 0], after: [1, 1] });
+});
+
+test("media permission sharing reuses compatible tracks across differing constraints", async ({ page }) => {
+  await page.goto("/");
+  const result = await page.evaluate(async () => {
+    const { requestUserMedia } = await import("/src/lib/mediaPermissions.ts");
+    const makeTrack = (kind) => {
+      let readyState = "live";
+      return { kind, get readyState() { return readyState; }, stop() { readyState = "ended"; }, clone: () => makeTrack(kind) };
+    };
+    class TestMediaStream {
+      constructor(tracks = []) { this.tracks = tracks; }
+      getTracks() { return this.tracks; }
+      getAudioTracks() { return this.tracks.filter((track) => track.kind === "audio"); }
+      getVideoTracks() { return this.tracks.filter((track) => track.kind === "video"); }
+      clone() { return new TestMediaStream(this.tracks.map((track) => track.clone())); }
+    }
+    Object.defineProperty(window, "MediaStream", { configurable: true, value: TestMediaStream });
+    let calls = 0;
+    const requested = [];
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      calls++;
+      requested.push(constraints);
+      return new TestMediaStream([...(constraints.audio ? [makeTrack("audio")] : []), ...(constraints.video ? [makeTrack("video")] : [])]);
+    };
+    const first = await requestUserMedia({ audio: false, video: { facingMode: "user", width: { ideal: 1280 } } });
+    const second = await requestUserMedia({ audio: true, video: { facingMode: "user", width: { ideal: 640 } } });
+    const sharedCamera = { calls, request: requested[1], tracks: second.getTracks().map((track) => track.kind) };
+    const third = await requestUserMedia({ audio: true, video: { facingMode: "environment" } });
+    const differentCamera = { calls, request: requested[2], tracks: third.getTracks().map((track) => track.kind) };
+    first.getTracks().forEach((track) => track.stop());
+    second.getTracks().forEach((track) => track.stop());
+    third.getTracks().forEach((track) => track.stop());
+    const fresh = await requestUserMedia({ audio: false, video: { facingMode: "user" } });
+    fresh.getTracks().forEach((track) => track.stop());
+    return { sharedCamera, differentCamera, afterAllStopped: calls };
+  });
+  expect(result).toEqual({
+    sharedCamera: { calls: 2, request: { audio: true, video: false }, tracks: ["video", "audio"] },
+    differentCamera: { calls: 3, request: { audio: false, video: { facingMode: "environment" } }, tracks: ["audio", "video"] },
+    afterAllStopped: 4,
+  });
 });

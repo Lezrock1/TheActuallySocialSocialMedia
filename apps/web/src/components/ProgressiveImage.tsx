@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { mediaPreviewUrl, mediaUrl } from "../lib/upload.js";
 
 // Blur-up loading: a tiny preview sets the layout and the sharp image fades in over it.
-export default function ProgressiveImage({ mediaKey, className = "" }: { mediaKey: string; className?: string }) {
+export default function ProgressiveImage({ mediaKey, className = "", priority = false }: { mediaKey: string; className?: string; priority?: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
   const fullRef = useRef<HTMLImageElement>(null);
@@ -14,7 +14,7 @@ export default function ProgressiveImage({ mediaKey, className = "" }: { mediaKe
   }, [mediaKey]);
 
   if (previewFailed) {
-    return <img src={mediaUrl(mediaKey)} alt="" loading="lazy" decoding="async" className={`${className} w-full object-cover`} />;
+    return <img src={mediaUrl(mediaKey)} alt="" loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "low"} decoding="async" onLoad={() => setLoaded(true)} className={`${className} w-full object-cover`} />;
   }
 
   return (
@@ -23,6 +23,8 @@ export default function ProgressiveImage({ mediaKey, className = "" }: { mediaKe
         src={mediaPreviewUrl(mediaKey)}
         alt=""
         aria-hidden="true"
+        loading={priority ? "eager" : "lazy"}
+        fetchPriority={priority ? "high" : "low"}
         decoding="async"
         onError={() => setPreviewFailed(true)}
         className={`block max-h-96 w-full scale-110 object-cover blur-xl transition-opacity duration-500 ${loaded ? "opacity-0" : "opacity-100"}`}
@@ -31,7 +33,8 @@ export default function ProgressiveImage({ mediaKey, className = "" }: { mediaKe
         ref={fullRef}
         src={mediaUrl(mediaKey)}
         alt=""
-        loading="lazy"
+        loading={priority ? "eager" : "lazy"}
+        fetchPriority={priority ? "high" : "low"}
         decoding="async"
         onLoad={() => setLoaded(true)}
         className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}

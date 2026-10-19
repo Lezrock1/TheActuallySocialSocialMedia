@@ -61,10 +61,12 @@ test("Stories decode atomically, pause while replying or holding, and advance ac
   const progress = () => page.getByRole("progressbar", { name: "Story progress" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("img", { name: "Story 1 from @mia" })).toHaveCount(0);
+  await expect(dialog.getByRole("status", { name: "Loading Story 1 from @mia" })).toBeVisible();
   await page.clock.fastForward(12_000);
   await expect(progress()).toHaveAttribute("aria-valuenow", "0");
   releaseRed();
   await expect(dialog.getByRole("img", { name: "Story 1 from @mia" })).toBeVisible();
+  await expect(dialog.getByRole("status", { name: "Loading Story 1 from @mia" })).toHaveCount(0);
   await dialog.getByPlaceholder("Reply to @mia...").focus();
   await dialog.getByPlaceholder("Reply to @mia...").press("ArrowRight");
   await expect(dialog.getByRole("img", { name: "Story 1 from @mia" })).toBeVisible();
@@ -151,6 +153,29 @@ test("Moment identities survive refresh and slow media never overlays another pe
   await expect(dialog.getByRole("img", { name: "Moment from @leo" })).toBeVisible();
   await expect(dialog.getByRole("img", { name: "Moment from @mia" })).toHaveCount(0);
   await page.screenshot({ path: `screenshots/${info.project.name}/moment-stable-media.png`, animations: "disabled" });
+});
+
+test("feed video keeps its poster and loading status until playback data is ready", async ({ page }, info) => {
+  test.skip(info.project.name !== "android", "Synthetic WebM playback is unsupported in the WebKit project");
+  const clip = await videoFixture(page);
+  await page.route(/\/feed\?/, (route) => route.fulfill({ headers, json: {
+    items: [{ type: "post", id: "video-feed-item", createdAt, post: {
+      id: "video-feed-post", author: person("mia"), text: "Video post", imageKey: "feed-clip.webm", mediaType: "video",
+      createdAt, visibility: "public", circle: null, parentPostId: null, pollId: null, replyCount: 0, commentCount: 0, factCheckCount: 0,
+    } }],
+    nextCursor: null, caughtUp: false, boundaryIndex: null,
+  } }));
+  await page.route(/\/media\/feed-clip\.webm\?poster=1/, (route) => route.fulfill({ headers, contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") }));
+  let releaseVideo;
+  const videoGate = new Promise((resolve) => { releaseVideo = resolve; });
+  let videoRequests = 0;
+  await page.route(/\/media\/feed-clip\.webm$/, async (route) => { videoRequests++; await videoGate; await route.fulfill({ headers, contentType: "video/webm", body: clip }); });
+  await page.goto("/");
+  await expect(page.getByRole("status", { name: "Loading post video" })).toBeVisible();
+  await expect.poll(() => videoRequests).toBeGreaterThan(0);
+  releaseVideo();
+  await expect(page.getByRole("status", { name: "Loading post video" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry video" })).toHaveCount(0);
 });
 
 test("Snaps load without consuming, pause for hold and reply, and advance without replaying stale inbox entries", async ({ page }, info) => {

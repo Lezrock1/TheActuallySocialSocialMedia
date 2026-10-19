@@ -183,6 +183,14 @@ export default function PageHeader({
                 <p>
                   InTouch is an open-source and non-profit social space to share moments and stay connected with people. We believe technology, AI, and social media should serve people — not maximize screen time or attention. With a chronological feed, no ads or ranking, plus stories, Snaps, and direct messages, InTouch helps you stay up to date and spend more time together in real life. Our goal is to put people back in control of social media.
                 </p>
+                <a
+                  href="https://github.com/Lezrock1/TheActuallySocialSocialMedia"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-block font-medium text-gray-900 underline underline-offset-2 hover:text-gray-600"
+                >
+                  View the open-source project on GitHub
+                </a>
                 <p className="mt-4 font-bold text-gray-900">Power to the people! 🦖</p>
               </div>
             ) : (

@@ -209,6 +209,7 @@ export default function FeedPage() {
     scrollMargin: virtualScrollMargin,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
+  const firstRenderedPostIndex = virtualRows.find((virtualRow) => feedRows[virtualRow.index]?.kind === "post")?.index;
 
   useEffect(() => {
     const cursor = lastPage?.nextCursor;
@@ -539,6 +540,7 @@ export default function FeedPage() {
                     post={row.item.post}
                     currentUserId={user?.id}
                     onDeleted={onPostDeleted}
+                    mediaPriority={virtualRow.index === firstRenderedPostIndex}
                   />
                 </div>
               ) : (

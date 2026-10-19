@@ -7,7 +7,7 @@ import type { FormEvent } from "react";
 import { STORY_REACTIONS } from "@app/shared";
 import type { MomentFeed, MomentPostItem, StoryGroup, StoryMeetup } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
-import { mediaPosterUrl, mediaUrl, preloadMediaKeys } from "../lib/upload.js";
+import { mediaPosterUrl, mediaPreviewUrl, mediaUrl, preloadMediaKeys, preloadMediaUrl } from "../lib/upload.js";
 import Avatar from "./Avatar.js";
 import DecodedImage from "./DecodedImage.js";
 import PlaybackProgress from "./PlaybackProgress.js";
@@ -71,6 +71,7 @@ function StoryVideo({ src, poster, paused, onReady, onWaiting, onEnd }: {
   const ref = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(false);
   const [ready, setReady] = useState(false);
+  const [waiting, setWaiting] = useState(true);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -102,14 +103,21 @@ function StoryVideo({ src, poster, paused, onReady, onWaiting, onEnd }: {
         playsInline
         muted={muted}
         preload="auto"
-        onLoadedData={(event) => { setReady(true); setFailed(false); onReady(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 7000); }}
-        onPlaying={(event) => onReady(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 7000)}
-        onWaiting={onWaiting}
+        onLoadedData={(event) => { setReady(true); setWaiting(false); setFailed(false); onReady(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 7000); }}
+        onPlaying={(event) => { setWaiting(false); onReady(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 7000); }}
+        onWaiting={() => { setWaiting(true); onWaiting(); }}
         onEnded={onEnd}
         onError={() => { setFailed(true); onWaiting(); }}
-        className={`h-full w-full object-contain ${ready && !failed ? "opacity-100" : "opacity-0"}`}
+        className={`h-full w-full object-contain transition-opacity duration-300 ${ready && !failed ? "opacity-100" : "opacity-0"}`}
       />
-      {!ready && !failed && <DecodedImage src={poster} alt="Story video preview" className="pointer-events-none absolute inset-0" />}
+      {(!ready || waiting) && !failed && (
+        <>
+          <img src={poster} alt="" aria-hidden="true" fetchPriority="high" decoding="async" className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
+          <span role="status" aria-label="Loading Story video" className="absolute inset-0 flex items-center justify-center bg-black/10">
+            <span aria-hidden="true" className="h-10 w-10 animate-spin rounded-full border-[3px] border-white/30 border-t-white shadow-lg motion-reduce:animate-none" />
+          </span>
+        </>
+      )}
       {failed && <button type="button" data-viewer-controls aria-label="Retry Story video" onClick={() => { setFailed(false); ref.current?.load(); }} className="absolute z-20 rounded bg-black/70 px-4 py-2 text-sm text-white">Retry video</button>}
       <button
         type="button"
@@ -124,6 +132,88 @@ function StoryVideo({ src, poster, paused, onReady, onWaiting, onEnd }: {
         </svg>
       </button>
     </>
+  );
+}
+
+function StoryImage({ imageKey, alt, onReady }: { imageKey: string; alt: string; onReady: () => void }) {
+  const [attempt, setAttempt] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const url = attempt ? `${mediaUrl(imageKey)}?retry=${attempt}` : mediaUrl(imageKey);
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-neutral-950">
+      {!previewFailed && (
+        <img
+          src={mediaPreviewUrl(imageKey)}
+          alt=""
+          aria-hidden="true"
+          fetchPriority="high"
+          decoding="async"
+          onError={() => setPreviewFailed(true)}
+          className={`pointer-events-none absolute inset-0 h-full w-full scale-105 object-contain blur-xl transition-opacity duration-500 ${loaded ? "opacity-0" : "opacity-60"}`}
+        />
+      )}
+      {!failed && (
+        <img
+          src={url}
+          alt={loaded ? alt : ""}
+          aria-hidden={!loaded}
+          fetchPriority="high"
+          decoding="async"
+          onLoad={() => { setLoaded(true); setFailed(false); onReady(); }}
+          onError={() => setFailed(true)}
+          className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ease-out ${loaded ? "opacity-100" : "opacity-0"}`}
+        />
+      )}
+      {!loaded && !failed && (
+        <span role="status" aria-label={`Loading ${alt}`} className="absolute inset-0 flex items-center justify-center bg-black/10">
+          <span aria-hidden="true" className="h-10 w-10 animate-spin rounded-full border-[3px] border-white/30 border-t-white shadow-lg motion-reduce:animate-none" />
+        </span>
+      )}
+      {failed && (
+        <button type="button" data-viewer-controls aria-label={`Retry ${alt}`} onClick={() => { setLoaded(false); setFailed(false); setAttempt((value) => value + 1); }} className="absolute inset-0 z-20 m-auto h-fit rounded bg-black/70 px-4 py-2 text-sm text-white">
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
+function StoryRingThumbnail({ imageKey, username }: { imageKey: string; username: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  return (
+    <span className="relative block h-[52px] w-[52px] overflow-hidden rounded-full bg-gray-100">
+      {!loaded && (
+        <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm font-semibold text-gray-400">
+          {username.slice(0, 1).toUpperCase()}
+        </span>
+      )}
+      {!previewFailed && (
+        <img
+          src={mediaPreviewUrl(imageKey)}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+          onError={() => setPreviewFailed(true)}
+          className={`absolute inset-0 h-full w-full scale-110 rounded-full object-cover blur-sm transition-opacity duration-300 ${loaded ? "opacity-0" : "opacity-100"}`}
+        />
+      )}
+      {!failed && (
+        <img
+          src={mediaUrl(imageKey)}
+          alt={username}
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setLoaded(true)}
+          onError={() => setFailed(true)}
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-out ${loaded ? "opacity-100" : "opacity-0"}`}
+        />
+      )}
+    </span>
   );
 }
 
@@ -326,10 +416,9 @@ export default function StoriesBar() {
     if (!activeStory) return;
     setStoryReadyId(activeStory.id);
     if (durationMs) setVideoDurationMs(durationMs);
+    if (!isSeen(activeStory)) saveCompletedView(activeStory);
   }
   function completeStory() {
-    if (!activeStory || isSeen(activeStory)) { advanceStory(1); return; }
-    saveCompletedView(activeStory);
     advanceStory(1);
   }
 
@@ -346,19 +435,19 @@ export default function StoriesBar() {
   }, [viewing, storyIndex, groups]);
 
   useEffect(() => {
+    const storyKeysToWarm = groups.slice(0, loadingPolicy.preloadCount).map((group) => group.stories[0]?.imageKey ?? null);
     const keysToWarm: Array<string | null> = [];
-    groups.slice(0, loadingPolicy.preloadCount).forEach((group) => {
-      keysToWarm.push(group.stories[0]?.imageKey ?? null);
-    });
+    const adjacentStoryPreviews: string[] = [];
 
     if (viewing) {
-      keysToWarm.push(
-        viewing.stories[storyIndex]?.imageKey ?? null,
-        viewing.stories[storyIndex - 1]?.imageKey ?? null,
-        viewing.stories[storyIndex + 1]?.imageKey ?? null,
-        viewing.author.avatarKey,
-        groups[viewingGroupIndex + 1]?.stories[0]?.imageKey ?? null
-      );
+      const currentStory = viewing.stories[storyIndex];
+      keysToWarm.push(currentStory?.imageKey ?? null, currentStory?.videoKey ?? null, viewing.author.avatarKey);
+      const previousStory = viewing.stories[storyIndex - 1];
+      const nextStory = viewing.stories[storyIndex + 1];
+      if (previousStory) adjacentStoryPreviews.push(previousStory.imageKey);
+      if (nextStory) adjacentStoryPreviews.push(nextStory.imageKey);
+      const nextGroupImage = groups[viewingGroupIndex + 1]?.stories[0]?.imageKey;
+      if (nextGroupImage) adjacentStoryPreviews.push(nextGroupImage);
     }
 
     if (myMoment) {
@@ -368,6 +457,8 @@ export default function StoriesBar() {
       keysToWarm.push(...momentViewer.posts.slice(0, loadingPolicy.preloadCount).map((post) => post.mediaType === "video" ? null : post.imageKey));
     }
 
+    storyKeysToWarm.forEach((key) => { if (key) preloadMediaUrl(mediaPreviewUrl(key), { priority: "high" }); });
+    adjacentStoryPreviews.forEach((key) => preloadMediaUrl(mediaPreviewUrl(key), { priority: "low" }));
     preloadMediaKeys(keysToWarm, { priority: viewing ? "high" : "low" });
   }, [groups, loadingPolicy.preloadCount, momentViewer, myMoment, storyIndex, viewing]);
 
@@ -630,7 +721,7 @@ export default function StoriesBar() {
           >
             <span className={`rounded-full p-0.5 ${group.stories.every(isSeen) ? "bg-gray-300" : "bg-emerald-600"}`}>
               <span className="block rounded-full border-2 border-white">
-                <DecodedImage key={group.stories[0].imageKey} src={mediaUrl(group.stories[0].imageKey)} alt={group.author.username} className="h-[52px] w-[52px] rounded-full" imageClassName="object-cover" />
+                <StoryRingThumbnail key={group.stories[0].imageKey} imageKey={group.stories[0].imageKey} username={group.author.username} />
               </span>
             </span>
             <span className="max-w-[60px] truncate text-[11px] text-gray-600">@{group.author.username}</span>
@@ -711,12 +802,11 @@ export default function StoriesBar() {
                   onEnd={completeStory}
                 />
               ) : (
-              <DecodedImage
+              <StoryImage
                 key={activeStory.id}
-                src={mediaUrl(viewing.stories[storyIndex].imageKey)}
+                imageKey={activeStory.imageKey}
                 alt={`Story ${storyIndex + 1} from @${viewing.author.username}`}
                 onReady={() => storyLoaded()}
-                className="h-full w-full"
               />
               )}
               <button
