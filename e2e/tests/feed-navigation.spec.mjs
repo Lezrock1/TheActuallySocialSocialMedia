@@ -120,6 +120,12 @@ test("mobile navigation stays at viewport bottom, outside transformed content, a
   expect(Math.abs(page.viewportSize().height - box.y - box.height)).toBeLessThan(2);
   expect(Math.abs(box.x)).toBeLessThan(2);
   expect(Math.abs(box.width - page.viewportSize().width)).toBeLessThan(2);
+  const surface = await nav.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { bottomPadding: parseFloat(style.paddingBottom), background: style.backgroundColor };
+  });
+  expect(surface.bottomPadding).toBeGreaterThanOrEqual(20);
+  expect(surface.background).toMatch(/^rgb\(/);
   const field = page.getByRole("textbox").first();
   await field.focus();
   await page.evaluate(() => {

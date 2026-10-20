@@ -162,8 +162,8 @@ export function MobileNav() {
   return createPortal(
       <nav
         aria-label="Primary navigation"
-        className={`${keyboardOpen ? "hidden" : "grid"} fixed inset-x-0 bottom-0 z-40 w-full grid-cols-5 items-stretch gap-1 border-t border-gray-200 bg-white/95 px-4 pt-1 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:hidden`}
-        style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        className={`${keyboardOpen ? "hidden" : "grid"} fixed inset-x-0 bottom-0 z-40 w-full grid-cols-5 items-stretch gap-1 border-t border-gray-200 bg-white px-4 pt-1 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:hidden`}
+        style={{ paddingBottom: "calc(max(0.5rem, env(safe-area-inset-bottom)) + 0.75rem)" }}
       >
         <NavLink to="/" end className={mobileLinkClass}>
           <span className="relative inline-flex">
