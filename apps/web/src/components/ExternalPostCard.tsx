@@ -29,7 +29,14 @@ export default function ExternalPostCard({ item }: { item: ExternalFeedPost }) {
       )}
       {image && (
         <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-2 block overflow-hidden rounded-lg">
-          <img src={image} alt="" loading="lazy" className="max-h-96 w-full rounded-lg object-cover" />
+          <img
+            src={image}
+            alt=""
+            loading="lazy"
+            className={item.platform === "youtube"
+              ? "aspect-video w-full rounded-lg object-cover"
+              : "max-h-96 w-full rounded-lg object-cover"}
+          />
         </a>
       )}
       <div className="mt-3 flex items-center justify-between gap-2">

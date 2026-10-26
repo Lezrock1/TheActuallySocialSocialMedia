@@ -220,7 +220,6 @@ export function parseYouTubeRss(xml: string, follow: ExternalFollow): ExternalFe
     const videoId = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/)?.[1];
     const title = entry.match(/<title>([^<]*)<\/title>/)?.[1] ?? "";
     const published = entry.match(/<published>([^<]+)<\/published>/)?.[1];
-    const thumbnail = entry.match(/<media:thumbnail[^>]*url="([^"]+)"/)?.[1] ?? null;
     if (!videoId || !published) continue;
     posts.push({
       platform: "youtube",
@@ -231,7 +230,9 @@ export function parseYouTubeRss(xml: string, follow: ExternalFollow): ExternalFe
       profileUrl: follow.profileUrl,
       text: title || null,
       mediaUrl: null,
-      thumbnailUrl: thumbnail,
+      // The feed's hqdefault thumbnail is 4:3 with letterbox bars for
+      // widescreen videos; mqdefault is 16:9, bar-free and always exists.
+      thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
       url: `https://www.youtube.com/watch?v=${videoId}`,
       publishedAt: published,
     });
