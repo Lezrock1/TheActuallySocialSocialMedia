@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { TRANSLATION_LANGUAGES } from "@app/shared";
 import type { FeedPost } from "@app/shared";
@@ -11,6 +11,7 @@ import Avatar from "./Avatar.js";
 import AiChatPanel from "./AiChatPanel.js";
 import FactCheckTransparency from "./FactCheckTransparency.js";
 import CommentsSection from "./CommentsSection.js";
+import SelfieReaction from "./SelfieReaction.js";
 import PollCard from "./PollCard.js";
 import LinkedMentions from "./LinkedMentions.js";
 import { detectPostLanguage } from "../lib/translationLanguage.js";
@@ -51,6 +52,8 @@ function PostCard({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [selfieOpen, setSelfieOpen] = useState(false);
+  const queryClient = useQueryClient();
   const { data: translationPreferences } = useQuery({
     queryKey: ["user-preferences"],
     queryFn: () => apiFetch<{ translationLanguage: TranslationLanguage }>("/users/me/preferences"),
@@ -180,10 +183,34 @@ function PostCard({
             minute: "2-digit",
           })}
         </time>
+        <button
+          type="button"
+          onClick={() => setSelfieOpen(true)}
+          aria-label="React with a selfie"
+          title="React with a selfie"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-[background-color,transform] hover:bg-gray-50 active:scale-90"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="8.5" />
+            <circle cx="9" cy="10" r="0.4" fill="currentColor" />
+            <circle cx="15" cy="10" r="0.4" fill="currentColor" />
+            <path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8" />
+          </svg>
+        </button>
         <div className="min-w-0 flex-1">
           <AiChatPanel postId={post.id} />
         </div>
       </div>
+      {selfieOpen && (
+        <SelfieReaction
+          postId={post.id}
+          onClose={() => setSelfieOpen(false)}
+          onPosted={() => {
+            setCommentCount((count) => count + 1);
+            void queryClient.invalidateQueries({ queryKey: ["comments", post.id] });
+          }}
+        />
+      )}
       <CommentsSection
         postId={post.id}
         commentCount={commentCount}
@@ -210,7 +237,7 @@ function PostVideo({ mediaKey, priority }: { mediaKey: string; priority: boolean
   const [failed, setFailed] = useState(false);
   const poster = mediaPosterUrl(mediaKey);
   return (
-    <div className="relative mx-auto mt-2 flex min-h-48 max-h-[32rem] w-full items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+    <div className={`relative mt-2 overflow-hidden rounded-lg ${ready || failed ? "mx-auto w-fit max-w-full" : "mx-auto flex min-h-48 w-full items-center justify-center"}`}>
       <img
         src={poster}
         alt=""
@@ -218,16 +245,7 @@ function PostVideo({ mediaKey, priority }: { mediaKey: string; priority: boolean
         loading={priority ? "eager" : "lazy"}
         fetchPriority={priority ? "high" : "low"}
         decoding="async"
-        className="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl"
-      />
-      <img
-        src={poster}
-        alt=""
-        aria-hidden="true"
-        loading={priority ? "eager" : "lazy"}
-        fetchPriority={priority ? "high" : "low"}
-        decoding="async"
-        className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${ready ? "opacity-0" : "opacity-100"}`}
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${ready ? "opacity-0" : "opacity-100"}`}
       />
       <video
         ref={videoRef}
@@ -239,7 +257,7 @@ function PostVideo({ mediaKey, priority }: { mediaKey: string; priority: boolean
         preload="metadata"
         onLoadedData={() => { setReady(true); setFailed(false); }}
         onError={() => setFailed(true)}
-        className={`relative mx-auto block h-auto min-h-48 max-h-[32rem] w-auto max-w-full object-contain transition-opacity duration-300 ${ready && !failed ? "opacity-100" : "opacity-0"}`}
+        className={`relative block h-auto max-h-[32rem] w-auto max-w-full transition-opacity duration-300 ${ready && !failed ? "opacity-100" : "opacity-0"}`}
       />
       {!ready && !failed && (
         <span role="status" aria-label="Loading post video" className="absolute inset-0 flex items-center justify-center">

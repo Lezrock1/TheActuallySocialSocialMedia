@@ -43,17 +43,31 @@ function CommentItem({
           <LinkedMentions text={comment.text} />
         </p>
         {comment.imageKey && (
-          <>
-            <button
-              type="button"
-              onClick={() => setZoomed(true)}
-              aria-label="View photo full size"
-              className="mt-2 block w-52 max-w-full cursor-zoom-in overflow-hidden rounded-xl transition-transform active:scale-[0.98]"
-            >
-              <ProgressiveImage mediaKey={comment.imageKey} className="rounded-xl" />
-            </button>
-            {zoomed && <ImageLightbox mediaKey={comment.imageKey} onClose={() => setZoomed(false)} />}
-          </>
+          !comment.text.trim() ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setZoomed(true)}
+                aria-label="View selfie reaction full size"
+                className="reaction-bubble mt-1.5 block h-16 w-16 cursor-zoom-in overflow-hidden rounded-full border-2 border-fuchsia-200 p-0 shadow-sm transition-transform hover:scale-105 active:scale-95"
+              >
+                <ProgressiveImage mediaKey={comment.imageKey} className="h-full w-full rounded-full object-cover" />
+              </button>
+              {zoomed && <ImageLightbox mediaKey={comment.imageKey} onClose={() => setZoomed(false)} />}
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setZoomed(true)}
+                aria-label="View photo full size"
+                className="mt-2 block w-52 max-w-full cursor-zoom-in overflow-hidden rounded-xl transition-transform active:scale-[0.98]"
+              >
+                <ProgressiveImage mediaKey={comment.imageKey} className="rounded-xl" />
+              </button>
+              {zoomed && <ImageLightbox mediaKey={comment.imageKey} onClose={() => setZoomed(false)} />}
+            </>
+          )
         )}
         <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
           <time dateTime={comment.createdAt}>
@@ -286,9 +300,9 @@ export default function CommentsSection({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading || posting}
-                aria-label={imageKey ? "Change reaction photo" : "React with a photo"}
-                title={imageKey ? "Change reaction photo" : "React with a photo"}
-                className={`flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 transition-[background-color,transform] active:scale-95 disabled:opacity-50 ${imageKey ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+                aria-label={imageKey ? "Change photo" : "Add a photo"}
+                title={imageKey ? "Change photo" : "Add a photo"}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-[background-color,transform] active:scale-90 disabled:opacity-50 ${imageKey ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
               >
                 {uploading ? (
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -299,7 +313,6 @@ export default function CommentsSection({
                     <path d="m4 17 5-4.5 3.5 3L15.5 13 20 17" />
                   </svg>
                 )}
-                <span className="text-xs font-semibold">{imageKey ? "Added" : "Photo"}</span>
               </button>
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onSelectImage(e)} />
               <textarea
