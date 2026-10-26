@@ -1,12 +1,14 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import type { ExternalFollowSummary, ExternalPlatform, ExternalProfile, PublicUser } from "@app/shared";
+import { EXTERNAL_SUGGESTION_TOPICS } from "@app/shared";
+import type { ExternalFollowSummary, ExternalPlatform, ExternalProfile, ExternalSuggestionTopic, PublicUser } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import Avatar from "../components/Avatar.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import ExternalProfileRow from "../components/ExternalProfileRow.js";
 import { activityList, activityRow, btnSecondary, input } from "../lib/ui.js";
 import { PLATFORM_META } from "../lib/platforms.js";
 
@@ -37,6 +39,7 @@ export default function PeopleSearchPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<SearchScope>("intouch");
+  const [topic, setTopic] = useState<ExternalSuggestionTopic>("trending");
   const deferredQuery = useDeferredValue(query.trim().replace(/^@/, ""));
 
   useEffect(() => {
@@ -108,6 +111,25 @@ export default function PeopleSearchPage() {
   const externalFollows = externalFollowsQuery.data ?? [];
   const externalResults = externalSearchQuery.data ?? [];
   const platformFollows = externalFollows.filter((follow) => follow.platform === scope);
+
+  const externalSuggestionsQuery = useQuery({
+    queryKey: ["external-suggestions", scope, topic],
+    queryFn: async () =>
+      (await apiFetch<{ profiles: ExternalProfile[] }>(
+        `/external/suggestions?platform=${scope}&topic=${topic}`
+      )).profiles,
+    enabled: scope !== "intouch" && !deferredQuery,
+    staleTime: 5 * 60_000,
+  });
+  const externalSuggestions = externalSuggestionsQuery.data ?? [];
+
+  function toggleExternalFollow(profile: ExternalProfile) {
+    const existing = externalFollows.find(
+      (follow) => follow.platform === profile.platform && follow.externalId === profile.externalId
+    );
+    if (existing) externalUnfollowMutation.mutate(existing.followId);
+    else externalFollowMutation.mutate(profile);
+  }
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
@@ -208,91 +230,82 @@ export default function PeopleSearchPage() {
 
       {scope !== "intouch" && (
         <section aria-label={`${PLATFORM_META[scope].label} profiles`}>
-          <h2 className="mb-2 text-sm font-semibold text-gray-700">
-            {deferredQuery ? `${PLATFORM_META[scope].label} results` : `Your ${PLATFORM_META[scope].label} follows`}
-          </h2>
           {deferredQuery ? (
-            externalSearchQuery.isLoading ? (
-              <CardListSkeleton rows={3} />
-            ) : externalResults.length === 0 ? (
-              <p className="py-4 text-sm text-gray-500">No matching profiles found.</p>
-            ) : (
-              <div className={activityList}>
-                {externalResults.map((profile) => {
-                  const existing = externalFollows.find(
-                    (follow) => follow.platform === profile.platform && follow.externalId === profile.externalId
-                  );
-                  return (
-                    <div key={`${profile.platform}:${profile.externalId}`} className={`${activityRow} motion-safe:animate-[menu-enter_220ms_ease-out]`}>
-                      <a href={profile.profileUrl} target="_blank" rel="noopener noreferrer" className="flex min-w-0 flex-1 items-center gap-3">
-                        {profile.avatarUrl ? (
-                          <img src={profile.avatarUrl} alt="" loading="lazy" className="h-[42px] w-[42px] shrink-0 rounded-full object-cover" />
-                        ) : (
-                          <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-500">
-                            {(profile.displayName ?? profile.handle).slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold text-gray-900">
-                            {profile.displayName || `@${profile.handle}`}
-                          </span>
-                          <span className="block truncate text-xs text-gray-500">@{profile.handle}</span>
-                        </span>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${PLATFORM_META[profile.platform].badgeClass}`}>
-                          {PLATFORM_META[profile.platform].label}
-                        </span>
-                      </a>
-                      <button
-                        type="button"
-                        disabled={externalFollowMutation.isPending || externalUnfollowMutation.isPending}
-                        onClick={() => existing ? externalUnfollowMutation.mutate(existing.followId) : externalFollowMutation.mutate(profile)}
-                        aria-pressed={!!existing}
-                        className={`${btnSecondary} shrink-0 text-xs`}
-                      >
-                        {existing ? "Following ✓" : "Follow"}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )
-          ) : platformFollows.length === 0 ? (
-            <p className="py-4 text-sm text-gray-500">
-              You don't follow any {PLATFORM_META[scope].label} profiles yet. Search for a handle above.
-            </p>
-          ) : (
-            <div className={activityList}>
-              {platformFollows.map((follow) => (
-                <div key={follow.followId} className={activityRow}>
-                  <a href={follow.profileUrl} target="_blank" rel="noopener noreferrer" className="flex min-w-0 flex-1 items-center gap-3">
-                    {follow.avatarUrl ? (
-                      <img src={follow.avatarUrl} alt="" loading="lazy" className="h-[42px] w-[42px] shrink-0 rounded-full object-cover" />
-                    ) : (
-                      <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-500">
-                        {(follow.displayName ?? follow.handle).slice(0, 1).toUpperCase()}
-                      </span>
-                    )}
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-gray-900">
-                        {follow.displayName || `@${follow.handle}`}
-                      </span>
-                      <span className="block truncate text-xs text-gray-500">@{follow.handle}</span>
-                    </span>
-                    {follow.isLive && (
-                      <span className="shrink-0 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">LIVE</span>
-                    )}
-                  </a>
-                  <button
-                    type="button"
-                    disabled={externalUnfollowMutation.isPending}
-                    onClick={() => externalUnfollowMutation.mutate(follow.followId)}
-                    className={`${btnSecondary} shrink-0 text-xs`}
-                  >
-                    Unfollow
-                  </button>
+            <>
+              <h2 className="mb-2 text-sm font-semibold text-gray-700">{PLATFORM_META[scope].label} results</h2>
+              {externalSearchQuery.isLoading ? (
+                <CardListSkeleton rows={3} />
+              ) : externalResults.length === 0 ? (
+                <p className="py-4 text-sm text-gray-500">No matching profiles found.</p>
+              ) : (
+                <div className={activityList}>
+                  {externalResults.map((profile) => (
+                    <ExternalProfileRow
+                      key={`${profile.platform}:${profile.externalId}`}
+                      profile={profile}
+                      followed={externalFollows.some(
+                        (follow) => follow.platform === profile.platform && follow.externalId === profile.externalId
+                      )}
+                      pending={externalFollowMutation.isPending || externalUnfollowMutation.isPending}
+                      onToggle={() => toggleExternalFollow(profile)}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-gray-700">Suggested on {PLATFORM_META[scope].label}</h2>
+                <label htmlFor="suggestion-topic" className="sr-only">Suggestion topic</label>
+                <select
+                  id="suggestion-topic"
+                  value={topic}
+                  onChange={(event) => setTopic(event.target.value as ExternalSuggestionTopic)}
+                  className="h-9 shrink-0 cursor-pointer rounded-full border border-gray-200 bg-white px-3 text-xs font-semibold capitalize text-gray-600 shadow-sm transition-colors hover:bg-gray-50 focus:border-emerald-500 focus:outline-none"
+                >
+                  {EXTERNAL_SUGGESTION_TOPICS.map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+              </div>
+              {externalSuggestionsQuery.isLoading ? (
+                <CardListSkeleton rows={3} />
+              ) : externalSuggestions.length === 0 ? (
+                <p className="py-4 text-sm text-gray-500">No suggestions here yet – try another topic.</p>
+              ) : (
+                <div className={activityList}>
+                  {externalSuggestions.map((profile) => (
+                    <ExternalProfileRow
+                      key={`${profile.platform}:${profile.externalId}`}
+                      profile={profile}
+                      followed={externalFollows.some(
+                        (follow) => follow.platform === profile.platform && follow.externalId === profile.externalId
+                      )}
+                      pending={externalFollowMutation.isPending || externalUnfollowMutation.isPending}
+                      onToggle={() => toggleExternalFollow(profile)}
+                    />
+                  ))}
+                </div>
+              )}
+              {platformFollows.length > 0 && (
+                <>
+                  <h3 className="mb-2 mt-5 text-sm font-semibold text-gray-700">Your {PLATFORM_META[scope].label} follows</h3>
+                  <div className={activityList}>
+                    {platformFollows.map((follow) => (
+                      <ExternalProfileRow
+                        key={follow.followId}
+                        profile={follow}
+                        followed
+                        live={follow.isLive}
+                        pending={externalUnfollowMutation.isPending}
+                        onToggle={() => externalUnfollowMutation.mutate(follow.followId)}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
           )}
           {externalFollowMutation.isError && (
             <p role="alert" className="mt-3 text-sm text-red-600">

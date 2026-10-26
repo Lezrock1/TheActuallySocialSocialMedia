@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { EXTERNAL_PLATFORMS } from "@app/shared";
-import type { ExternalFollowSummary, ExternalPlatform, ExternalStoryItem } from "@app/shared";
+import { EXTERNAL_PLATFORMS, EXTERNAL_SUGGESTION_TOPICS } from "@app/shared";
+import type { ExternalFollowSummary, ExternalPlatform, ExternalProfile, ExternalStoryItem, ExternalSuggestionTopic } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
+import { suggestionEntries } from "../externalSuggestions.js";
 import {
   externalStoryItems,
   resolveProfile,
@@ -28,6 +29,27 @@ export async function externalRoutes(app: FastifyInstance): Promise<void> {
       if (!query) return reply.send({ profiles: [] });
       if (platform === "twitch" && !twitchConfigured()) return reply.send({ profiles: [], configured: false });
       const profiles = await searchProfiles(platform, query);
+      return reply.send({ profiles });
+    }
+  );
+
+  app.get<{ Querystring: { platform?: string; topic?: string } }>(
+    "/external/suggestions",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const platform = parsePlatform(request.query.platform);
+      if (!platform) return reply.code(400).send({ error: "Unknown platform" });
+      const topic: ExternalSuggestionTopic = (EXTERNAL_SUGGESTION_TOPICS as readonly string[]).includes(request.query.topic ?? "")
+        ? (request.query.topic as ExternalSuggestionTopic)
+        : "trending";
+      const user = await prisma.user.findUnique({
+        where: { id: request.userId! },
+        select: { translationLanguage: true },
+      });
+      const entries = suggestionEntries(platform, topic, user?.translationLanguage ?? "en").slice(0, 6);
+      const profiles = (
+        await Promise.all(entries.map((entry) => resolveProfile(platform, entry.handle).catch(() => null)))
+      ).filter((profile): profile is ExternalProfile => profile !== null);
       return reply.send({ profiles });
     }
   );

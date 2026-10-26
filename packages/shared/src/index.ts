@@ -209,6 +209,20 @@ export interface ExternalStoryItem {
   live: boolean;
 }
 
+export const EXTERNAL_SUGGESTION_TOPICS = [
+  "trending",
+  "politics",
+  "news",
+  "sports",
+  "comedy",
+  "gaming",
+  "music",
+  "tech",
+  "science",
+  "art",
+] as const;
+export type ExternalSuggestionTopic = (typeof EXTERNAL_SUGGESTION_TOPICS)[number];
+
 export const AI_PROVIDER_TYPES = ["openai_compatible", "anthropic"] as const;
 export type AiProviderType = (typeof AI_PROVIDER_TYPES)[number];
 
