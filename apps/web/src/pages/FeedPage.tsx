@@ -167,18 +167,24 @@ export default function FeedPage() {
 
   const feedRows = useMemo<FeedRow[]>(() => {
     const rows: FeedRow[] = [];
+    // Posts bumped by fresh friend comments can be fetched again on later
+    // pages; keep only the first occurrence of each item.
+    const seenKeys = new Set<string>();
     let boundaryShown = false;
     allPages.forEach((page, pageIndex) => {
       page.items.forEach((item, itemIndex) => {
+        const key = item.type === "post" ? `post:${item.id}` : `follow:${item.id}`;
+        if (seenKeys.has(key)) return;
+        seenKeys.add(key);
         const showBoundary = hasNewFeedItems && rows.length > 0 && page.boundaryIndex === itemIndex && !boundaryShown;
         if (showBoundary) {
           rows.push({ key: `boundary:${pageIndex}:${itemIndex}`, kind: "boundary" });
           boundaryShown = true;
         }
         if (item.type === "post") {
-          rows.push({ key: `post:${item.id}`, kind: "post", item });
+          rows.push({ key, kind: "post", item });
         } else {
-          rows.push({ key: `follow:${item.id}`, kind: "follow", item });
+          rows.push({ key, kind: "follow", item });
         }
       });
     });

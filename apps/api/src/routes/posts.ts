@@ -293,6 +293,10 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       ].filter((id) => !blockedIds.includes(id));
 
       const cursorDate = cursor ? new Date(cursor.createdAt) : null;
+      // On the first page, fetch a wider window so posts with fresh comments
+      // from people you follow can be bumped to the top of the feed.
+      const isFirstPage = !cursor;
+      const fetchLimit = isFirstPage ? Math.min(limit * 3, 60) : limit;
       const posts = await prisma.post.findMany({
           where: {
             AND: [
@@ -316,21 +320,56 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           },
           include: postWithCountsInclude,
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          take: limit + 1,
+          take: fetchLimit + 1,
         });
 
-      const items: FeedItem[] = [
-        ...posts.map((post): FeedItem => ({
-          type: "post",
-          id: post.id,
-          createdAt: post.createdAt.toISOString(),
-          post: toFeedPost(post),
-        })),
-      ].sort(compareFeedItems);
+      const hasMore = posts.length > fetchLimit;
+      const windowPosts = hasMore ? posts.slice(0, fetchLimit) : posts;
+      const items: FeedItem[] = windowPosts.map((post): FeedItem => ({
+        type: "post",
+        id: post.id,
+        createdAt: post.createdAt.toISOString(),
+        post: toFeedPost(post),
+      }));
 
-      const hasMore = items.length > limit;
-      const page = hasMore ? items.slice(0, limit) : items;
-      const nextCursor = hasMore ? encodeFeedCursor(page[page.length - 1]) : null;
+      if (isFirstPage && items.length > 1) {
+        const friendIds = following
+          .map((follow) => follow.followeeId)
+          .filter((id) => !blockedIds.includes(id));
+        const latestFriendCommentAt = new Map<string, Date>();
+        if (friendIds.length > 0) {
+          const friendComments = await prisma.comment.findMany({
+            where: {
+              postId: { in: items.map((item) => item.id) },
+              authorId: { in: friendIds },
+            },
+            orderBy: { createdAt: "desc" },
+            select: { postId: true, createdAt: true },
+          });
+          for (const comment of friendComments) {
+            if (!latestFriendCommentAt.has(comment.postId)) {
+              latestFriendCommentAt.set(comment.postId, comment.createdAt);
+            }
+          }
+        }
+        const activityTime = (item: FeedItem) => Math.max(
+          latestFriendCommentAt.get(item.id)?.getTime() ?? 0,
+          new Date(item.createdAt).getTime()
+        );
+        items.sort((a, b) => activityTime(b) - activityTime(a) || compareFeedItems(a, b));
+      } else {
+        items.sort(compareFeedItems);
+      }
+
+      const page = items.slice(0, limit);
+      // The cursor must continue from the oldest displayed post by creation
+      // time so nothing is skipped; bumped posts that are fetched again on
+      // later pages are deduplicated by the client.
+      const oldestInPage = page.reduce<FeedItem | null>(
+        (oldest, item) => (oldest && oldest.createdAt <= item.createdAt ? oldest : item),
+        null
+      );
+      const nextCursor = hasMore && oldestInPage ? encodeFeedCursor(oldestInPage) : null;
 
       const lastSeenAt = user.lastSeenPostCreatedAt;
       let boundaryIndex: number | null = null;

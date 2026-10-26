@@ -363,7 +363,15 @@ export default function SnapsPage() {
                   </span>
                   <span className="flex w-14 shrink-0 flex-col items-end gap-1 whitespace-nowrap text-[11px] text-gray-500">
                     {(snap || seen) && <time dateTime={snap?.createdAt || seen?.viewedAt || seen?.createdAt}>{formatActivityTime(snap?.createdAt || seen?.viewedAt || seen!.createdAt)}</time>}
-                    {!!streak?.currentStreak && <span aria-label={`${streak.currentStreak} day streak`} className="text-[10px]">🔥 {streak.currentStreak}</span>}
+                    {!!streak?.currentStreak && (
+                      <span
+                        aria-label={streak.atRisk ? `${streak.currentStreak} day streak, expires soon` : `${streak.currentStreak} day streak`}
+                        title={streak.atRisk ? "Streak expires soon – send a snap to keep it" : undefined}
+                        className="text-[10px]"
+                      >
+                        🔥 {streak.currentStreak}{streak.atRisk && " ⌛"}
+                      </span>
+                    )}
                   </span>
                   {snap && openingSnapId === snap.id ? (
                     <span aria-label="Opening" className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-yellow-500 border-t-transparent" />

@@ -192,6 +192,7 @@ model CommentLike {
   id        String   @id @default(cuid())
   commentId String
   userId    String
+  emoji     String   @default("❤️")
   createdAt DateTime @default(now())
 
   comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)

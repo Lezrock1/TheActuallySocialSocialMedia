@@ -253,6 +253,11 @@ export const createCommentSchema = z.object({
 });
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 
+export interface CommentReactionSummary {
+  emoji: string;
+  count: number;
+}
+
 export interface Comment {
   id: string;
   author: PublicUser;
@@ -262,6 +267,10 @@ export interface Comment {
   replyCount: number;
   likeCount: number;
   likedByMe: boolean;
+  /** Aggregated emoji reactions, ordered by count (desc). */
+  reactions: CommentReactionSummary[];
+  /** The viewer's own reaction emoji, if any. */
+  myReaction: string | null;
   createdAt: string;
 }
 
@@ -401,6 +410,9 @@ export interface StoryGroup {
 }
 
 export const STORY_REACTIONS = ["❤️", "😂", "🔥", "👏", "😮"] as const;
+
+export const COMMENT_REACTIONS = ["❤️", "😂", "🔥", "👏", "😮"] as const;
+export type CommentReactionEmoji = (typeof COMMENT_REACTIONS)[number];
 export const createStoryReactionSchema = z.object({
   emoji: z.enum(STORY_REACTIONS),
 });
@@ -462,6 +474,8 @@ export interface SnapStreakSummary {
   lastExchangeAt: string | null;
   waitingForYou: boolean;
   waitingForThem: boolean;
+  /** True between 24h and 48h after the last exchange: streak can still be saved. */
+  atRisk: boolean;
 }
 
 export const LIVE_ROOM_AUDIENCES = ["invited", "close_friends", "friends", "everyone"] as const;

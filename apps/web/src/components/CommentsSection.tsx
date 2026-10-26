@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { COMMENT_REACTIONS } from "@app/shared";
 import type { Comment } from "@app/shared";
 import { ApiError, apiFetch } from "../lib/api.js";
 import { mediaUrl, uploadMedia } from "../lib/upload.js";
@@ -19,15 +20,16 @@ async function fetchComments(postId: string): Promise<Comment[]> {
 function CommentItem({
   comment,
   onReply,
-  onToggleLike,
-  liking,
+  onReact,
+  reacting,
 }: {
   comment: Comment;
   onReply?: () => void;
-  onToggleLike: () => void;
-  liking: boolean;
+  onReact: (emoji: string) => void;
+  reacting: boolean;
 }) {
   const [zoomed, setZoomed] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   return (
     <div className="flex items-start gap-2">
       <Link to={`/u/${comment.author.username}`} className="shrink-0">
@@ -69,14 +71,51 @@ function CommentItem({
           )}
           <button
             type="button"
-            onClick={onToggleLike}
-            disabled={liking}
-            aria-pressed={comment.likedByMe}
-            className={`font-semibold hover:text-black disabled:opacity-50 ${comment.likedByMe ? "text-red-600" : ""}`}
+            onClick={() => setPickerOpen((open) => !open)}
+            disabled={reacting}
+            aria-expanded={pickerOpen}
+            aria-label="React with an emoji"
+            className={`font-semibold hover:text-black disabled:opacity-50 ${comment.myReaction ? "text-fuchsia-600" : ""}`}
           >
-            {comment.likedByMe ? "Liked" : "Like"}{comment.likeCount > 0 ? ` · ${comment.likeCount}` : ""}
+            {comment.myReaction ? `${comment.myReaction} Reacted` : "React"}
           </button>
         </div>
+        {pickerOpen ? (
+          <div className="mt-1.5 flex w-fit items-center gap-0.5 rounded-full border border-gray-200 bg-white px-1.5 py-1 shadow-sm">
+            {COMMENT_REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => { setPickerOpen(false); onReact(emoji); }}
+                disabled={reacting}
+                aria-label={`React with ${emoji}`}
+                aria-pressed={comment.myReaction === emoji}
+                className={`flex h-8 w-8 items-center justify-center rounded-full text-base transition-[background-color,transform] hover:bg-gray-100 active:scale-90 disabled:opacity-50 ${comment.myReaction === emoji ? "bg-fuchsia-50 ring-1 ring-fuchsia-300" : ""}`}
+              >
+                <span aria-hidden="true">{emoji}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          comment.reactions.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {comment.reactions.map((reaction) => (
+                <button
+                  key={reaction.emoji}
+                  type="button"
+                  onClick={() => onReact(reaction.emoji)}
+                  disabled={reacting}
+                  aria-pressed={comment.myReaction === reaction.emoji}
+                  aria-label={`${reaction.count} reacted with ${reaction.emoji}`}
+                  className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-[background-color,transform] active:scale-95 disabled:opacity-50 ${comment.myReaction === reaction.emoji ? "border-fuchsia-300 bg-fuchsia-50 font-semibold text-fuchsia-700" : "border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100"}`}
+                >
+                  <span aria-hidden="true">{reaction.emoji}</span>
+                  <span>{reaction.count}</span>
+                </button>
+              ))}
+            </div>
+          )
+        )}
       </div>
     </div>
   );
@@ -133,8 +172,8 @@ export default function CommentsSection({
             setShowAllComments(true);
             setReplyTarget(comment);
           }}
-          onToggleLike={() => void toggleLike(comment)}
-          liking={likingId === comment.id}
+          onReact={(emoji) => void reactToComment(comment, emoji)}
+          reacting={likingId === comment.id}
         />
         {children.length > 0 && (
           <div
@@ -193,17 +232,22 @@ export default function CommentsSection({
     }
   }
 
-  async function toggleLike(comment: Comment) {
+  async function reactToComment(comment: Comment, emoji: string) {
     setLikingId(comment.id);
     setError(null);
     try {
-      await apiFetch(`/comments/${comment.id}/like`, {
-        method: comment.likedByMe ? "DELETE" : "POST",
-      });
+      if (comment.myReaction === emoji) {
+        await apiFetch(`/comments/${comment.id}/like`, { method: "DELETE" });
+      } else {
+        await apiFetch(`/comments/${comment.id}/like`, {
+          method: "POST",
+          body: JSON.stringify({ emoji }),
+        });
+      }
       await queryClient.invalidateQueries({ queryKey: ["comments", postId] });
       await queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not update comment like");
+      setError(err instanceof ApiError ? err.message : "Could not update reaction");
     } finally {
       setLikingId(null);
     }
@@ -242,9 +286,9 @@ export default function CommentsSection({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading || posting}
-                aria-label={imageKey ? "Change photo" : "Add a photo"}
-                title={imageKey ? "Change photo" : "Add a photo"}
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-[background-color,transform] active:scale-90 disabled:opacity-50 ${imageKey ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+                aria-label={imageKey ? "Change reaction photo" : "React with a photo"}
+                title={imageKey ? "Change reaction photo" : "React with a photo"}
+                className={`flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 transition-[background-color,transform] active:scale-95 disabled:opacity-50 ${imageKey ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
               >
                 {uploading ? (
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -255,6 +299,7 @@ export default function CommentsSection({
                     <path d="m4 17 5-4.5 3.5 3L15.5 13 20 17" />
                   </svg>
                 )}
+                <span className="text-xs font-semibold">{imageKey ? "Added" : "Photo"}</span>
               </button>
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onSelectImage(e)} />
               <textarea

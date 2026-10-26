@@ -213,6 +213,14 @@ export default function CameraCapture({
         setCapabilities({ torch: !!caps.torch, zoom: caps.zoom });
         setTorchOn(false);
         setZoom(1);
+        // Some browsers (notably Firefox on Android) keep the previous
+        // camera's zoom level when switching lenses; explicitly reset the
+        // hardware zoom on the fresh track so it never starts zoomed in.
+        if (caps.zoom) {
+          try {
+            await track.applyConstraints({ advanced: [{ zoom: 1 } as MediaTrackConstraintSet] });
+          } catch { /* best effort: zoom reset is cosmetic */ }
+        }
         if (videoRef.current) {
           videoRef.current.srcObject = next;
           await videoRef.current.play();

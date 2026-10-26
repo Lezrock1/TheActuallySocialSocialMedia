@@ -182,6 +182,10 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
           now - streak.lastExchangeAt.getTime() > 48 * 60 * 60 * 1000;
         const isPendingFresh = (sentAt: Date | null) =>
           !!sentAt && now - sentAt.getTime() <= 24 * 60 * 60 * 1000;
+        // Between 24h and 48h after the last exchange the streak is at risk:
+        // it can still be saved, but the hourglass is shown next to the flame.
+        const isAtRisk = !isExpired &&
+          now - streak.lastExchangeAt!.getTime() > 24 * 60 * 60 * 1000;
         return {
           friend: toPublicUser(isUserA ? streak.userB : streak.userA),
           currentStreak: isExpired ? 0 : streak.currentStreak,
@@ -189,6 +193,7 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
           lastExchangeAt: mostRecentSnapAt?.toISOString() ?? null,
           waitingForYou: isPendingFresh(theirSnapAt) && !isPendingFresh(mySnapAt),
           waitingForThem: isPendingFresh(mySnapAt) && !isPendingFresh(theirSnapAt),
+          atRisk: isAtRisk,
         };
       }),
     });

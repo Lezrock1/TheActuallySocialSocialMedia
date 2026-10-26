@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { User } from "@prisma/client";
-import { createCommentSchema } from "@app/shared";
-import type { Comment } from "@app/shared";
+import { COMMENT_REACTIONS, createCommentSchema } from "@app/shared";
+import type { Comment, CommentReactionEmoji } from "@app/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
@@ -20,10 +20,18 @@ interface CommentRow {
   createdAt: Date;
   author: User;
   _count: { likes: number; replies: number };
-  likes: { userId: string }[];
+  likes: { userId: string; emoji: string }[];
 }
 
-function toComment(comment: CommentRow): Comment {
+function toComment(comment: CommentRow, viewerId: string): Comment {
+  const reactionCounts = new Map<string, number>();
+  for (const like of comment.likes) {
+    reactionCounts.set(like.emoji, (reactionCounts.get(like.emoji) ?? 0) + 1);
+  }
+  const reactions = [...reactionCounts.entries()]
+    .map(([emoji, count]) => ({ emoji, count }))
+    .sort((a, b) => b.count - a.count);
+  const myReaction = comment.likes.find((like) => like.userId === viewerId)?.emoji ?? null;
   return {
     id: comment.id,
     author: toPublicUser(comment.author),
@@ -32,7 +40,9 @@ function toComment(comment: CommentRow): Comment {
     parentCommentId: comment.parentCommentId,
     replyCount: comment._count.replies,
     likeCount: comment._count.likes,
-    likedByMe: comment.likes.length > 0,
+    likedByMe: myReaction !== null,
+    reactions,
+    myReaction,
     createdAt: comment.createdAt.toISOString(),
   };
 }
@@ -50,14 +60,11 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
         include: {
           author: true,
           _count: { select: { likes: true, replies: true } },
-          likes: {
-            where: { userId: request.userId! },
-            select: { userId: true },
-          },
+          likes: { select: { userId: true, emoji: true } },
         },
         orderBy: { createdAt: "asc" },
       });
-      return reply.send({ comments: comments.map(toComment) });
+      return reply.send({ comments: comments.map((comment) => toComment(comment, request.userId!)) });
     }
   );
 
@@ -100,10 +107,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
         include: {
           author: true,
           _count: { select: { likes: true, replies: true } },
-          likes: {
-            where: { userId: request.userId! },
-            select: { userId: true },
-          },
+          likes: { select: { userId: true, emoji: true } },
         },
       });
       const recipientId = parentComment?.authorId ?? post.authorId;
@@ -127,7 +131,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
       } catch (error) {
         request.log.error(error, "Comment notification creation failed");
       }
-      return reply.code(201).send({ comment: toComment(comment) });
+      return reply.code(201).send({ comment: toComment(comment, request.userId!) });
     }
   );
 
@@ -147,10 +151,14 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
-  app.post<{ Params: { id: string } }>(
+  app.post<{ Params: { id: string }; Body: { emoji?: string } }>(
     "/comments/:id/like",
     { preHandler: requireAuth },
     async (request, reply) => {
+      const emoji = request.body?.emoji ?? "❤️";
+      if (!COMMENT_REACTIONS.includes(emoji as CommentReactionEmoji)) {
+        return reply.code(400).send({ error: "Unsupported reaction emoji" });
+      }
       const comment = await prisma.comment.findUnique({
         where: { id: request.params.id },
         select: { id: true, authorId: true, postId: true },
@@ -168,11 +176,17 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
           },
         },
       });
-      if (existing) return reply.code(204).send();
+      // Switching the emoji updates the reaction in place without notifying again.
+      if (existing) {
+        if (existing.emoji !== emoji) {
+          await prisma.commentLike.update({ where: { id: existing.id }, data: { emoji } });
+        }
+        return reply.code(204).send();
+      }
 
       try {
         const like = await prisma.commentLike.create({
-          data: { commentId: comment.id, userId: request.userId! },
+          data: { commentId: comment.id, userId: request.userId!, emoji },
         });
         await createUserNotification({
           recipientId: comment.authorId,
