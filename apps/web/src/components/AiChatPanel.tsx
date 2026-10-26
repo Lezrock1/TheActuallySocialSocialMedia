@@ -5,6 +5,7 @@ import type {
   AiConversation,
   AiMode,
   AiProviderConfigPublic,
+  ExternalFeedPost,
 } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
 import AiMarkdown from "./AiMarkdown.js";
@@ -38,8 +39,9 @@ const MODE_CONFIG: Record<
   },
 };
 
-export default function AiChatPanel({ postId }: { postId: string }) {
+export default function AiChatPanel({ postId, externalPost }: { postId?: string; externalPost?: ExternalFeedPost }) {
   const queryClient = useQueryClient();
+  const panelKey = postId ?? `external-${externalPost?.url ?? "post"}`;
   const [expanded, setExpanded] = useState(false);
   const lastScrollY = useRef(0);
   const {
@@ -94,16 +96,26 @@ export default function AiChatPanel({ postId }: { postId: string }) {
         {
           method: "POST",
           body: JSON.stringify({
-            postId,
+            postId: postId ?? undefined,
+            external: externalPost
+              ? {
+                  platform: externalPost.platform,
+                  authorHandle: externalPost.authorHandle,
+                  authorName: externalPost.authorName,
+                  text: externalPost.text,
+                  url: externalPost.url,
+                  publishedAt: externalPost.publishedAt,
+                }
+              : undefined,
             providerConfigId: providerId,
             mode: activeMode,
             customPrompt: activeMode === "custom" ? customPrompt : undefined,
-            shared: activeMode === "factcheck" ? shareResult : undefined,
+            shared: activeMode === "factcheck" && postId ? shareResult : undefined,
           }),
         }
       );
       setConversation(res.conversation);
-      if (activeMode === "factcheck" && shareResult) {
+      if (activeMode === "factcheck" && shareResult && postId) {
         void queryClient.invalidateQueries({
           queryKey: ["factcheck-summary", postId],
         });
@@ -164,14 +176,14 @@ export default function AiChatPanel({ postId }: { postId: string }) {
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          aria-controls={`ai-modes-${postId}`}
+          aria-controls={`ai-modes-${panelKey}`}
           className="flex min-h-9 shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
         >
           AI Tools
           <span aria-hidden="true" className="text-gray-400">{expanded ? "−" : "+"}</span>
         </button>
         <div
-          id={`ai-modes-${postId}`}
+          id={`ai-modes-${panelKey}`}
           aria-hidden={!expanded}
           className={`flex w-full flex-wrap justify-end gap-1 overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${
             expanded ? "max-h-20 opacity-100" : "max-h-0 opacity-0"
@@ -238,7 +250,7 @@ export default function AiChatPanel({ postId }: { postId: string }) {
                   rows={2}
                 />
               )}
-              {activeMode === "factcheck" && (
+              {activeMode === "factcheck" && postId && (
                 <label className="flex items-center gap-2 text-xs">
                   <input type="checkbox" checked={shareResult} onChange={(e) => setShareResult(e.target.checked)} />
                   Share this result anonymously to help others build trust

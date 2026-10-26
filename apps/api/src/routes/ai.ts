@@ -19,6 +19,7 @@ import { canViewContent } from "../visibility.js";
 import type { ChatMessage } from "../ai/adapters.js";
 import {
   buildInitialUserMessage,
+  buildExternalUserMessage,
   systemPromptForMode,
   FACTCHECK_SUMMARY_SYSTEM_PROMPT,
 } from "../ai/prompts.js";
@@ -327,18 +328,23 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       if (!parsed.success) {
         return reply.code(400).send({ error: parsed.error.flatten() });
       }
-      const { postId, providerConfigId, mode, customPrompt, shared } = parsed.data;
+      const { postId, providerConfigId, mode, customPrompt, shared, external } = parsed.data;
       if (mode === "custom" && !customPrompt) {
         return reply
           .code(400)
           .send({ error: "customPrompt is required for mode 'custom'" });
       }
+      if (!postId && !external) {
+        return reply.code(400).send({ error: "postId or external is required" });
+      }
 
       const [post, config] = await Promise.all([
-        prisma.post.findUnique({ where: { id: postId }, include: { author: true } }),
+        postId
+          ? prisma.post.findUnique({ where: { id: postId }, include: { author: true } })
+          : Promise.resolve(null),
         prisma.aiProviderConfig.findUnique({ where: { id: providerConfigId } }),
       ]);
-      if (!post || !(await canViewContent(request.userId!, post))) {
+      if (postId && (!post || !(await canViewContent(request.userId!, post)))) {
         return reply.code(404).send({ error: "Post not found" });
       }
       if (!config || config.userId !== request.userId) {
@@ -346,17 +352,19 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const systemPrompt = systemPromptForMode(mode);
-      const initialUserMessage = buildInitialUserMessage(
-        mode,
-        {
-          authorUsername: post.author.username,
-          authorDisplayName: post.author.displayName,
-          createdAt: post.createdAt,
-          text: post.text,
-          hasImage: !!post.imageKey,
-        },
-        customPrompt
-      );
+      const initialUserMessage = post
+        ? buildInitialUserMessage(
+            mode,
+            {
+              authorUsername: post.author.username,
+              authorDisplayName: post.author.displayName,
+              createdAt: post.createdAt,
+              text: post.text,
+              hasImage: !!post.imageKey,
+            },
+            customPrompt
+          )
+        : buildExternalUserMessage(mode, external!, customPrompt);
 
       try {
         const adapter = createAdapter(config.type, {
@@ -372,10 +380,11 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         const conversation = await prisma.aiConversation.create({
           data: {
             userId: request.userId!,
-            postId,
+            postId: post?.id ?? null,
+            externalLabel: external ? `${external.platform}: @${external.authorHandle}` : null,
             mode,
             providerLabel: config.label,
-            shared: mode === "factcheck" ? !!shared : false,
+            shared: mode === "factcheck" && post ? !!shared : false,
             messages: {
               create: [
                 { role: "user", content: initialUserMessage },
@@ -386,8 +395,8 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
           include: { messages: { orderBy: { createdAt: "asc" } } },
         });
 
-        if (mode === "factcheck" && shared) {
-          regenerateFactCheckSummary(postId, adapter).catch((err) =>
+        if (mode === "factcheck" && shared && post) {
+          regenerateFactCheckSummary(post.id, adapter).catch((err) =>
             request.log.error(err, "FactCheck summary regeneration failed")
           );
         }

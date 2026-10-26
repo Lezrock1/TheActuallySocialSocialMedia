@@ -78,3 +78,35 @@ export function buildInitialUserMessage(
   }
   return context;
 }
+
+export interface ExternalPostContext {
+  platform: string;
+  authorHandle: string;
+  authorName?: string | null;
+  text?: string | null;
+  url: string;
+  publishedAt?: string;
+}
+
+export function buildExternalContextBlock(external: ExternalPostContext): string {
+  const lines = [
+    "Post context:",
+    `Source: ${external.platform} post – ${external.url}`,
+    `Author: @${external.authorHandle}${external.authorName ? ` (${external.authorName})` : ""}`,
+  ];
+  if (external.publishedAt) lines.push(`Posted at: ${external.publishedAt}`);
+  lines.push(`Text: "${external.text ?? "(no text)"}"`);
+  return lines.join("\n");
+}
+
+export function buildExternalUserMessage(
+  mode: AiMode,
+  external: ExternalPostContext,
+  customPrompt?: string
+): string {
+  const context = buildExternalContextBlock(external);
+  if (mode === "custom") {
+    return `${context}\n\nUser request: ${customPrompt}`;
+  }
+  return context;
+}

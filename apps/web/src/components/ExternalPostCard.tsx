@@ -1,6 +1,7 @@
 import type { ExternalFeedPost } from "@app/shared";
 import { card } from "../lib/ui.js";
 import { PLATFORM_META } from "../lib/platforms.js";
+import AiChatPanel from "./AiChatPanel.js";
 
 /** Feed card for a post from a followed Bluesky/Mastodon/YouTube profile. */
 export default function ExternalPostCard({ item }: { item: ExternalFeedPost }) {
@@ -39,7 +40,7 @@ export default function ExternalPostCard({ item }: { item: ExternalFeedPost }) {
           />
         </a>
       )}
-      <div className="mt-3 flex items-center justify-between gap-2">
+      <div className="mt-3 flex min-w-0 items-center justify-between gap-2">
         <time dateTime={item.publishedAt} className="shrink-0 text-[11px] text-gray-400">
           {new Date(item.publishedAt).toLocaleString("en-US", {
             month: "short",
@@ -48,6 +49,11 @@ export default function ExternalPostCard({ item }: { item: ExternalFeedPost }) {
             minute: "2-digit",
           })}
         </time>
+        <div className="min-w-0 flex-1">
+          <AiChatPanel externalPost={item} />
+        </div>
+      </div>
+      <div className="mt-1 flex justify-end">
         <a
           href={item.url}
           target="_blank"

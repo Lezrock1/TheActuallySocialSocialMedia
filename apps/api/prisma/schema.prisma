@@ -698,7 +698,8 @@ model AiProviderConfig {
 model AiConversation {
   id            String   @id @default(cuid())
   userId        String
-  postId        String
+  postId        String?
+  externalLabel String?
   mode          String // "factcheck" | "explain" | "custom"
   providerLabel String // snapshot of the provider label used, for display
   // opt-in: include this factcheck result (anonymized) in the post's public
@@ -707,7 +708,7 @@ model AiConversation {
   createdAt     DateTime @default(now())
 
   user     User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post     Post                    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post     Post?                   @relation(fields: [postId], references: [id], onDelete: Cascade)
   messages AiConversationMessage[]
 
   @@index([userId, postId])

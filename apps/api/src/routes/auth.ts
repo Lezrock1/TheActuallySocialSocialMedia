@@ -290,7 +290,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       ...exclusivelyReceivedSnaps.map((snap) => snap.imageKey),
       ...voiceMessages.map((message) => message.mediaKey),
     ].filter((key): key is string => Boolean(key)))];
-    const sharedFactCheckPostIds = [...new Set(sharedFactChecks.map((conversation) => conversation.postId))];
+    const sharedFactCheckPostIds = [...new Set(
+      sharedFactChecks
+        .map((conversation) => conversation.postId)
+        .filter((postId): postId is string => postId !== null)
+    )];
 
     await prisma.$transaction(async (transaction) => {
       if (mediaKeys.length) {

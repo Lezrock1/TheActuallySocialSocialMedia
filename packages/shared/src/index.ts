@@ -266,7 +266,7 @@ export const AI_MODES = ["factcheck", "explain", "custom"] as const;
 export type AiMode = (typeof AI_MODES)[number];
 
 export const startAiConversationSchema = z.object({
-  postId: z.string(),
+  postId: z.string().optional(),
   providerConfigId: z.string(),
   mode: z.enum(AI_MODES),
   // required when mode === "custom": the user's own instruction/question
@@ -274,6 +274,15 @@ export const startAiConversationSchema = z.object({
   // opt-in: only meaningful for mode === "factcheck" - include this result
   // (anonymized) in the post's public FactCheck transparency summary
   shared: z.boolean().optional(),
+  // alternative to postId: a post from a followed external platform
+  external: z.object({
+    platform: z.enum(["bluesky", "mastodon", "youtube", "twitch"]),
+    authorHandle: z.string().min(1).max(200),
+    authorName: z.string().max(200).nullable().optional(),
+    text: z.string().max(4000).nullable().optional(),
+    url: z.string().url().max(1000),
+    publishedAt: z.string().max(100).optional(),
+  }).optional(),
 });
 export type StartAiConversationInput = z.infer<
   typeof startAiConversationSchema
@@ -293,7 +302,7 @@ export interface AiConversationMessage {
 
 export interface AiConversation {
   id: string;
-  postId: string;
+  postId: string | null;
   mode: AiMode;
   providerLabel: string;
   messages: AiConversationMessage[];
