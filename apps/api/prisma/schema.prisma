@@ -51,6 +51,7 @@ model User {
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsSent Notification[] @relation("NotificationActor")
   commentLikes     CommentLike[]
+  externalFollows  ExternalFollow[]
   pushSubscriptions WebPushSubscription[]
   momentPosts       MomentPost[]
   momentReactions   MomentReaction[]
@@ -200,6 +201,44 @@ model CommentLike {
 
   @@unique([commentId, userId])
   @@index([userId, createdAt])
+}
+
+model ExternalFollow {
+  id           String    @id @default(cuid())
+  userId       String
+  platform     String
+  externalId   String
+  handle       String
+  displayName  String?
+  avatarUrl    String?
+  profileUrl   String
+  createdAt    DateTime  @default(now())
+  lastSyncedAt DateTime?
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  posts ExternalPost[]
+
+  @@unique([userId, platform, externalId])
+  @@index([userId])
+}
+
+model ExternalPost {
+  id           String   @id @default(cuid())
+  followId     String
+  platform     String
+  externalId   String
+  text         String?
+  mediaUrl     String?
+  thumbnailUrl String?
+  isShort      Boolean  @default(false)
+  url          String
+  publishedAt  DateTime
+  fetchedAt    DateTime @default(now())
+
+  follow ExternalFollow @relation(fields: [followId], references: [id], onDelete: Cascade)
+
+  @@unique([followId, externalId])
+  @@index([publishedAt])
 }
 
 model Notification {

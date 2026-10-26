@@ -13,6 +13,7 @@ import DecodedImage from "./DecodedImage.js";
 import PlaybackProgress from "./PlaybackProgress.js";
 import LiveRoomsBar from "./LiveRoomsBar.js";
 import RadioRoomsBar from "./music/RadioRoomsBar.js";
+import ExternalStoryChips from "./ExternalStoryChips.js";
 import StoryComposer from "./StoryComposer.js";
 import AudioPlayer from "./AudioPlayer.js";
 import MeetupCard from "./chat/MeetupCard.js";
@@ -675,6 +676,7 @@ export default function StoriesBar() {
         </button>
         <LiveRoomsBar compact />
         <RadioRoomsBar compact />
+        <ExternalStoryChips />
         {momentSummary && (momentStatus !== "none" || momentSummary.previousMoment) && (
           <button
             type="button"

@@ -14,6 +14,7 @@ import {
 } from "../visibility.js";
 import { toPublicUser } from "../serializers.js";
 import { postWithCountsInclude, toFeedPost } from "../postSerializer.js";
+import { externalFeedItems, syncStaleExternalFollows } from "../external.js";
 import { createMentionNotifications, createPostNotifications } from "../notifications.js";
 
 const DEFAULT_LIMIT = 20;
@@ -332,6 +333,13 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         post: toFeedPost(post),
       }));
 
+      if (isFirstPage) {
+        // Refresh stale external follows in the background; the cached posts
+        // from followed Bluesky/Mastodon/YouTube profiles merge into the feed.
+        void syncStaleExternalFollows(viewerId).catch(() => undefined);
+        items.push(...(await externalFeedItems(viewerId)));
+      }
+
       if (isFirstPage && items.length > 1) {
         const friendIds = following
           .map((follow) => follow.followeeId)
@@ -364,9 +372,13 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       const page = items.slice(0, limit);
       // The cursor must continue from the oldest displayed post by creation
       // time so nothing is skipped; bumped posts that are fetched again on
-      // later pages are deduplicated by the client.
+      // later pages are deduplicated by the client. External items never
+      // define the cursor – pagination follows internal posts only.
       const oldestInPage = page.reduce<FeedItem | null>(
-        (oldest, item) => (oldest && oldest.createdAt <= item.createdAt ? oldest : item),
+        (oldest, item) => {
+          if (item.type !== "post") return oldest;
+          return oldest && oldest.createdAt <= item.createdAt ? oldest : item;
+        },
         null
       );
       const nextCursor = hasMore && oldestInPage ? encodeFeedCursor(oldestInPage) : null;

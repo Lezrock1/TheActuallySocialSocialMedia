@@ -1,13 +1,16 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import type { PublicUser } from "@app/shared";
+import type { ExternalFollowSummary, ExternalPlatform, ExternalProfile, PublicUser } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import Avatar from "../components/Avatar.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
 import { activityList, activityRow, btnSecondary, input } from "../lib/ui.js";
+import { PLATFORM_META } from "../lib/platforms.js";
+
+type SearchScope = "intouch" | ExternalPlatform;
 
 interface UserDirectoryPage {
   users: PublicUser[];
@@ -33,6 +36,7 @@ export default function PeopleSearchPage() {
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<SearchScope>("intouch");
   const deferredQuery = useDeferredValue(query.trim().replace(/^@/, ""));
 
   useEffect(() => {
@@ -70,6 +74,41 @@ export default function PeopleSearchPage() {
     },
   });
 
+  const externalFollowsQuery = useQuery({
+    queryKey: ["external-follows"],
+    queryFn: async () => (await apiFetch<{ follows: ExternalFollowSummary[] }>("/external/follows")).follows,
+    staleTime: 30_000,
+  });
+  const externalSearchQuery = useQuery({
+    queryKey: ["external-search", scope, deferredQuery],
+    queryFn: async () =>
+      (await apiFetch<{ profiles: ExternalProfile[] }>(
+        `/external/search?platform=${scope}&q=${encodeURIComponent(deferredQuery)}`
+      )).profiles,
+    enabled: scope !== "intouch" && !!deferredQuery,
+    staleTime: 30_000,
+  });
+  const externalFollowMutation = useMutation({
+    mutationFn: (profile: ExternalProfile) =>
+      apiFetch("/external/follows", {
+        method: "POST",
+        body: JSON.stringify({ platform: profile.platform, handle: profile.handle }),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["external-follows"] }),
+        queryClient.invalidateQueries({ queryKey: ["external-story-items"] }),
+      ]);
+    },
+  });
+  const externalUnfollowMutation = useMutation({
+    mutationFn: (followId: string) => apiFetch(`/external/follows/${followId}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["external-follows"] }),
+  });
+  const externalFollows = externalFollowsQuery.data ?? [];
+  const externalResults = externalSearchQuery.data ?? [];
+  const platformFollows = externalFollows.filter((follow) => follow.platform === scope);
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
       <PageHeader title="Find people" />
@@ -94,17 +133,33 @@ export default function PeopleSearchPage() {
         )}
       </section>
 
-      <label htmlFor="people-search" className="sr-only">Search people by name or username</label>
-      <input
-        ref={inputRef}
-        id="people-search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search by name or @username"
-        className={`${input} mb-4 w-full`}
-        autoComplete="off"
-      />
+      <div className="mb-4 flex items-center gap-2">
+        <label htmlFor="people-search" className="sr-only">Search people by name or username</label>
+        <input
+          ref={inputRef}
+          id="people-search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={scope === "intouch" ? "Search by name or @username" : `Search ${PLATFORM_META[scope].label}…`}
+          className={`${input} min-w-0 flex-1`}
+          autoComplete="off"
+        />
+        <label htmlFor="search-scope" className="sr-only">Choose which platform to search</label>
+        <select
+          id="search-scope"
+          value={scope}
+          onChange={(event) => setScope(event.target.value as SearchScope)}
+          className="h-11 shrink-0 cursor-pointer rounded-full border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 shadow-sm transition-colors hover:bg-gray-50 focus:border-emerald-500 focus:outline-none"
+        >
+          <option value="intouch">InTouch</option>
+          <option value="bluesky">Bluesky</option>
+          <option value="mastodon">Mastodon</option>
+          <option value="youtube">YouTube</option>
+          <option value="twitch">Twitch</option>
+        </select>
+      </div>
 
+      {scope === "intouch" && (
       <section aria-label={deferredQuery ? "Search results" : "People you may know"}>
         <h2 className="mb-2 text-sm font-semibold text-gray-700">
           {deferredQuery ? "Search results" : "Suggested for you"}
@@ -149,9 +204,106 @@ export default function PeopleSearchPage() {
           </div>
         )}
       </section>
+      )}
+
+      {scope !== "intouch" && (
+        <section aria-label={`${PLATFORM_META[scope].label} profiles`}>
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">
+            {deferredQuery ? `${PLATFORM_META[scope].label} results` : `Your ${PLATFORM_META[scope].label} follows`}
+          </h2>
+          {deferredQuery ? (
+            externalSearchQuery.isLoading ? (
+              <CardListSkeleton rows={3} />
+            ) : externalResults.length === 0 ? (
+              <p className="py-4 text-sm text-gray-500">No matching profiles found.</p>
+            ) : (
+              <div className={activityList}>
+                {externalResults.map((profile) => {
+                  const existing = externalFollows.find(
+                    (follow) => follow.platform === profile.platform && follow.externalId === profile.externalId
+                  );
+                  return (
+                    <div key={`${profile.platform}:${profile.externalId}`} className={`${activityRow} motion-safe:animate-[menu-enter_220ms_ease-out]`}>
+                      <a href={profile.profileUrl} target="_blank" rel="noopener noreferrer" className="flex min-w-0 flex-1 items-center gap-3">
+                        {profile.avatarUrl ? (
+                          <img src={profile.avatarUrl} alt="" loading="lazy" className="h-[42px] w-[42px] shrink-0 rounded-full object-cover" />
+                        ) : (
+                          <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-500">
+                            {(profile.displayName ?? profile.handle).slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-gray-900">
+                            {profile.displayName || `@${profile.handle}`}
+                          </span>
+                          <span className="block truncate text-xs text-gray-500">@{profile.handle}</span>
+                        </span>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${PLATFORM_META[profile.platform].badgeClass}`}>
+                          {PLATFORM_META[profile.platform].label}
+                        </span>
+                      </a>
+                      <button
+                        type="button"
+                        disabled={externalFollowMutation.isPending || externalUnfollowMutation.isPending}
+                        onClick={() => existing ? externalUnfollowMutation.mutate(existing.followId) : externalFollowMutation.mutate(profile)}
+                        aria-pressed={!!existing}
+                        className={`${btnSecondary} shrink-0 text-xs`}
+                      >
+                        {existing ? "Following ✓" : "Follow"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : platformFollows.length === 0 ? (
+            <p className="py-4 text-sm text-gray-500">
+              You don't follow any {PLATFORM_META[scope].label} profiles yet. Search for a handle above.
+            </p>
+          ) : (
+            <div className={activityList}>
+              {platformFollows.map((follow) => (
+                <div key={follow.followId} className={activityRow}>
+                  <a href={follow.profileUrl} target="_blank" rel="noopener noreferrer" className="flex min-w-0 flex-1 items-center gap-3">
+                    {follow.avatarUrl ? (
+                      <img src={follow.avatarUrl} alt="" loading="lazy" className="h-[42px] w-[42px] shrink-0 rounded-full object-cover" />
+                    ) : (
+                      <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-500">
+                        {(follow.displayName ?? follow.handle).slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-gray-900">
+                        {follow.displayName || `@${follow.handle}`}
+                      </span>
+                      <span className="block truncate text-xs text-gray-500">@{follow.handle}</span>
+                    </span>
+                    {follow.isLive && (
+                      <span className="shrink-0 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">LIVE</span>
+                    )}
+                  </a>
+                  <button
+                    type="button"
+                    disabled={externalUnfollowMutation.isPending}
+                    onClick={() => externalUnfollowMutation.mutate(follow.followId)}
+                    className={`${btnSecondary} shrink-0 text-xs`}
+                  >
+                    Unfollow
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {externalFollowMutation.isError && (
+            <p role="alert" className="mt-3 text-sm text-red-600">
+              {externalFollowMutation.error instanceof Error ? externalFollowMutation.error.message : "Could not follow this profile."}
+            </p>
+          )}
+        </section>
+      )}
       {followMutation.isError && <p role="alert" className="mt-3 text-sm text-red-600">Could not follow this profile. Try again.</p>}
 
-      {deferredQuery && searchQuery.hasNextPage && (
+      {scope === "intouch" && deferredQuery && searchQuery.hasNextPage && (
         <button
           type="button"
           onClick={() => void searchQuery.fetchNextPage()}

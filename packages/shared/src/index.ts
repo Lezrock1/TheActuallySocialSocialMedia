@@ -158,7 +158,56 @@ export type FeedItem =
       createdAt: string;
       follower: PublicUser;
       followee: PublicUser;
+    }
+  | {
+      type: "external";
+      id: string;
+      createdAt: string;
+      external: ExternalFeedPost;
     };
+
+export const EXTERNAL_PLATFORMS = ["bluesky", "mastodon", "youtube", "twitch"] as const;
+export type ExternalPlatform = (typeof EXTERNAL_PLATFORMS)[number];
+
+export interface ExternalProfile {
+  platform: ExternalPlatform;
+  externalId: string;
+  handle: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  profileUrl: string;
+}
+
+export interface ExternalFollowSummary extends ExternalProfile {
+  followId: string;
+  isLive: boolean;
+  lastSyncedAt: string | null;
+}
+
+export interface ExternalFeedPost {
+  platform: ExternalPlatform;
+  externalId: string;
+  authorHandle: string;
+  authorName: string | null;
+  authorAvatarUrl: string | null;
+  profileUrl: string;
+  text: string | null;
+  mediaUrl: string | null;
+  thumbnailUrl: string | null;
+  url: string;
+  publishedAt: string;
+}
+
+export interface ExternalStoryItem {
+  id: string;
+  platform: "youtube" | "twitch";
+  title: string;
+  thumbnailUrl: string | null;
+  url: string;
+  authorName: string;
+  authorAvatarUrl: string | null;
+  live: boolean;
+}
 
 export const AI_PROVIDER_TYPES = ["openai_compatible", "anthropic"] as const;
 export type AiProviderType = (typeof AI_PROVIDER_TYPES)[number];

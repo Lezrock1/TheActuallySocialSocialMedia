@@ -15,6 +15,7 @@ import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import StoriesBar from "../components/StoriesBar.js";
 import PostCard from "../components/PostCard.js";
+import ExternalPostCard from "../components/ExternalPostCard.js";
 import Avatar from "../components/Avatar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
@@ -88,6 +89,11 @@ type FeedRow =
       key: string;
       kind: "follow";
       item: Extract<FeedItem, { type: "follow" }>;
+    }
+  | {
+      key: string;
+      kind: "external";
+      item: Extract<FeedItem, { type: "external" }>;
     };
 
 function FeedCaughtUp({ hasEarlierPosts = false }: { hasEarlierPosts?: boolean }) {
@@ -173,7 +179,7 @@ export default function FeedPage() {
     let boundaryShown = false;
     allPages.forEach((page, pageIndex) => {
       page.items.forEach((item, itemIndex) => {
-        const key = item.type === "post" ? `post:${item.id}` : `follow:${item.id}`;
+        const key = item.type === "post" ? `post:${item.id}` : item.type === "follow" ? `follow:${item.id}` : item.id;
         if (seenKeys.has(key)) return;
         seenKeys.add(key);
         const showBoundary = hasNewFeedItems && rows.length > 0 && page.boundaryIndex === itemIndex && !boundaryShown;
@@ -183,8 +189,10 @@ export default function FeedPage() {
         }
         if (item.type === "post") {
           rows.push({ key, kind: "post", item });
-        } else {
+        } else if (item.type === "follow") {
           rows.push({ key, kind: "follow", item });
+        } else {
+          rows.push({ key, kind: "external", item });
         }
       });
     });
@@ -558,6 +566,10 @@ export default function FeedPage() {
                     onDeleted={onPostDeleted}
                     mediaPriority={virtualRow.index === firstRenderedPostIndex}
                   />
+                </div>
+              ) : row.kind === "external" ? (
+                <div className="pb-3">
+                  <ExternalPostCard item={row.item.external} />
                 </div>
               ) : (
                 <div className="pb-3">

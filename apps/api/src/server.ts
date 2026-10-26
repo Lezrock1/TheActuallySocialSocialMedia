@@ -31,6 +31,7 @@ import { pollRoutes } from "./routes/polls.js";
 import { deploymentRoutes } from "./routes/deployment.js";
 import { usageRoutes } from "./routes/usage.js";
 import { musicRoutes } from "./routes/music.js";
+import { externalRoutes } from "./routes/external.js";
 import { BusyError } from "./auth/passwords.js";
 import { createRateLimiter, sendRateLimited } from "./rateLimit.js";
 
@@ -94,6 +95,7 @@ async function main(): Promise<void> {
   await app.register(deploymentRoutes);
   await app.register(usageRoutes);
   await app.register(musicRoutes);
+  await app.register(externalRoutes);
 
   await app.listen({ port: env.port, host: "0.0.0.0" });
 }
