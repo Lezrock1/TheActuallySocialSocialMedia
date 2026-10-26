@@ -210,7 +210,16 @@ function PostVideo({ mediaKey, priority }: { mediaKey: string; priority: boolean
   const [failed, setFailed] = useState(false);
   const poster = mediaPosterUrl(mediaKey);
   return (
-    <div className="relative mx-auto mt-2 flex min-h-48 max-h-[32rem] w-full items-center justify-center overflow-hidden rounded-lg bg-gray-950">
+    <div className="relative mx-auto mt-2 flex min-h-48 max-h-[32rem] w-full items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+      <img
+        src={poster}
+        alt=""
+        aria-hidden="true"
+        loading={priority ? "eager" : "lazy"}
+        fetchPriority={priority ? "high" : "low"}
+        decoding="async"
+        className="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl"
+      />
       <img
         src={poster}
         alt=""
@@ -233,8 +242,8 @@ function PostVideo({ mediaKey, priority }: { mediaKey: string; priority: boolean
         className={`relative mx-auto block h-auto min-h-48 max-h-[32rem] w-auto max-w-full object-contain transition-opacity duration-300 ${ready && !failed ? "opacity-100" : "opacity-0"}`}
       />
       {!ready && !failed && (
-        <span role="status" aria-label="Loading post video" className="absolute inset-0 flex items-center justify-center bg-black/10">
-          <span aria-hidden="true" className="h-10 w-10 animate-spin rounded-full border-[3px] border-white/30 border-t-white shadow-lg motion-reduce:animate-none" />
+        <span role="status" aria-label="Loading post video" className="absolute inset-0 flex items-center justify-center">
+          <span aria-hidden="true" className="h-10 w-10 animate-spin rounded-full border-[3px] border-gray-900/15 border-t-gray-900/60 shadow-lg motion-reduce:animate-none" />
         </span>
       )}
       {failed && (
