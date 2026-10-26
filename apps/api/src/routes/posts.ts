@@ -324,8 +324,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           take: fetchLimit + 1,
         });
 
-      const hasMore = posts.length > fetchLimit;
-      const windowPosts = hasMore ? posts.slice(0, fetchLimit) : posts;
+      const fetchedBeyondWindow = posts.length > fetchLimit;
+      const windowPosts = fetchedBeyondWindow ? posts.slice(0, fetchLimit) : posts;
       const items: FeedItem[] = windowPosts.map((post): FeedItem => ({
         type: "post",
         id: post.id,
@@ -370,6 +370,11 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const page = items.slice(0, limit);
+      // More content exists when the DB window had extra posts OR the
+      // activity-sorted window itself exceeds the page size – otherwise the
+      // feed would stop after the first page and "caught up" stuck to the
+      // bottom permanently.
+      const hasMore = fetchedBeyondWindow || items.length > limit;
       // The cursor must continue from the oldest displayed post by creation
       // time so nothing is skipped; bumped posts that are fetched again on
       // later pages are deduplicated by the client. External items never
