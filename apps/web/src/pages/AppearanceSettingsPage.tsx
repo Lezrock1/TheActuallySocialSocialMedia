@@ -4,6 +4,7 @@ import BackgroundSettings from "../components/BackgroundSettings.js";
 import { card } from "../lib/ui.js";
 import { useThemePreference } from "../lib/theme.js";
 import PreferenceSwitch from "../components/PreferenceSwitch.js";
+import FeedSourceSettings from "../components/FeedSourceSettings.js";
 import { UNREAD_FIRST_KEY, useListPreference } from "../lib/listPreferences.js";
 
 function ThemePreview({ dark, selected }: { dark: boolean; selected: boolean }) {
@@ -74,6 +75,7 @@ export default function AppearanceSettingsPage() {
         <h2 id="messages-settings-heading" className="mb-1 text-sm font-semibold text-gray-900">Messages</h2>
         <PreferenceSwitch label="Unread first" checked={unreadFirst} onChange={setUnreadFirst} />
       </section>
+      <FeedSourceSettings />
       <BackgroundSettings />
     </div>
   );

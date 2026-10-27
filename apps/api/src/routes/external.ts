@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { EXTERNAL_PLATFORMS, EXTERNAL_SUGGESTION_TOPICS } from "@app/shared";
 import type { ExternalFollowSummary, ExternalPlatform, ExternalProfile, ExternalStoryItem, ExternalSuggestionTopic } from "@app/shared";
 import { prisma } from "../db.js";
@@ -6,6 +7,9 @@ import { requireAuth } from "../auth/middleware.js";
 import { suggestionEntries } from "../externalSuggestions.js";
 import {
   externalStoryItems,
+  cachedExternalContent,
+  repostContent,
+  visibleExternalRepost,
   resolveProfile,
   searchProfiles,
   syncFollow,
@@ -18,7 +22,54 @@ function parsePlatform(value?: string): ExternalPlatform | null {
   return value && (EXTERNAL_PLATFORMS as readonly string[]).includes(value) ? (value as ExternalPlatform) : null;
 }
 
+const feedSourcesSchema = z.object({ hiddenPlatforms: z.array(z.enum(EXTERNAL_PLATFORMS)).max(4) }).strict();
+const repostSchema = z.object({
+  platform: z.enum(["bluesky", "mastodon", "youtube"]),
+  externalId: z.string().min(1).max(1000),
+  url: z.string().url().max(1000),
+}).strict();
+
 export async function externalRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/external/preferences", { preHandler: requireAuth }, async (request, reply) => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: request.userId! }, select: { hiddenExternalPlatforms: true } });
+    return reply.send({ hiddenPlatforms: user.hiddenExternalPlatforms });
+  });
+
+  app.patch("/external/preferences", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = feedSourcesSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "Invalid feed sources" });
+    const hiddenPlatforms = [...new Set(parsed.data.hiddenPlatforms)];
+    await prisma.user.update({ where: { id: request.userId! }, data: { hiddenExternalPlatforms: hiddenPlatforms } });
+    return reply.send({ hiddenPlatforms });
+  });
+
+  app.post("/external/reposts", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = repostSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "Invalid external post" });
+    const userId = request.userId!;
+    const source = await prisma.externalPost.findFirst({ where: { ...parsed.data, follow: { userId } }, include: { follow: true } });
+    let content = source ? cachedExternalContent(source) : null;
+    if (!content) {
+      const repost = await visibleExternalRepost(userId, parsed.data);
+      if (repost) content = repostContent(repost);
+    }
+    if (!content) return reply.code(404).send({ error: "External post not found" });
+    const { repostedBy: _repostedBy, repostedByMe: _repostedByMe, ...snapshot } = content;
+    const repost = await prisma.externalRepost.upsert({
+      where: { userId_platform_externalId_url: { userId, ...parsed.data } },
+      create: { userId, ...snapshot, publishedAt: new Date(snapshot.publishedAt) },
+      update: {},
+    });
+    return reply.code(201).send({ repostId: repost.id });
+  });
+
+  app.delete("/external/reposts", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = repostSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "Invalid external post" });
+    await prisma.externalRepost.deleteMany({ where: { ...parsed.data, userId: request.userId! } });
+    return reply.code(204).send();
+  });
+
   app.get<{ Querystring: { platform?: string; q?: string } }>(
     "/external/search",
     { preHandler: requireAuth },

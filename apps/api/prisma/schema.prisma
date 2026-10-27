@@ -17,6 +17,7 @@ model User {
   bio          String?
   avatarKey    String?
   translationLanguage String @default("de")
+  hiddenExternalPlatforms String[] @default([])
   createdAt    DateTime @default(now())
 
   // last post the user has scrolled to -> drives the "you're all caught up" marker
@@ -52,6 +53,7 @@ model User {
   notificationsSent Notification[] @relation("NotificationActor")
   commentLikes     CommentLike[]
   externalFollows  ExternalFollow[]
+  externalReposts  ExternalRepost[]
   pushSubscriptions WebPushSubscription[]
   momentPosts       MomentPost[]
   momentReactions   MomentReaction[]
@@ -239,6 +241,27 @@ model ExternalPost {
 
   @@unique([followId, externalId])
   @@index([publishedAt])
+}
+
+model ExternalRepost {
+  id              String   @id @default(cuid())
+  userId          String
+  platform        String
+  externalId      String
+  authorHandle    String
+  authorName      String?
+  authorAvatarUrl String?
+  profileUrl      String
+  text            String?
+  mediaUrl        String?
+  thumbnailUrl    String?
+  url             String
+  publishedAt     DateTime
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform, externalId, url])
+  @@index([userId, createdAt, id])
 }
 
 model Notification {

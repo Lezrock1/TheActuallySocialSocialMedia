@@ -30,7 +30,7 @@ function parseFeedCursor(value?: string): FeedCursor | null {
       createdAt?: unknown;
     };
     if (
-      (parsed.type !== "post" && parsed.type !== "follow") ||
+      (parsed.type !== "post" && parsed.type !== "follow" && parsed.type !== "external") ||
       typeof parsed.id !== "string" ||
       typeof parsed.createdAt !== "string" ||
       !Number.isFinite(new Date(parsed.createdAt).getTime())
@@ -337,8 +337,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         // Refresh stale external follows in the background; the cached posts
         // from followed Bluesky/Mastodon/YouTube profiles merge into the feed.
         void syncStaleExternalFollows(viewerId).catch(() => undefined);
-        items.push(...(await externalFeedItems(viewerId)));
       }
+      items.push(...(await externalFeedItems(viewerId, { limit, cursor, authorIds })));
 
       if (isFirstPage && items.length > 1) {
         const friendIds = following
@@ -375,15 +375,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       // feed would stop after the first page and "caught up" stuck to the
       // bottom permanently.
       const hasMore = fetchedBeyondWindow || items.length > limit;
-      // The cursor must continue from the oldest displayed post by creation
-      // time so nothing is skipped; bumped posts that are fetched again on
-      // later pages are deduplicated by the client. External items never
-      // define the cursor – pagination follows internal posts only.
       const oldestInPage = page.reduce<FeedItem | null>(
-        (oldest, item) => {
-          if (item.type !== "post") return oldest;
-          return oldest && oldest.createdAt <= item.createdAt ? oldest : item;
-        },
+        (oldest, item) => oldest && compareFeedItems(oldest, item) >= 0 ? oldest : item,
         null
       );
       const nextCursor = hasMore && oldestInPage ? encodeFeedCursor(oldestInPage) : null;
@@ -411,18 +404,31 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
 
   // Marks the newest post currently loaded in the feed as "seen" so the
   // caught-up boundary advances on the next visit.
-  app.post<{ Body: { itemId: string; itemType: "post" | "follow" } }>(
+  app.post<{ Body: { itemId: string; itemType: FeedItem["type"] } }>(
     "/feed/mark-seen",
     { preHandler: requireAuth },
     async (request, reply) => {
       const { itemId, itemType } = request.body;
-      if (itemType !== "post" && itemType !== "follow") {
+      if (itemType !== "post" && itemType !== "follow" && itemType !== "external") {
         return reply.code(400).send({ error: "Invalid feed item type" });
       }
 
-      const item = itemType === "post"
+      let item: { id: string; createdAt: Date } | null = itemType === "post"
         ? await prisma.post.findUnique({ where: { id: itemId } })
-        : await prisma.follow.findUnique({ where: { id: itemId } });
+        : itemType === "follow" ? await prisma.follow.findUnique({ where: { id: itemId } }) : null;
+      if (itemType === "external" && itemId.startsWith("external:")) {
+        const external = await prisma.externalPost.findFirst({ where: { id: itemId.slice(9), follow: { userId: request.userId! } } });
+        if (external) item = { id: external.id, createdAt: external.publishedAt };
+      } else if (itemType === "external" && itemId.startsWith("repost:")) {
+        const [following, blocked] = await Promise.all([
+          prisma.follow.findMany({ where: { followerId: request.userId! }, select: { followeeId: true } }),
+          getBlockedUserIds(request.userId!),
+        ]);
+        item = await prisma.externalRepost.findFirst({ where: {
+          id: itemId.slice(7),
+          userId: { in: [request.userId!, ...following.map((follow) => follow.followeeId)].filter((id) => !blocked.includes(id)) },
+        } });
+      }
       if (!item) return reply.code(404).send({ error: "Feed item not found" });
 
       await prisma.user.update({

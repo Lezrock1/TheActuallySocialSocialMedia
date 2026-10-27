@@ -28,7 +28,7 @@ export default function PostTranslation({ post }: { post: ExternalFeedPost }) {
     try {
       const response = await apiFetch<{ translation: string }>("/ai/translate", {
         method: "POST",
-        body: JSON.stringify({ externalPost: { platform: post.platform, externalId: post.externalId } }),
+        body: JSON.stringify({ externalPost: { platform: post.platform, externalId: post.externalId, url: post.url } }),
       });
       setResult({ language, text: response.translation });
       setVisible(true);

@@ -87,6 +87,7 @@ export const translatePostSchema = z.object({
   externalPost: z.object({
     platform: z.enum(["bluesky", "mastodon", "youtube"]),
     externalId: z.string().min(1).max(1000),
+    url: z.string().url().max(1000).optional(),
   }).optional(),
 }).refine((value) => Boolean(value.postId) !== Boolean(value.externalPost), {
   message: "Provide either postId or externalPost",
@@ -191,6 +192,8 @@ export interface ExternalFollowSummary extends ExternalProfile {
 }
 
 export interface ExternalFeedPost {
+  repostedBy?: PublicUser;
+  repostedByMe?: boolean;
   platform: ExternalPlatform;
   externalId: string;
   authorHandle: string;

@@ -9,6 +9,7 @@ import {
 } from "@app/shared";
 import type { AiConversationMessage, AiMode, AiProviderConfigPublic } from "@app/shared";
 import { prisma } from "../db.js";
+import { visibleExternalRepost } from "../external.js";
 import { requireAuth } from "../auth/middleware.js";
 import { env } from "../env.js";
 import { encryptSecret, decryptSecret } from "../ai/crypto.js";
@@ -149,6 +150,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
           where: {
             platform: parsed.data.externalPost.platform,
             externalId: parsed.data.externalPost.externalId,
+            ...(parsed.data.externalPost.url ? { url: parsed.data.externalPost.url } : {}),
             follow: { userId: request.userId! },
           },
         }) : null,
@@ -157,7 +159,9 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
           select: { translationLanguage: true },
         }),
       ]);
-      const text = post?.text ?? externalPost?.text;
+      const repost = !externalPost && parsed.data.externalPost
+        ? await visibleExternalRepost(request.userId!, parsed.data.externalPost) : null;
+      const text = post?.text ?? externalPost?.text ?? repost?.text;
       if (!text) {
         return reply.code(404).send({ error: "Post text not found" });
       }

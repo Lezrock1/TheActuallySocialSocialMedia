@@ -46,7 +46,7 @@ for (const platform of ["bluesky", "mastodon", "youtube"]) {
     await page.route(/\/ai\/translate$/, async (route) => {
       if (route.request().method() === "OPTIONS") return route.fulfill({ headers: { ...headers, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type" }, body: "" });
       requests += 1;
-      expect(route.request().postDataJSON()).toEqual({ externalPost: { platform, externalId: "external-test" } });
+      expect(route.request().postDataJSON()).toEqual({ externalPost: { platform, externalId: "external-test", url: "https://example.com/post" } });
       return route.fulfill({ headers, json: { translation: "Une publication traduite" } });
     });
     await page.goto("/");
@@ -60,6 +60,130 @@ for (const platform of ["bluesky", "mastodon", "youtube"]) {
     await page.screenshot({ path: `screenshots/${info.project.name}/external-translation-${platform}.png`, animations: "disabled" });
   });
 }
+
+for (const platform of ["bluesky", "mastodon", "youtube"]) {
+  test(`${platform} repost reaches followers, respects filters and blocks, and supports undo`, async ({ page, context, browser }, info) => {
+    const leo = await database.user.findUniqueOrThrow({ where: { username: "leo" } });
+    const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+    const stamp = `${platform}-${Date.now()}-${info.project.name}`;
+    const originalFollow = await database.follow.findUnique({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } } });
+    await database.follow.upsert({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } }, create: { followerId: mia.id, followeeId: leo.id }, update: {} });
+    const source = await database.externalFollow.create({ data: {
+      userId: leo.id, platform, externalId: stamp, handle: stamp, displayName: "External author",
+      profileUrl: "https://example.com/profile", lastSyncedAt: new Date(),
+    } });
+    const post = await database.externalPost.create({ data: {
+      followId: source.id, platform, externalId: stamp, text: `Shared story ${stamp}`,
+      url: `https://example.com/${stamp}`, publishedAt: new Date(),
+    } });
+    const reference = { platform, externalId: stamp, url: post.url };
+    const recipient = await browser.newContext({ storageState: ".auth/mia.json", extraHTTPHeaders: { "x-forwarded-for": "198.51.100.61" } });
+    const originalPreferences = await (await recipient.request.get(`${API}/external/preferences`)).json();
+    const ownPreferences = await (await context.request.get(`${API}/external/preferences`)).json();
+    let block = null;
+    try {
+      await context.request.patch(`${API}/external/preferences`, { data: { hiddenPlatforms: [] } });
+      await recipient.request.patch(`${API}/external/preferences`, { data: { hiddenPlatforms: [] } });
+      await page.goto("/");
+      await page.locator("article").filter({ hasText: `Shared story ${stamp}` }).getByRole("button", { name: "Repost", exact: true }).click();
+      await expect.poll(() => database.externalRepost.count({ where: { userId: leo.id, externalId: stamp } })).toBe(1);
+      const first = await context.request.post(`${API}/external/reposts`, { data: reference });
+      expect(first.status()).toBe(201);
+      const duplicate = await context.request.post(`${API}/external/reposts`, { data: reference });
+      expect((await duplicate.json()).repostId).toBe((await first.json()).repostId);
+      const feed = async () => (await (await recipient.request.get(`${API}/feed`)).json()).items;
+      const visible = await feed();
+      const repost = visible.find((item) => item.external?.externalId === stamp);
+      expect(repost?.external.repostedBy.username).toBe("leo");
+      expect(repost?.external.authorHandle).toBe(stamp);
+      const seen = await recipient.request.post(`${API}/feed/mark-seen`, { data: { itemId: repost.id, itemType: "external" } });
+      expect(seen.status()).toBe(204);
+      await recipient.request.delete(`${API}/external/reposts`, { data: reference });
+      expect((await feed()).some((item) => item.external?.externalId === stamp)).toBe(true);
+      const hidden = await recipient.request.patch(`${API}/external/preferences`, { data: { hiddenPlatforms: [platform] } });
+      expect(hidden.status()).toBe(200);
+      expect((await feed()).some((item) => item.external?.externalId === stamp)).toBe(false);
+      const invalid = await recipient.request.patch(`${API}/external/preferences`, { data: { hiddenPlatforms: ["intouch"] } });
+      expect(invalid.status()).toBe(400);
+      await recipient.request.patch(`${API}/external/preferences`, { data: { hiddenPlatforms: [] } });
+      block = await database.blockedUser.create({ data: { blockerId: leo.id, blockedId: mia.id } });
+      expect((await feed()).some((item) => item.external?.externalId === stamp)).toBe(false);
+      expect((await recipient.request.post(`${API}/external/reposts`, { data: reference })).status()).toBe(404);
+      await database.blockedUser.delete({ where: { id: block.id } }); block = null;
+      expect((await recipient.request.post(`${API}/external/reposts`, { data: reference })).status()).toBe(201);
+      await recipient.request.delete(`${API}/external/reposts`, { data: reference });
+      await database.externalFollow.delete({ where: { id: source.id } });
+      expect((await feed()).some((item) => item.external?.externalId === stamp)).toBe(true);
+      await page.goto("/");
+      const card = page.locator("article").filter({ hasText: `Shared story ${stamp}` });
+      await expect(card.getByRole("button", { name: "Undo repost", exact: true })).toBeVisible();
+      await page.screenshot({ path: `screenshots/${info.project.name}/repost-${platform}.png`, animations: "disabled" });
+      await card.getByRole("button", { name: "Undo repost", exact: true }).click();
+      await expect.poll(async () => (await feed()).some((item) => item.external?.externalId === stamp)).toBe(false);
+      await page.goto("/settings/appearance");
+      await expect(page.getByText("Always on", { exact: true })).toBeVisible();
+      const toggle = page.getByRole("switch", { name: "Bluesky", exact: true });
+      await expect(toggle).toHaveAttribute("aria-checked", "true");
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-checked", "false");
+      await page.reload();
+      await expect(toggle).toHaveAttribute("aria-checked", "false");
+      await page.getByRole("region", { name: "Feed sources", exact: true }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `screenshots/${info.project.name}/feed-sources-${platform}.png`, animations: "disabled" });
+    } finally {
+      if (block) await database.blockedUser.deleteMany({ where: { id: block.id } });
+      await database.externalRepost.deleteMany({ where: { externalId: stamp } });
+      await database.externalFollow.deleteMany({ where: { id: source.id } });
+      if (!originalFollow) await database.follow.deleteMany({ where: { followerId: mia.id, followeeId: leo.id } });
+      await recipient.request.patch(`${API}/external/preferences`, { data: originalPreferences });
+      await context.request.patch(`${API}/external/preferences`, { data: ownPreferences });
+      await database.user.update({ where: { id: mia.id }, data: { lastSeenPostId: mia.lastSeenPostId, lastSeenPostCreatedAt: mia.lastSeenPostCreatedAt } });
+      await recipient.close();
+    }
+  });
+}
+
+test("a repost-only first page paginates beyond twenty posts", async ({ context, browser }) => {
+  const leo = await database.user.findUniqueOrThrow({ where: { username: "leo" } });
+  const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+  const stamp = `pagination-${Date.now()}`;
+  const originalFollow = await database.follow.findUnique({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } } });
+  await database.follow.upsert({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } }, create: { followerId: mia.id, followeeId: leo.id }, update: {} });
+  const recipient = await browser.newContext({ storageState: ".auth/mia.json", extraHTTPHeaders: { "x-forwarded-for": "198.51.100.62" } });
+  const originalPreferences = await (await recipient.request.get(`${API}/external/preferences`)).json();
+  await database.externalRepost.createMany({ data: Array.from({ length: 30 }, (_, index) => ({
+    userId: leo.id, platform: "bluesky", externalId: `${stamp}-${index}`, authorHandle: "source",
+    profileUrl: "https://example.com", url: `https://example.com/${stamp}/${index}`, publishedAt: new Date(),
+    createdAt: new Date(Date.now() + 3600000 + index * 1000),
+  })) });
+  try {
+    await recipient.request.patch(`${API}/external/preferences`, { data: { hiddenPlatforms: [] } });
+    const seen = new Set();
+    const cursors = new Set();
+    let cursor = null;
+    for (let pageIndex = 0; pageIndex < 12; pageIndex += 1) {
+      const response = await recipient.request.get(`${API}/feed?limit=7${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+      expect(response.status()).toBe(200);
+      const page = await response.json();
+      for (const item of page.items) if (item.external?.externalId.startsWith(stamp)) {
+        expect(seen.has(item.id)).toBe(false); seen.add(item.id);
+      }
+      if (seen.size === 30 || !page.nextCursor) break;
+      expect(cursors.has(page.nextCursor)).toBe(false);
+      cursors.add(page.nextCursor); cursor = page.nextCursor;
+    }
+    expect(seen.size).toBe(30);
+    await recipient.request.patch(`${API}/external/preferences`, { data: { hiddenPlatforms: ["bluesky", "mastodon", "youtube", "twitch"] } });
+    const native = await (await recipient.request.get(`${API}/feed`)).json();
+    expect(native.items.some((item) => item.type === "post")).toBe(true);
+    expect(native.items.every((item) => item.type !== "external")).toBe(true);
+  } finally {
+    await database.externalRepost.deleteMany({ where: { userId: leo.id, externalId: { startsWith: stamp } } });
+    if (!originalFollow) await database.follow.deleteMany({ where: { followerId: mia.id, followeeId: leo.id } });
+    await recipient.request.patch(`${API}/external/preferences`, { data: originalPreferences });
+    await recipient.close();
+  }
+});
 
 test("installable app requests a fixed upright portrait orientation", async ({ page }) => {
   await page.goto("/");

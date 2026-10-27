@@ -569,7 +569,7 @@ export default function FeedPage() {
                 </div>
               ) : row.kind === "external" ? (
                 <div className="pb-3">
-                  <ExternalPostCard item={row.item.external} />
+                  <ExternalPostCard item={row.item.external} onRepostChanged={() => setPages([])} />
                 </div>
               ) : (
                 <div className="pb-3">

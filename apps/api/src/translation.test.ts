@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(), externalPost: vi.fn(), user: vi.fn(), provider: vi.fn(), chat: vi.fn(), canView: vi.fn(),
+  visibleRepost: vi.fn(),
 }));
 vi.mock("./db.js", () => ({ prisma: {
   post: { findUnique: mocks.post }, externalPost: { findFirst: mocks.externalPost },
   user: { findUnique: mocks.user }, aiProviderConfig: { findFirst: mocks.provider },
 } }));
 vi.mock("./env.js", () => ({ env: {} }));
+vi.mock("./external.js", () => ({ visibleExternalRepost: mocks.visibleRepost }));
 vi.mock("./auth/middleware.js", () => ({ requireAuth: async (request: { userId: string }) => { request.userId = "viewer"; } }));
 vi.mock("./ai/adapters.js", () => ({ createAdapter: () => ({ chat: mocks.chat }) }));
 vi.mock("./ai/crypto.js", () => ({ encryptSecret: vi.fn(), decryptSecret: vi.fn() }));
@@ -34,6 +36,7 @@ describe("post translation", () => {
     mocks.provider.mockResolvedValue({ type: "openai_compatible", baseUrl: "https://example.com", model: "test", encryptedApiKey: null });
     mocks.chat.mockResolvedValue("Une publication traduite");
     mocks.canView.mockResolvedValue(true);
+    mocks.visibleRepost.mockResolvedValue(null);
   });
 
   it.each(["bluesky", "mastodon", "youtube"])("translates %s from the viewer's cached follows", async (platform) => {
@@ -49,6 +52,13 @@ describe("post translation", () => {
   it("keeps internal post translation working", async () => {
     expect((await translate({ postId: "internal" })).statusCode).toBe(200);
     expect(mocks.chat.mock.calls[0][0][1].content).toBe("Internal post");
+  });
+
+  it("translates a visible friend's repost without an external follow", async () => {
+    mocks.externalPost.mockResolvedValue(null);
+    mocks.visibleRepost.mockResolvedValue({ text: "A friend's repost" });
+    expect((await translate({ externalPost: { platform: "bluesky", externalId: "reposted" } })).statusCode).toBe(200);
+    expect(mocks.chat.mock.calls[0][0][1].content).toBe("A friend's repost");
   });
 
   it("rejects inaccessible external posts without calling the provider", async () => {

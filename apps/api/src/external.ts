@@ -1,6 +1,8 @@
-import type { ExternalFollow } from "@prisma/client";
+import type { ExternalFollow, ExternalPost, ExternalRepost, Prisma } from "@prisma/client";
 import type { ExternalFeedPost, ExternalPlatform, ExternalProfile, ExternalStoryItem, FeedItem } from "@app/shared";
 import { prisma } from "./db.js";
+import { toPublicUser } from "./serializers.js";
+import { getBlockedUserIds } from "./visibility.js";
 
 const BSKY_API = "https://public.api.bsky.app/xrpc";
 const MASTODON_DEFAULT_INSTANCE = "mastodon.social";
@@ -489,42 +491,83 @@ export async function syncStaleExternalFollows(userId: string): Promise<void> {
   await Promise.allSettled(stale.map((follow) => syncFollow(follow)));
 }
 
-export async function externalFeedItems(userId: string): Promise<FeedItem[]> {
-  const follows = await prisma.externalFollow.findMany({
-    where: { userId, platform: { in: ["bluesky", "mastodon", "youtube"] } },
-    include: {
-      posts: { orderBy: { publishedAt: "desc" }, take: 5 },
-    },
+export function cachedExternalContent(post: ExternalPost & { follow: ExternalFollow }): ExternalFeedPost {
+  return {
+    platform: post.platform as ExternalPlatform, externalId: post.externalId,
+    authorHandle: post.follow.handle, authorName: post.follow.displayName,
+    authorAvatarUrl: post.follow.avatarUrl, profileUrl: post.follow.profileUrl,
+    text: post.text, mediaUrl: post.mediaUrl, thumbnailUrl: post.thumbnailUrl,
+    url: post.url, publishedAt: post.publishedAt.toISOString(),
+  };
+}
+
+export function repostContent(post: ExternalRepost): ExternalFeedPost {
+  return {
+    platform: post.platform as ExternalPlatform, externalId: post.externalId,
+    authorHandle: post.authorHandle, authorName: post.authorName,
+    authorAvatarUrl: post.authorAvatarUrl, profileUrl: post.profileUrl,
+    text: post.text, mediaUrl: post.mediaUrl, thumbnailUrl: post.thumbnailUrl,
+    url: post.url, publishedAt: post.publishedAt.toISOString(),
+  };
+}
+
+export async function visibleExternalRepost(userId: string, reference: { platform: string; externalId: string; url?: string }) {
+  const [following, blocked] = await Promise.all([
+    prisma.follow.findMany({ where: { followerId: userId }, select: { followeeId: true } }),
+    getBlockedUserIds(userId),
+  ]);
+  const authorIds = [userId, ...following.map((follow) => follow.followeeId)].filter((id) => !blocked.includes(id));
+  return prisma.externalRepost.findFirst({ where: { ...reference, userId: { in: authorIds } } });
+}
+
+export async function externalFeedItems(userId: string, options: {
+  limit?: number;
+  cursor?: Pick<FeedItem, "id" | "type" | "createdAt"> | null;
+  authorIds?: string[];
+} = {}): Promise<FeedItem[]> {
+  const { hiddenExternalPlatforms = [] } = await prisma.user.findUniqueOrThrow({
+    where: { id: userId }, select: { hiddenExternalPlatforms: true },
   });
-  const items: FeedItem[] = [];
-  for (const follow of follows) {
-    for (const post of follow.posts) {
-      items.push({
-        type: "external",
-        id: `external:${post.id}`,
-        createdAt: post.publishedAt.toISOString(),
-        external: {
-          platform: post.platform as ExternalPlatform,
-          externalId: post.externalId,
-          authorHandle: follow.handle,
-          authorName: follow.displayName,
-          authorAvatarUrl: follow.avatarUrl,
-          profileUrl: follow.profileUrl,
-          text: post.text,
-          mediaUrl: post.mediaUrl,
-          thumbnailUrl: post.thumbnailUrl,
-          url: post.url,
-          publishedAt: post.publishedAt.toISOString(),
-        },
-      });
-    }
-  }
-  return items;
+  const limit = options.limit ?? 20;
+  const cursor = options.cursor;
+  const date = cursor ? new Date(cursor.createdAt) : null;
+  const ownBoundary: Prisma.ExternalPostWhereInput = date && cursor ? { OR: [
+    { publishedAt: { lt: date } },
+    ...(cursor.type === "post" || cursor.id.startsWith("repost:") ? [{ publishedAt: date }]
+      : cursor.id.startsWith("external:") ? [{ publishedAt: date, id: { lt: cursor.id.slice(9) } }] : []),
+  ] } : {};
+  const repostBoundary: Prisma.ExternalRepostWhereInput = date && cursor ? { OR: [
+    { createdAt: { lt: date } },
+    ...(cursor.type === "post" ? [{ createdAt: date }]
+      : cursor.id.startsWith("repost:") ? [{ createdAt: date, id: { lt: cursor.id.slice(7) } }] : []),
+  ] } : {};
+  const [posts, reposts, ownReposts] = await Promise.all([
+    prisma.externalPost.findMany({
+      where: { ...ownBoundary, follow: { userId }, platform: { notIn: hiddenExternalPlatforms } },
+      include: { follow: true }, orderBy: [{ publishedAt: "desc" }, { id: "desc" }], take: limit + 1,
+    }),
+    prisma.externalRepost.findMany({
+      where: { ...repostBoundary, userId: { in: options.authorIds ?? [userId] }, platform: { notIn: hiddenExternalPlatforms } },
+      include: { user: true }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: limit + 1,
+    }),
+    prisma.externalRepost.findMany({ where: { userId }, select: { platform: true, externalId: true, url: true } }),
+  ]);
+  const mine = new Set(ownReposts.map((post) => JSON.stringify([post.platform, post.externalId, post.url])));
+  const decorate = (content: ExternalFeedPost) => ({
+    ...content, repostedByMe: mine.has(JSON.stringify([content.platform, content.externalId, content.url])),
+  });
+  return [
+    ...posts.map((post): FeedItem => ({ type: "external", id: `external:${post.id}`, createdAt: post.publishedAt.toISOString(), external: decorate(cachedExternalContent(post)) })),
+    ...reposts.map((post): FeedItem => ({ type: "external", id: `repost:${post.id}`, createdAt: post.createdAt.toISOString(), external: { ...decorate(repostContent(post)), repostedBy: toPublicUser(post.user) } })),
+  ];
 }
 
 export async function externalStoryItems(userId: string): Promise<ExternalStoryItem[]> {
+  const { hiddenExternalPlatforms } = await prisma.user.findUniqueOrThrow({
+    where: { id: userId }, select: { hiddenExternalPlatforms: true },
+  });
   const follows = await prisma.externalFollow.findMany({
-    where: { userId, platform: { in: ["youtube", "twitch"] } },
+    where: { userId, platform: { in: ["youtube", "twitch"], notIn: hiddenExternalPlatforms } },
     include: {
       posts: {
         where: { isShort: true, publishedAt: { gt: new Date(Date.now() - 48 * 60 * 60 * 1000) } },
