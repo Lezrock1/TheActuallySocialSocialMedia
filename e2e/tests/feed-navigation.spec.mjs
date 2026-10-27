@@ -31,6 +31,36 @@ test("post photos open full screen and close with Escape or the close button", a
   } finally { await context.request.delete(`${API}/posts/${post.id}`); }
 });
 
+for (const platform of ["bluesky", "mastodon", "youtube"]) {
+  test(`${platform} feed posts translate into the preferred language and toggle the result`, async ({ page }, info) => {
+    const headers = { "access-control-allow-origin": "http://localhost:5173", "access-control-allow-credentials": "true" };
+    await page.route(/\/users\/me\/preferences$/, (route) => route.fulfill({ headers, json: { translationLanguage: "fr" } }));
+    await page.route(/\/feed\?/, (route) => route.fulfill({ headers, json: {
+      items: [{ type: "external", id: "external:test", createdAt: new Date().toISOString(), external: {
+        platform, externalId: "external-test", authorHandle: "author", authorName: "Test author", authorAvatarUrl: null,
+        profileUrl: "https://example.com", text: "A post to translate", mediaUrl: null, thumbnailUrl: null,
+        url: "https://example.com/post", publishedAt: new Date().toISOString(),
+      } }], nextCursor: null, caughtUp: true, boundaryIndex: null,
+    } }));
+    let requests = 0;
+    await page.route(/\/ai\/translate$/, async (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ headers: { ...headers, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type" }, body: "" });
+      requests += 1;
+      expect(route.request().postDataJSON()).toEqual({ externalPost: { platform, externalId: "external-test" } });
+      return route.fulfill({ headers, json: { translation: "Une publication traduite" } });
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Translate to Français", exact: true }).click();
+    await expect(page.getByText("Une publication traduite", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Hide translation", exact: true }).click();
+    await expect(page.getByText("Une publication traduite", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Translate to Français", exact: true }).click();
+    await expect(page.getByText("Une publication traduite", { exact: true })).toBeVisible();
+    expect(requests).toBe(1);
+    await page.screenshot({ path: `screenshots/${info.project.name}/external-translation-${platform}.png`, animations: "disabled" });
+  });
+}
+
 test("installable app requests a fixed upright portrait orientation", async ({ page }) => {
   await page.goto("/");
   const manifestUrl = await page.locator('link[rel="manifest"]').getAttribute("href");

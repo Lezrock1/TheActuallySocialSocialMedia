@@ -2,6 +2,7 @@ import type { ExternalFeedPost } from "@app/shared";
 import { card } from "../lib/ui.js";
 import { PLATFORM_META } from "../lib/platforms.js";
 import AiChatPanel from "./AiChatPanel.js";
+import PostTranslation from "./PostTranslation.js";
 
 /** Feed card for a post from a followed Bluesky/Mastodon/YouTube profile. */
 export default function ExternalPostCard({ item }: { item: ExternalFeedPost }) {
@@ -28,6 +29,7 @@ export default function ExternalPostCard({ item }: { item: ExternalFeedPost }) {
       {item.text && (
         <p className="mt-2 whitespace-pre-wrap text-[15px] leading-snug text-gray-800">{item.text}</p>
       )}
+      {item.text && item.platform !== "twitch" && <PostTranslation key={`${item.platform}:${item.externalId}:${item.text}`} post={item} />}
       {image && (
         <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-2 block overflow-hidden rounded-lg">
           <img

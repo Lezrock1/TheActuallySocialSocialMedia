@@ -83,7 +83,13 @@ export const TRANSLATION_LANGUAGES: { code: TranslationLanguage; label: string }
   { code: "pl", label: "Polski" },
 ];
 export const translatePostSchema = z.object({
-  postId: z.string().min(1),
+  postId: z.string().min(1).optional(),
+  externalPost: z.object({
+    platform: z.enum(["bluesky", "mastodon", "youtube"]),
+    externalId: z.string().min(1).max(1000),
+  }).optional(),
+}).refine((value) => Boolean(value.postId) !== Boolean(value.externalPost), {
+  message: "Provide either postId or externalPost",
 });
 export type TranslatePostInput = z.infer<typeof translatePostSchema>;
 export const MEDIA_TYPES = ["image", "video"] as const;

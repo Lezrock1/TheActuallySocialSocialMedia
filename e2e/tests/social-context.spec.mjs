@@ -24,6 +24,7 @@ async function prepare(context, username) {
         destination.stream.getTracks().forEach((track) => stream.addTrack(track));
       }
       if (constraints.video) {
+        window.__cameraRequests = (window.__cameraRequests ?? 0) + 1;
         const canvas = document.createElement("canvas");
         window.__testCameraCanvas = canvas;
         canvas.width = 320; canvas.height = 240;
@@ -240,6 +241,91 @@ for (const facing of ["environment", "user"]) {
     }
   });
 }
+
+for (const swapped of [false, true]) {
+  test(`dual camera captures both live views in photo and video, swapped=${swapped}`, async ({ context }, info) => {
+    test.skip(info.project.name !== "android", "WebKit does not start synthetic canvas camera streams here");
+    const page = await prepare(context, "leo");
+    await page.getByRole("button", { name: "Open camera", exact: true }).click();
+    const shutter = page.getByRole("button", { name: "Take photo, or hold to record video", exact: true });
+    async function enableDual() {
+      await expect(shutter).toBeEnabled();
+      await page.getByRole("button", { name: "Dual camera", exact: true }).click();
+      await expect(shutter).toBeEnabled();
+      await expect(page.getByLabel("Second camera preview", { exact: true })).toHaveJSProperty("readyState", 4);
+      if (swapped) {
+        const requests = await page.evaluate(() => window.__cameraRequests);
+        await page.getByRole("button", { name: "Swap dual camera views", exact: true }).click();
+        expect(await page.evaluate(() => window.__cameraRequests)).toBe(requests);
+      }
+    }
+    const pixels = (source) => {
+      const canvas = document.createElement("canvas"); canvas.width = 320; canvas.height = 240;
+      const paint = canvas.getContext("2d"); paint.drawImage(source, 0, 0, 320, 240);
+      return [Array.from(paint.getImageData(64, 48, 1, 1).data), Array.from(paint.getImageData(243, 149, 1, 1).data)];
+    };
+    function checkColors([main, inset]) {
+      expect(main[swapped ? 2 : 0]).toBeGreaterThan(180);
+      expect(main[swapped ? 0 : 2]).toBeLessThan(70);
+      expect(inset[swapped ? 0 : 2]).toBeGreaterThan(180);
+      expect(inset[swapped ? 2 : 0]).toBeLessThan(70);
+    }
+    await enableDual();
+    await page.screenshot({ path: `screenshots/${info.project.name}/dual-camera-${swapped}.png`, animations: "disabled" });
+    const inset = await page.getByRole("button", { name: "Swap dual camera views", exact: true }).boundingBox();
+    expect(inset.width).toBeGreaterThan(40);
+    expect(inset.x + inset.width).toBeLessThanOrEqual(page.viewportSize().width);
+    expect(inset.width / inset.height).toBeCloseTo(0.75, 1);
+    const mobileSize = page.viewportSize();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const desktopInset = await page.getByRole("button", { name: "Swap dual camera views", exact: true }).boundingBox();
+    expect(desktopInset.width / desktopInset.height).toBeCloseTo(0.75, 1);
+    await page.screenshot({ path: `screenshots/${info.project.name}/dual-camera-desktop-${swapped}.png`, animations: "disabled" });
+    await page.setViewportSize(mobileSize);
+    await page.evaluate(() => { window.__dualTracks = [...document.querySelectorAll("video")].flatMap((video) => video.srcObject?.getTracks() ?? []); });
+    await shutter.click();
+    const photo = page.getByRole("img", { name: "Photo preview", exact: true });
+    await expect.poll(() => photo.evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
+    checkColors(await photo.evaluate(pixels));
+    expect(await page.evaluate(() => window.__dualTracks.length >= 2 && window.__dualTracks.every((track) => track.readyState === "ended"))).toBe(true);
+    await page.getByRole("button", { name: "Retake", exact: true }).click();
+    await enableDual();
+    await shutter.hover(); await page.mouse.down();
+    await expect(page.getByRole("button", { name: "Recording video", exact: true })).toBeVisible();
+    const cameraRequests = await page.evaluate(() => window.__cameraRequests);
+    await page.getByRole("button", { name: "Swap dual camera views", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    expect(await page.evaluate(() => window.__cameraRequests)).toBe(cameraRequests);
+    const started = Date.now();
+    await expect.poll(() => Date.now() - started).toBeGreaterThan(1200);
+    await page.mouse.up();
+    const clip = page.locator("video[src^='blob:']");
+    await expect.poll(() => clip.evaluate((video) => video.readyState)).toBeGreaterThanOrEqual(2);
+    checkColors(await clip.evaluate(pixels));
+  });
+}
+
+test("dual camera failure restores the single camera", async ({ context }, info) => {
+  test.skip(info.project.name !== "android", "Requires synthetic canvas camera streams");
+  const page = await prepare(context, "leo");
+  await page.evaluate(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", { configurable: true, value: (constraints) => {
+      if (constraints.video?.facingMode?.exact) return Promise.reject(new DOMException("Camera busy", "NotReadableError"));
+      return original(constraints);
+    } });
+  });
+  await page.getByRole("button", { name: "Open camera", exact: true }).click();
+  const shutter = page.getByRole("button", { name: "Take photo, or hold to record video", exact: true });
+  await expect(shutter).toBeEnabled();
+  await page.getByRole("button", { name: "Dual camera", exact: true }).click();
+  await expect(page.getByText("This device or browser cannot use both cameras at once.", { exact: true })).toBeVisible();
+  await expect(shutter).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Dual camera", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByLabel("Second camera preview", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Close camera", exact: true }).click();
+});
 
 test("mirrored security scanner still verifies an unchanged QR payload", async ({ browser, context }, info) => {
   test.skip(info.project.name !== "android", "Requires synthetic canvas media streams");

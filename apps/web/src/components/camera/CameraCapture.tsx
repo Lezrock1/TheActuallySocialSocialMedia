@@ -42,6 +42,7 @@ function IconButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
+      title={label}
       aria-pressed={active}
       className={`flex h-11 w-11 items-center justify-center rounded-full backdrop-blur-md transition-[background-color,transform] active:scale-90 disabled:opacity-40 ${active ? "bg-white text-black" : "bg-black/35 text-white hover:bg-black/50"}`}
     >
@@ -113,6 +114,11 @@ export default function CameraCapture({
   onPickFile: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const secondaryVideoRef = useRef<HTMLVideoElement>(null);
+  const [dual, setDual] = useState(false);
+  const [swapped, setSwapped] = useState(false);
+  const dualRef = useRef(false);
+  const swappedRef = useRef(false);
   const trackRef = useRef<MediaStreamTrack | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pointerStartsRef = useRef(new Map<number, { x: number; y: number }>());
@@ -150,15 +156,21 @@ export default function CameraCapture({
   facingRef.current = facing;
   zoomRef.current = zoom;
   digitalZoomRef.current = !capabilities.zoom;
+  dualRef.current = dual;
+  swappedRef.current = swapped;
 
   // Start (and restart) the camera stream; stop it whenever the tab is hidden.
   useEffect(() => {
     let cancelled = false;
     let stream: MediaStream | null = null;
+    let secondaryStream: MediaStream | null = null;
     let starting = false;
     let restartAfterVisibility = false;
 
     function stop() {
+      secondaryStream?.getTracks().forEach((track) => track.stop());
+      secondaryStream = null;
+      if (secondaryVideoRef.current) secondaryVideoRef.current.srcObject = null;
       stream?.getTracks().forEach((track) => track.stop());
       stream = null;
       trackRef.current = null;
@@ -225,6 +237,43 @@ export default function CameraCapture({
           videoRef.current.srcObject = next;
           await videoRef.current.play();
         }
+        if (dual && !cancelled && !document.hidden) {
+          try {
+            const secondary = await requestUserMedia({
+              video: { facingMode: { exact: facing === "environment" ? "user" : "environment" }, width: { ideal: 720 }, height: { ideal: 960 } },
+              audio: false,
+            });
+            if (cancelled || document.hidden || stream !== next) {
+              secondary.getTracks().forEach((cameraTrack) => cameraTrack.stop());
+              return;
+            }
+            secondaryStream = secondary;
+            const secondTrack = secondary.getVideoTracks()[0];
+            const primaryDevice = track.getSettings().deviceId;
+            if (!secondTrack || (primaryDevice && primaryDevice === secondTrack.getSettings().deviceId)) {
+              throw new Error("Second camera unavailable");
+            }
+            if (secondaryVideoRef.current) {
+              secondaryVideoRef.current.srcObject = secondary;
+              await secondaryVideoRef.current.play();
+            }
+            if (track.muted || track.readyState !== "live" || secondTrack.muted) throw new Error("Concurrent cameras unavailable");
+            const unavailable = () => {
+              if (cancelled || document.hidden) return;
+              setNotice("This device or browser cannot use both cameras at once.");
+              setDual(false);
+            };
+            track.addEventListener("mute", unavailable);
+            track.addEventListener("ended", unavailable);
+            secondTrack.addEventListener("mute", unavailable);
+            secondTrack.addEventListener("ended", unavailable);
+          } catch {
+            if (cancelled || document.hidden) return;
+            setNotice("This device or browser cannot use both cameras at once.");
+            setDual(false);
+            return;
+          }
+        }
         if (!cancelled) setReady(true);
       } catch (error) {
         stop();
@@ -261,7 +310,7 @@ export default function CameraCapture({
       document.removeEventListener("visibilitychange", onVisibility);
       stop();
     };
-  }, [facing, nonce, useUltraWide]);
+  }, [facing, nonce, useUltraWide, dual]);
 
   const applyAdvanced = useCallback(async (constraint: Record<string, unknown>) => {
     try {
@@ -278,6 +327,7 @@ export default function CameraCapture({
   }
 
   async function setZoomLevel(value: number) {
+    if (dualRef.current) return;
     const range = capabilities.zoom ?? DIGITAL_ZOOM_RANGE;
     const clamped = Math.min(range.max, Math.max(range.min, value));
     if (!capabilities.zoom) {
@@ -340,12 +390,53 @@ export default function CameraCapture({
   function flipCamera() {
     navigator.vibrate?.(10);
     setFlipTurns((turns) => turns + 1);
+    if (dual) {
+      setSwapped((value) => !value);
+      return;
+    }
     setUseUltraWide(false);
     setFacing((mode) => (mode === "environment" ? "user" : "environment"));
   }
 
+  function drawFrame(context: CanvasRenderingContext2D, width: number, height: number) {
+    const primary = videoRef.current;
+    const secondary = secondaryVideoRef.current;
+    const main = dualRef.current && swappedRef.current ? secondary : primary;
+    const inset = swappedRef.current ? primary : secondary;
+    const mainFacing = dualRef.current && swappedRef.current
+      ? facingRef.current === "environment" ? "user" : "environment"
+      : facingRef.current;
+    function paint(source: HTMLVideoElement, x: number, y: number, targetWidth: number, targetHeight: number, mirror: boolean, crop = 1) {
+      if (!source.videoWidth || source.readyState < 2) return;
+      const scale = Math.max(targetWidth / source.videoWidth, targetHeight / source.videoHeight) * crop;
+      context.save();
+      context.beginPath();
+      context.rect(x, y, targetWidth, targetHeight);
+      context.clip();
+      context.translate(x + (mirror ? targetWidth : 0), y);
+      if (mirror) context.scale(-1, 1);
+      context.drawImage(source, (targetWidth - source.videoWidth * scale) / 2, (targetHeight - source.videoHeight * scale) / 2, source.videoWidth * scale, source.videoHeight * scale);
+      context.restore();
+    }
+    if (main) paint(main, 0, 0, width, height, mainFacing === "user", !dualRef.current && digitalZoomRef.current ? Math.max(1, zoomRef.current) : 1);
+    if (dualRef.current && inset) {
+      const insetWidth = Math.min(width * 0.28, height * 0.42 * 0.75);
+      const insetHeight = insetWidth / 0.75;
+      const left = width * 0.96 - insetWidth;
+      const top = height * 0.84 - insetHeight;
+      context.save();
+      context.beginPath();
+      context.roundRect(left, top, insetWidth, insetHeight, Math.min(8, insetWidth * 0.08));
+      context.clip();
+      paint(inset, left, top, insetWidth, insetHeight, mainFacing !== "user");
+      context.restore();
+    }
+  }
+  const drawFrameRef = useRef(drawFrame);
+  drawFrameRef.current = drawFrame;
+
   const takePhoto = useCallback(() => {
-    const video = videoRef.current;
+    const video = dualRef.current && swappedRef.current ? secondaryVideoRef.current : videoRef.current;
     if (!video || video.videoWidth === 0) return;
     const canvas = document.createElement("canvas");
     // Digital zoom crops the centre of the frame so the photo matches the preview.
@@ -356,27 +447,13 @@ export default function CameraCapture({
     canvas.height = Math.round(sourceHeight);
     const context = canvas.getContext("2d");
     if (!context) return;
-    if (facing === "user") {
-      context.translate(canvas.width, 0);
-      context.scale(-1, 1);
-    }
-    context.drawImage(
-      video,
-      (video.videoWidth - sourceWidth) / 2,
-      (video.videoHeight - sourceHeight) / 2,
-      sourceWidth,
-      sourceHeight,
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
+    drawFrameRef.current(context, canvas.width, canvas.height);
     setFlashKey((key) => key + 1);
     navigator.vibrate?.(15);
     canvas.toBlob((blob) => {
       if (blob) onCaptured(new File([blob], "camera-snap.jpg", { type: "image/jpeg" }));
     }, "image/jpeg", 0.92);
-  }, [facing, onCaptured]);
+  }, [onCaptured]);
 
   useEffect(() => {
     if (countdown === null) return;
@@ -433,20 +510,7 @@ export default function CameraCapture({
     }
     let frame = 0;
     const draw = () => {
-      const source = videoRef.current;
-      if (source && source.videoWidth > 0) {
-        const scale = Math.max(canvas.width / source.videoWidth, canvas.height / source.videoHeight)
-          * (digitalZoomRef.current ? Math.max(1, zoomRef.current) : 1);
-        const width = source.videoWidth * scale;
-        const height = source.videoHeight * scale;
-        context.save();
-        if (facingRef.current === "user") {
-          context.translate(canvas.width, 0);
-          context.scale(-1, 1);
-        }
-        context.drawImage(source, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
-        context.restore();
-      }
+      drawFrameRef.current(context, canvas.width, canvas.height);
       frame = requestAnimationFrame(draw);
     };
     draw();
@@ -599,7 +663,7 @@ export default function CameraCapture({
   return (
     <div className="absolute inset-0 flex flex-col bg-black">
       <div
-        className="relative min-h-0 flex-1 touch-none overflow-hidden"
+        className="relative min-h-0 flex-1 touch-none overflow-hidden [container-type:size]"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -611,9 +675,16 @@ export default function CameraCapture({
           autoPlay
           muted
           playsInline
-          className={`h-full w-full object-cover transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"}`}
-          style={{ transform: `${facing === "user" ? "scaleX(-1) " : ""}scale(${digitalZoom ? zoom : 1})` }}
+          className={`object-cover transition-opacity duration-300 ${dual && swapped ? "absolute bottom-[16%] right-[4%] z-10 aspect-[3/4] w-[min(28cqw,31.5cqh)] rounded-lg border-2 border-white/80 shadow-lg" : "h-full w-full"} ${ready ? "opacity-100" : "opacity-0"}`}
+          style={{ transform: `${facing === "user" ? "scaleX(-1) " : ""}scale(${!dual && digitalZoom ? zoom : 1})` }}
         />
+        {dual && <>
+          <video ref={secondaryVideoRef} aria-label="Second camera preview" autoPlay muted playsInline
+            className={`absolute object-cover transition-opacity duration-300 ${swapped ? "inset-0 h-full w-full" : "bottom-[16%] right-[4%] z-10 aspect-[3/4] w-[min(28cqw,31.5cqh)] rounded-lg border-2 border-white/80 shadow-lg"} ${ready ? "opacity-100" : "opacity-0"}`}
+            style={{ transform: facing === "environment" ? "scaleX(-1)" : undefined }} />
+          <button type="button" aria-label="Swap dual camera views" title="Swap camera views" disabled={!ready}
+            onClick={flipCamera} className="absolute bottom-[16%] right-[4%] z-20 aspect-[3/4] w-[min(28cqw,31.5cqh)] rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-white" />
+        </>}
         {!ready && !failure && (
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="h-8 w-8 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
@@ -653,6 +724,14 @@ export default function CameraCapture({
             <svg {...iconProps}><path d="M6 6l12 12M18 6 6 18" /></svg>
           </IconButton>
           <div className={`flex flex-col items-center gap-2 ${recording ? "invisible" : ""}`}>
+            <IconButton label="Dual camera" active={dual} disabled={!ready || countdown !== null} onClick={() => {
+              setUseUltraWide(false);
+              setSwapped(false);
+              setZoom(1);
+              setDual((value) => !value);
+            }}>
+              <svg {...iconProps}><rect x="3" y="4" width="18" height="16" rx="3" /><rect x="13" y="11" width="6" height="7" rx="1" /></svg>
+            </IconButton>
             {capabilities.torch && (
               <IconButton label={torchOn ? "Turn flash off" : "Turn flash on"} onClick={() => void toggleTorch()} active={torchOn}>
                 <svg {...iconProps}><path d="M13 3 5 13h6l-1 8 8-10h-6l1-8Z" /></svg>
@@ -670,7 +749,7 @@ export default function CameraCapture({
           </div>
         </div>
 
-        {canZoom && ready && (
+        {canZoom && ready && !dual && (
           <div className="absolute inset-x-0 bottom-4 flex justify-center">
             <div className="flex items-center gap-1 rounded-full bg-black/40 p-1 backdrop-blur-md">
               {lensChips.map((value) => {
