@@ -18,6 +18,122 @@ async function upload(context) {
   return (await response.json()).key;
 }
 
+test("dark appearance keeps every main page and settings page free of bright UI surfaces", async ({ page }, info) => {
+  await page.addInitScript(() => localStorage.setItem("intouch:theme", "dark"));
+  const routes = ["/", "/snaps", "/dms", "/notifications", "/people", "/u/leo", "/settings/appearance", "/settings/notifications", "/settings/account", "/settings/security", "/settings/ai", "/circles", "/invitations", "/dashboard"];
+  for (const route of routes) {
+    await page.goto(route);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.locator("main, h1").first()).toBeVisible();
+    const bright = await page.evaluate(() => [...document.querySelectorAll("button, span, div, section, article, a")].filter((element) => {
+      if (element.closest('[aria-label="Light"]') || ![...element.classList].some((name) => name.startsWith("bg-"))) return false;
+      const bounds = element.getBoundingClientRect();
+      if (bounds.width < 14 || bounds.height < 14 || bounds.width * bounds.height < 300 || !element.getClientRects().length) return false;
+      const color = getComputedStyle(element).backgroundColor.match(/[\d.]+/g)?.map(Number) ?? [];
+      return color.length >= 3 && (color[3] ?? 1) > 0.9 && color.slice(0, 3).every((channel) => channel > 225);
+    }).map((element) => `${element.tagName}.${element.className}`));
+    expect(bright, route).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const slug = route.replaceAll("/", "-") || "feed";
+    await page.screenshot({ path: `screenshots/${info.project.name}/dark-audit${slug}.png`, animations: "disabled" });
+    const mobile = page.viewportSize();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `screenshots/${info.project.name}/dark-audit-desktop${slug}.png`, animations: "disabled" });
+    await page.setViewportSize(mobile);
+  }
+  const colors = await page.evaluate(() => {
+    const group = document.createElement("div");
+    group.innerHTML = '<span class="bg-sky-100 text-sky-700">Bluesky</span><button class="bg-emerald-50 text-emerald-700">Reposted</button><span class="bg-violet-100 text-violet-700">Mastodon</span>';
+    document.body.append(group);
+    const values = [...group.children].map((element) => getComputedStyle(element).backgroundColor);
+    group.remove(); return values;
+  });
+  expect(colors).toEqual(["rgb(23, 51, 63)", "rgb(25, 55, 46)", "rgb(48, 36, 63)"]);
+});
+
+test("sunset scheduling survives reload and resume and respects selected time zones", async ({ page, context }, info) => {
+  const original = (await (await context.request.get(`${API}/notifications/preferences`)).json()).preferences;
+  await page.clock.install({ time: new Date("2026-06-21T00:00:00Z") });
+  try {
+    await page.goto("/settings/appearance");
+    await page.getByLabel("Time zone", { exact: true }).selectOption("Europe/Berlin");
+    await page.getByRole("switch", { name: "Sunset to sunrise", exact: true }).click();
+    await page.getByLabel("Latitude", { exact: true }).fill("52.52");
+    await page.getByLabel("Longitude", { exact: true }).fill("13.405");
+    await page.getByRole("button", { name: "Save location", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.reload();
+    await expect(page.getByRole("switch", { name: "Sunset to sunrise", exact: true })).toHaveAttribute("aria-checked", "true");
+    await page.clock.setSystemTime(new Date("2026-06-21T12:00:00Z"));
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    const themes = await page.evaluate(async () => {
+      const { resolveScheduledTheme } = await import("/src/lib/theme.ts");
+      return [
+        resolveScheduledTheme({ mode: "sun", timeZone: "Pacific/Auckland", latitude: -36.85, longitude: 174.76 }, new Date("2026-06-21T00:00:00Z")),
+        resolveScheduledTheme({ mode: "sun", timeZone: "America/New_York", latitude: 40.71, longitude: -74.01 }, new Date("2026-06-21T00:00:00Z")),
+        resolveScheduledTheme({ mode: "sun", timeZone: "Arctic/Longyearbyen", latitude: 78.22, longitude: 15.65 }, new Date("2026-06-21T12:00:00Z")),
+        resolveScheduledTheme({ mode: "sun", timeZone: "Arctic/Longyearbyen", latitude: 78.22, longitude: 15.65 }, new Date("2026-12-21T12:00:00Z")),
+      ];
+    });
+    expect(themes).toEqual(["light", "light", "light", "dark"]);
+    await page.getByRole("button", { name: "Dark", exact: true }).click();
+    await expect(page.getByRole("switch", { name: "Sunset to sunrise", exact: true })).toHaveAttribute("aria-checked", "false");
+    await page.getByLabel("Time zone", { exact: true }).selectOption("America/New_York");
+    await expect.poll(async () => (await (await context.request.get(`${API}/notifications/preferences`)).json()).preferences.timezone).toBe("America/New_York");
+    await page.getByRole("region", { name: "Time and automatic appearance", exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `screenshots/${info.project.name}/automatic-appearance.png`, animations: "disabled" });
+  } finally { await context.request.patch(`${API}/notifications/preferences`, { data: original }); }
+});
+
+test("push subscriptions recover after loss and network failures without overriding Turn off", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__pushState = { missing: true, subscribed: 0, prompts: 0, unsubscribed: 0 };
+    Object.defineProperty(window, "Notification", { configurable: true, value: { permission: "default", requestPermission: async () => { window.__pushState.prompts += 1; return "granted"; } } });
+    if (!("PushManager" in window)) Object.defineProperty(window, "PushManager", { configurable: true, value: class {} });
+    const subscription = { endpoint: "https://example.com/push", toJSON: () => ({ endpoint: "https://example.com/push", keys: { auth: "test", p256dh: "test" } }), unsubscribe: async () => { window.__pushState.missing = true; window.__pushState.unsubscribed += 1; return true; } };
+    const registration = { pushManager: {
+      getSubscription: async () => window.__pushState.missing ? null : subscription,
+      subscribe: async () => { window.__pushState.subscribed += 1; window.__pushState.missing = false; return subscription; },
+    } };
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { register: async () => registration, ready: Promise.resolve(registration), getRegistration: async () => registration, addEventListener() {}, removeEventListener() {} } });
+  });
+  const headers = { "access-control-allow-origin": "http://localhost:5173", "access-control-allow-credentials": "true", "access-control-allow-methods": "GET,PUT,DELETE", "access-control-allow-headers": "content-type" };
+  await page.route(/\/notifications\/push\/config$/, (route) => route.fulfill({ headers, json: { enabled: true, publicKey: "AQID" } }));
+  let fail = false;
+  await page.route(/\/notifications\/push\/subscription$/, (route) => fail && route.request().method() === "PUT" ? route.abort("internetdisconnected") : route.fulfill({ headers, status: 204 }));
+  await page.goto("/");
+  const recovered = await page.evaluate(async () => {
+    Notification.permission = "granted";
+    const { restorePushSubscription } = await import("/src/lib/push.ts");
+    return Promise.all([restorePushSubscription(), restorePushSubscription(), restorePushSubscription()]);
+  });
+  expect(recovered).toEqual([true, true, true]);
+  expect(await page.evaluate(() => window.__pushState)).toMatchObject({ subscribed: 1, prompts: 0 });
+  fail = true;
+  expect(await page.evaluate(async () => { window.__pushState.missing = true; return (await import("/src/lib/push.ts")).restorePushSubscription().catch(() => "offline"); })).toBe("offline");
+  fail = false;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("intouch:push-enabled"))).toBe("true");
+  expect(await page.evaluate(async () => (await import("/src/lib/push.ts")).restorePushSubscription())).toBe(true);
+  await page.evaluate(async () => (await import("/src/lib/push.ts")).disablePush());
+  expect(await page.evaluate(async () => (await import("/src/lib/push.ts")).restorePushSubscription())).toBe(false);
+  await page.reload();
+  expect(await page.evaluate(async () => { Notification.permission = "granted"; return (await import("/src/lib/push.ts")).restorePushSubscription(); })).toBe(false);
+  expect(await page.evaluate(() => window.__pushState.prompts)).toBe(0);
+});
+
+test("notification drafts survive background refetch before saving", async ({ page }) => {
+  await page.goto("/settings/notifications");
+  const checkbox = page.locator("#preference-messages");
+  const previous = await checkbox.isChecked();
+  await checkbox.setChecked(!previous);
+  await page.evaluate(() => { window.dispatchEvent(new Event("focus")); document.dispatchEvent(new Event("visibilitychange")); });
+  await expect(checkbox).toBeChecked({ checked: !previous });
+  await expect(page.getByRole("button", { name: /Save/i })).toBeEnabled();
+});
+
 test("Chats offer compact rows, working filters, pins and responsive split view", async ({ page, context }, info) => {
   const response = await context.request.post(`${API}/conversations`, { data: { username: "mia" } });
   const { conversationId } = await response.json();

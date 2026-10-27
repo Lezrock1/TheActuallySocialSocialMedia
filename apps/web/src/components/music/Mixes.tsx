@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getTimeZone } from "../../lib/theme.js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateMusicMixCommentInput, MusicMix, MusicMixComment, MusicTrack } from "@app/shared";
 import { apiFetch } from "../../lib/api.js";
@@ -74,7 +75,7 @@ function MusicMixCard({ mix }: { mix: MusicMix }) {
           <Avatar avatarKey={mix.owner.avatarKey} username={mix.owner.username} size={36} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-semibold text-gray-900">@{mix.owner.username} dropped a mix</p>
-            <time className="text-[11px] text-gray-500">{new Date(mix.createdAt).toLocaleDateString()}</time>
+            <time className="text-[11px] text-gray-500">{new Date(mix.createdAt).toLocaleDateString(undefined, { timeZone: getTimeZone() })}</time>
           </div>
           <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-800">SET</span>
         </div>

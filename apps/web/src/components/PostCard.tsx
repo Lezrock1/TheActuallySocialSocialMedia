@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { getTimeZone } from "../lib/theme.js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { TRANSLATION_LANGUAGES } from "@app/shared";
@@ -177,6 +178,7 @@ function PostCard({
       <div className="mt-3 flex min-w-0 items-center justify-between gap-2">
         <time dateTime={post.createdAt} className="shrink-0 text-[11px] text-gray-400">
           {new Date(post.createdAt).toLocaleString("en-US", {
+            timeZone: getTimeZone(),
             month: "short",
             day: "numeric",
             hour: "numeric",

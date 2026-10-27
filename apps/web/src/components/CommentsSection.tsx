@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getTimeZone } from "../lib/theme.js";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -72,6 +73,7 @@ function CommentItem({
         <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
           <time dateTime={comment.createdAt}>
             {new Date(comment.createdAt).toLocaleString("en-US", {
+              timeZone: getTimeZone(),
               month: "short",
               day: "numeric",
               hour: "numeric",

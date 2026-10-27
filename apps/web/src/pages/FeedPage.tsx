@@ -13,6 +13,7 @@ import { card, input, btnPrimary, btnSecondary } from "../lib/ui.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import { getTimeZone } from "../lib/theme.js";
 import StoriesBar from "../components/StoriesBar.js";
 import PostCard from "../components/PostCard.js";
 import ExternalPostCard from "../components/ExternalPostCard.js";
@@ -68,7 +69,7 @@ function FollowActivityCard({ item }: { item: Extract<FeedItem, { type: "follow"
           </Link>
         </p>
         <time className="shrink-0 text-[10px] text-gray-400">
-          {new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          {new Date(item.createdAt).toLocaleDateString("en-US", { timeZone: getTimeZone(), month: "short", day: "numeric" })}
         </time>
       </div>
     </article>

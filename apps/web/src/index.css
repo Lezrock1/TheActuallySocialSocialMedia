@@ -322,6 +322,33 @@ html[data-theme="dark"] .bg-blue-100 {
   background-color: #202f44 !important;
 }
 
+html[data-theme="dark"] :is(.bg-sky-50, .bg-sky-100, .bg-cyan-50, .bg-cyan-100, [class~="bg-cyan-50/70"]) {
+  background-color: #17333f !important;
+}
+html[data-theme="dark"] :is(.bg-emerald-50, .bg-emerald-100, .bg-teal-50, .bg-teal-100, [class~="bg-emerald-50/70"]) {
+  background-color: #19372e !important;
+}
+html[data-theme="dark"] :is(.bg-violet-50, .bg-violet-100, .bg-purple-100, .bg-fuchsia-100) {
+  background-color: #30243f !important;
+}
+html[data-theme="dark"] :is(.bg-pink-50, .bg-pink-100, .bg-rose-50, .bg-rose-100) {
+  background-color: #3a2331 !important;
+}
+html[data-theme="dark"] :is(.bg-yellow-50, .bg-orange-50, .bg-lime-50, .bg-lime-100) {
+  background-color: #34321e !important;
+}
+html[data-theme="dark"] :is([class~="bg-white/80"], [class~="bg-white/70"], [class~="bg-white/60"], [class~="bg-white/50"]) {
+  background-color: var(--surface-muted) !important;
+}
+html[data-theme="dark"] :is(.text-sky-800, .text-sky-900, .text-cyan-800, .text-cyan-900) { color: #8bd7ee !important; }
+html[data-theme="dark"] :is(.text-emerald-900, .text-emerald-950, .text-teal-700, .text-green-800, .text-green-900) { color: #9ce5c5 !important; }
+html[data-theme="dark"] :is(.text-violet-600, .text-violet-700, .text-violet-800, .text-violet-900, .text-purple-700, .text-purple-800, .text-purple-900, .text-indigo-800, .text-indigo-900) { color: #c9b9f4 !important; }
+html[data-theme="dark"] :is(.text-fuchsia-700, .text-fuchsia-900, .text-pink-700, .text-rose-700) { color: #f0afd4 !important; }
+html[data-theme="dark"] :is(.text-red-700, .text-red-800, .text-red-900, .text-orange-950, .text-amber-800, .text-yellow-800) { color: #f5b5a2 !important; }
+html[data-theme="dark"] :is(.text-blue-900, .text-indigo-600) { color: #a4c9ff !important; }
+html[data-theme="dark"] :is(.hover\:bg-white:hover, .hover\:bg-gray-50:hover, .hover\:bg-gray-100:hover) { background-color: var(--surface-muted) !important; }
+html[data-theme="dark"] :is(.hover\:bg-emerald-50:hover, .hover\:bg-emerald-100:hover) { background-color: #25483b !important; }
+
 html[data-theme="dark"] .text-blue-600,
 html[data-theme="dark"] .text-blue-700 {
   color: #8bbcff !important;

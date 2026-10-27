@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getTimeZone } from "../../lib/theme.js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LIVE_ROOM_AUDIENCES } from "@app/shared";
 import type { LiveRoomAudience, MusicMix, RadioMessage, RadioRoom } from "@app/shared";
@@ -343,7 +344,7 @@ export default function RadioRoomsBar({ compact = false }: { compact?: boolean }
               <p className="mt-2 text-[10px] text-white/45">Only the host controls playback. Reactions and chat are open to everyone.</p>
             </div>
             <div className="space-y-2">
-              {messages.map((message) => <p key={message.id} className="text-sm leading-5"><span className="mr-2 font-semibold text-emerald-300">@{message.user.username}</span>{message.content}<span className="ml-2 text-[10px] text-white/40">{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></p>)}
+              {messages.map((message) => <p key={message.id} className="text-sm leading-5"><span className="mr-2 font-semibold text-emerald-300">@{message.user.username}</span>{message.content}<span className="ml-2 text-[10px] text-white/40">{new Date(message.createdAt).toLocaleTimeString([], { timeZone: getTimeZone(), hour: "numeric", minute: "2-digit" })}</span></p>)}
             </div>
           </div>
         </div>

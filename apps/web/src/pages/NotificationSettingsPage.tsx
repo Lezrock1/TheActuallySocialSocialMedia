@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { NotificationPreferences } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
@@ -7,6 +7,7 @@ import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import PushNotificationSettings from "../components/PushNotificationSettings.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import { getTimeZone } from "../lib/theme.js";
 
 type BooleanPreferenceKey = {
   [K in keyof NotificationPreferences]: NotificationPreferences[K] extends boolean ? K : never;
@@ -63,10 +64,6 @@ function timeToMinutes(value: string): number | null {
   return match ? Number(match[1]) * 60 + Number(match[2]) : null;
 }
 
-function browserTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-}
-
 export default function NotificationSettingsPage() {
   const queryClient = useQueryClient();
   const preferencesQuery = useQuery({
@@ -77,9 +74,10 @@ export default function NotificationSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dirty = useRef(false);
 
   useEffect(() => {
-    if (preferencesQuery.data) setDraft(preferencesQuery.data);
+    if (preferencesQuery.data && !dirty.current) setDraft(preferencesQuery.data);
   }, [preferencesQuery.data]);
 
   const hasChanges = !!draft && !!preferencesQuery.data &&
@@ -88,13 +86,15 @@ export default function NotificationSettingsPage() {
     );
 
   function togglePreference(key: BooleanPreferenceKey, enabled: boolean) {
+    dirty.current = true;
     setSaved(false);
     setDraft((current) => current ? { ...current, [key]: enabled } : current);
   }
 
   function updateQuiet(changes: Partial<Pick<NotificationPreferences, "quietHoursEnabled" | "quietStartMinute" | "quietEndMinute" | "timezone">>) {
+    dirty.current = true;
     setSaved(false);
-    setDraft((current) => current ? { ...current, timezone: browserTimeZone(), ...changes } : current);
+    setDraft((current) => current ? { ...current, ...changes } : current);
   }
 
   const quietInvalid = !!draft && draft.quietHoursEnabled && draft.quietStartMinute === draft.quietEndMinute;
@@ -111,6 +111,7 @@ export default function NotificationSettingsPage() {
         body: JSON.stringify(draft),
       });
       setDraft(result.preferences);
+      dirty.current = false;
       queryClient.setQueryData(["notification-preferences"], result.preferences);
       setSaved(true);
     } catch (caught) {
@@ -132,6 +133,7 @@ export default function NotificationSettingsPage() {
       {preferencesQuery.isError && <p role="alert" className="py-4 text-sm text-red-600">Could not load notification settings.</p>}
       {draft && (
         <form onSubmit={(event) => void savePreferences(event)}>
+          <fieldset disabled={saving}>
           <section aria-labelledby="quiet-hours-title" className={`${card} mb-4`}>
             <label htmlFor="quiet-hours-enabled" className="flex cursor-pointer items-center gap-4">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
@@ -185,11 +187,17 @@ export default function NotificationSettingsPage() {
                   <p role="alert" className="mt-2 text-xs text-red-600">Start and end must be different.</p>
                 ) : (
                   <p className="mt-2 text-xs leading-5 text-gray-500">
-                    Every day from {minutesToTime(draft.quietStartMinute)} to {minutesToTime(draft.quietEndMinute)} ({browserTimeZone()}). Alerts still appear in the app.
+                    Every day from {minutesToTime(draft.quietStartMinute)} to {minutesToTime(draft.quietEndMinute)} ({draft.timezone}). Alerts still appear in the app.
                   </p>
                 )}
               </div>
             )}
+            <label className="mt-3 block text-xs font-medium text-gray-600">Time zone
+              <select aria-label="Quiet hours time zone" value={draft.timezone} onChange={(event) => updateQuiet({ timezone: event.target.value })}
+                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">
+                {[...new Set(["UTC", draft.timezone, getTimeZone(), ...((Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [])])].sort().map((zone) => <option key={zone} value={zone}>{zone.replaceAll("_", " ")}</option>)}
+              </select>
+            </label>
           </section>
           <div className={card}>
             {sections.map((section, sectionIndex) => (
@@ -220,6 +228,7 @@ export default function NotificationSettingsPage() {
           <button type="submit" disabled={!hasChanges || saving} className={`${btnPrimary} mt-4 min-h-11 w-full disabled:cursor-not-allowed`}>
             {saving ? "Saving…" : "Save changes"}
           </button>
+          </fieldset>
         </form>
       )}
     </div>

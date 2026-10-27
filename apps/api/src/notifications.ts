@@ -8,7 +8,6 @@ import { isQuietNow } from "./quietHours.js";
 import type { Prisma } from "@prisma/client";
 import type { Server } from "socket.io";
 import { emitToUsers } from "./realtime.js";
-import { dismissWebPushNotifications } from "./pushNotifications.js";
 
 export async function completeUserNotifications(io: Server, recipientId: string, where: Prisma.NotificationWhereInput, dismiss = true): Promise<number> {
   const ids = await prisma.$transaction(async (transaction) => {
@@ -24,7 +23,6 @@ export async function completeUserNotifications(io: Server, recipientId: string,
   });
   if (ids.length) {
     emitToUsers(io, [recipientId], "notifications:cleared", { ids });
-    void dismissWebPushNotifications(recipientId, ids).catch(() => console.error("Could not synchronize notification dismissal"));
   }
   return ids.length;
 }

@@ -1,8 +1,9 @@
+import { useThemePreference, useThemeSchedule } from "../lib/theme.js";
+import ThemeScheduleSettings from "../components/ThemeScheduleSettings.js";
 import PageHeader from "../components/PageHeader.js";
 import NavBar from "../components/NavBar.js";
 import BackgroundSettings from "../components/BackgroundSettings.js";
 import { card } from "../lib/ui.js";
-import { useThemePreference } from "../lib/theme.js";
 import PreferenceSwitch from "../components/PreferenceSwitch.js";
 import FeedSourceSettings from "../components/FeedSourceSettings.js";
 import { UNREAD_FIRST_KEY, useListPreference } from "../lib/listPreferences.js";
@@ -24,6 +25,7 @@ function ThemePreview({ dark, selected }: { dark: boolean; selected: boolean }) 
 
 export default function AppearanceSettingsPage() {
   const [theme, setTheme] = useThemePreference();
+  const [schedule] = useThemeSchedule();
   const [unreadFirst, setUnreadFirst] = useListPreference(UNREAD_FIRST_KEY);
   const isDark = theme === "dark";
 
@@ -48,7 +50,7 @@ export default function AppearanceSettingsPage() {
         </div>
         <div role="group" aria-label="Color theme" className="grid grid-cols-2 gap-3">
           {(["light", "dark"] as const).map((option) => {
-            const selected = theme === option;
+            const selected = schedule.mode === "manual" && theme === option;
             return (
               <button
                 key={option}
@@ -75,6 +77,7 @@ export default function AppearanceSettingsPage() {
         <h2 id="messages-settings-heading" className="mb-1 text-sm font-semibold text-gray-900">Messages</h2>
         <PreferenceSwitch label="Unread first" checked={unreadFirst} onChange={setUnreadFirst} />
       </section>
+      <ThemeScheduleSettings />
       <FeedSourceSettings />
       <BackgroundSettings />
     </div>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getTimeZone } from "../lib/theme.js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../lib/api.js";
 import NavBar from "../components/NavBar.js";
@@ -95,7 +96,7 @@ export default function InvitationsPage() {
               className={input}
             />
             <p className="text-xs text-gray-500">
-              Expires {expiresAt ? new Date(expiresAt).toLocaleString("en-US") : ""}. Up to {status?.maxUsesPerInvitation ?? 5} people can join with this link; share it only with people you trust.
+              Expires {expiresAt ? new Date(expiresAt).toLocaleString("en-US", { timeZone: getTimeZone() }) : ""}. Up to {status?.maxUsesPerInvitation ?? 5} people can join with this link; share it only with people you trust.
             </p>
             <button onClick={() => void copyInvite()} className={btnPrimary}>
               {copied ? "Copied" : "Copy link"}

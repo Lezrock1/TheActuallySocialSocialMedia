@@ -5,6 +5,44 @@ export interface PushConfig {
   publicKey: string | null;
 }
 
+const PUSH_PREFERENCE_KEY = "intouch:push-enabled";
+let recovery: Promise<boolean> | null = null;
+
+export function pushOptedOut(): boolean {
+  try { return localStorage.getItem(PUSH_PREFERENCE_KEY) === "false"; } catch { return false; }
+}
+
+function rememberPush(enabled: boolean) {
+  try { localStorage.setItem(PUSH_PREFERENCE_KEY, String(enabled)); } catch {}
+}
+
+export function restorePushSubscription(): Promise<boolean> {
+  if (!pushSupported() || Notification.permission !== "granted" || pushOptedOut()) return Promise.resolve(false);
+  if (recovery) return recovery;
+  recovery = (async () => {
+    const config = await apiFetch<PushConfig>("/notifications/push/config");
+    if (!config.enabled || !config.publicKey || pushOptedOut()) return false;
+    const registration = await getActiveServiceWorkerRegistration();
+    const subscription = await registration.pushManager.getSubscription()
+      ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decodeApplicationServerKey(config.publicKey) });
+    if (pushOptedOut()) { await subscription.unsubscribe(); return false; }
+    await saveSubscription(subscription);
+    if (pushOptedOut()) { await subscription.unsubscribe(); return false; }
+    rememberPush(true);
+    return true;
+  })().finally(() => { recovery = null; });
+  return recovery;
+}
+
+export async function disablePush(): Promise<void> {
+  rememberPush(false);
+  const registration = await navigator.serviceWorker.getRegistration("/");
+  const subscription = await registration?.pushManager.getSubscription();
+  if (!subscription) return;
+  await subscription.unsubscribe();
+  await apiFetch("/notifications/push/subscription", { method: "DELETE", body: JSON.stringify({ endpoint: subscription.endpoint }) });
+}
+
 export function isIos(): boolean {
   return /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -49,10 +87,11 @@ export type EnablePushResult = "enabled" | "denied" | "dismissed" | "unavailable
 
 // Must be called from a user gesture so the browser shows its permission dialog.
 export async function enablePush(): Promise<EnablePushResult> {
-  const config = await apiFetch<PushConfig>("/notifications/push/config");
-  if (!config.enabled || !config.publicKey) return "unavailable";
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return permission === "denied" ? "denied" : "dismissed";
+  const config = await apiFetch<PushConfig>("/notifications/push/config");
+  if (!config.enabled || !config.publicKey) return "unavailable";
+  rememberPush(true);
   const registration = await getActiveServiceWorkerRegistration();
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,

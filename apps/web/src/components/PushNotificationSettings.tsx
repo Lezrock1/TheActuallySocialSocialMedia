@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api.js";
 import { btnPrimary, card } from "../lib/ui.js";
 import {
-  decodeApplicationServerKey,
-  getActiveServiceWorkerRegistration,
+  disablePush,
+  enablePush,
   isIos,
   isStandalone,
-  saveSubscription,
+  restorePushSubscription,
 } from "../lib/push.js";
 import type { PushConfig } from "../lib/push.js";
 
@@ -28,7 +28,11 @@ export default function PushNotificationSettings() {
 
   useEffect(() => {
     let active = true;
-    void (async () => {
+    let checking = false;
+    const check = async () => {
+      if (checking || document.hidden) return;
+      checking = true;
+      try {
       if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
         if (active) setStatus("unsupported");
         return;
@@ -51,21 +55,26 @@ export default function PushNotificationSettings() {
           return;
         }
         if (Notification.permission === "granted") {
-          const registration = await getActiveServiceWorkerRegistration();
-          const subscription = await registration.pushManager.getSubscription();
-          if (subscription) {
-            await saveSubscription(subscription);
+          if (await restorePushSubscription()) {
             if (active) setStatus("enabled");
             return;
           }
         }
         setStatus("ready");
       } catch {
-        if (active) setStatus("error");
+        if (active) setStatus((current) => current === "enabled" ? current : "error");
       }
-    })();
+      } finally { checking = false; }
+    };
+    void check();
+    window.addEventListener("focus", check);
+    window.addEventListener("online", check);
+    document.addEventListener("visibilitychange", check);
     return () => {
       active = false;
+      window.removeEventListener("focus", check);
+      window.removeEventListener("online", check);
+      document.removeEventListener("visibilitychange", check);
     };
   }, []);
 
@@ -76,20 +85,12 @@ export default function PushNotificationSettings() {
       if (status === "error") {
         const pushConfig = await apiFetch<PushConfig>("/notifications/push/config");
         setConfig(pushConfig);
-        setStatus(pushConfig.enabled && pushConfig.publicKey ? "ready" : "not-configured");
+        setStatus(!pushConfig.enabled || !pushConfig.publicKey ? "not-configured" : await restorePushSubscription() ? "enabled" : "ready");
         return;
       }
 
       if (status === "enabled") {
-        const registration = await navigator.serviceWorker.getRegistration("/");
-        const subscription = await registration?.pushManager.getSubscription();
-        if (subscription) {
-          await apiFetch("/notifications/push/subscription", {
-            method: "DELETE",
-            body: JSON.stringify({ endpoint: subscription.endpoint }),
-          });
-          await subscription.unsubscribe();
-        }
+        await disablePush();
         setStatus("ready");
         return;
       }
@@ -98,18 +99,8 @@ export default function PushNotificationSettings() {
         setStatus("not-configured");
         return;
       }
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        setStatus(permission === "denied" ? "permission-denied" : "ready");
-        return;
-      }
-      const registration = await getActiveServiceWorkerRegistration();
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: decodeApplicationServerKey(config.publicKey),
-      });
-      await saveSubscription(subscription);
-      setStatus("enabled");
+      const result = await enablePush();
+      setStatus(result === "enabled" ? "enabled" : result === "denied" ? "permission-denied" : result === "unavailable" ? "not-configured" : "ready");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update push notifications.");
       setStatus("error");

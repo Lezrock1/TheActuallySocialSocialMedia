@@ -27,7 +27,7 @@ import { CameraProvider } from "./components/camera/CameraProvider.js";
 import DeviceSetupPrompt from "./components/DeviceSetupPrompt.js";
 import LocalMeetupReminderProvider from "./components/LocalMeetupReminderProvider.js";
 import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
-import { pushSupported, saveSubscription } from "./lib/push.js";
+import { restorePushSubscription } from "./lib/push.js";
 import { AppBootSkeleton } from "./components/LoadingSkeleton.js";
 import { getSocket } from "./lib/socket.js";
 import { apiFetch } from "./lib/api.js";
@@ -255,28 +255,22 @@ function AppRoutes() {
       document.removeEventListener("visibilitychange", sync);
     };
   }, [user?.id, queryClient]);
-  // Re-save an existing push subscription on startup and whenever the app
-  // regains focus. Subscriptions can silently expire in the browser or be
-  // pruned server-side; re-saving keeps notifications alive without ever
-  // prompting for permission again.
   useEffect(() => {
-    if (!user || !pushSupported() || Notification.permission !== "granted") return;
-    let cancelled = false;
+    if (!user) return;
     const refresh = async () => {
       if (document.hidden) return;
-      try {
-        const registration = await navigator.serviceWorker.getRegistration();
-        const subscription = await registration?.pushManager.getSubscription();
-        if (!cancelled && subscription) await saveSubscription(subscription);
-      } catch { /* offline or subscription gone */ }
+      await restorePushSubscription().catch(() => undefined);
     };
     void refresh();
     window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", refresh);
+    const interval = window.setInterval(refresh, 5 * 60_000);
     return () => {
-      cancelled = true;
       window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
       document.removeEventListener("visibilitychange", refresh);
+      window.clearInterval(interval);
     };
   }, [user?.id]);
   useEffect(() => {

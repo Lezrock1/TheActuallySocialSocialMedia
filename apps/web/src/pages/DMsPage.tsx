@@ -26,6 +26,7 @@ import { useConversationBackground } from "../lib/pageBackground.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import { getTimeZone } from "../lib/theme.js";
 import Avatar from "../components/Avatar.js";
 import EncryptionNotice from "../components/EncryptionNotice.js";
 import LiveRoomsBar, { fetchLiveRooms } from "../components/LiveRoomsBar.js";
@@ -152,7 +153,7 @@ function labelForDeliveryState(state: ConversationMessage["deliveryState"] | und
 }
 
 function formatClock(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString([], { timeZone: getTimeZone(), hour: "2-digit", minute: "2-digit" });
 }
 
 function chatPreview(message: ConversationSummary["lastMessage"]): string {
@@ -168,8 +169,7 @@ function chatPreview(message: ConversationSummary["lastMessage"]): string {
 }
 
 function dayKey(iso: string): string {
-  const date = new Date(iso);
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: getTimeZone(), year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 }
 
 function formatDayLabel(iso: string): string {
@@ -180,6 +180,7 @@ function formatDayLabel(iso: string): string {
   if (dayKey(iso) === dayKey(today.toISOString())) return "Today";
   if (dayKey(iso) === dayKey(yesterday.toISOString())) return "Yesterday";
   return date.toLocaleDateString([], {
+    timeZone: getTimeZone(),
     weekday: "short",
     month: "short",
     day: "numeric",
