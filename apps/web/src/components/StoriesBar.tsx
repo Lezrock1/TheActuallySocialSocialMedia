@@ -687,7 +687,7 @@ export default function StoriesBar() {
           >
             {myMoment ? (
               <span className="rounded-full bg-gradient-to-br from-cyan-400 via-teal-400 to-emerald-500 p-0.5">
-                <span className="block rounded-full border-2 border-white">
+                <span className="block overflow-hidden rounded-full">
                   <DecodedImage
                     key={myMoment.imageKey}
                     src={myMoment.mediaType === "video" ? mediaPosterUrl(myMoment.imageKey) : mediaUrl(myMoment.imageKey)}
@@ -722,7 +722,7 @@ export default function StoriesBar() {
             className="flex shrink-0 flex-col items-center gap-1"
           >
             <span className={`rounded-full p-0.5 ${group.stories.every(isSeen) ? "bg-gray-300" : "bg-emerald-600"}`}>
-              <span className="block rounded-full border-2 border-white">
+              <span className="block overflow-hidden rounded-full">
                 <StoryRingThumbnail key={group.stories[0].imageKey} imageKey={group.stories[0].imageKey} username={group.author.username} />
               </span>
             </span>

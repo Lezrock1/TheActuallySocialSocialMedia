@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { TRANSLATION_LANGUAGES } from "@app/shared";
 import type { ExternalFeedPost, TranslationLanguage } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
+import LinkedMentions from "./LinkedMentions.js";
 
 export default function PostTranslation({ post }: { post: ExternalFeedPost }) {
   const { data: preferences } = useQuery({
@@ -48,7 +49,7 @@ export default function PostTranslation({ post }: { post: ExternalFeedPost }) {
       {error && <p role="alert" className="mt-1 text-xs text-red-600">{error} <Link to="/settings/ai" className="underline">AI Tools</Link></p>}
       {visible && translation && <div className="mt-2 border-l-2 border-blue-300 pl-3">
         <p className="mb-1 text-[10px] font-semibold uppercase text-gray-400">{label}</p>
-        <p className="whitespace-pre-wrap text-[15px] leading-snug">{translation}</p>
+        <p className="whitespace-pre-wrap text-[15px] leading-snug [overflow-wrap:anywhere]"><LinkedMentions text={translation} linksOnly /></p>
       </div>}
     </div>
   );

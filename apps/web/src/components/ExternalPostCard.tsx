@@ -8,6 +8,7 @@ import { card } from "../lib/ui.js";
 import { PLATFORM_META } from "../lib/platforms.js";
 import AiChatPanel from "./AiChatPanel.js";
 import PostTranslation from "./PostTranslation.js";
+import LinkedMentions from "./LinkedMentions.js";
 
 /** Feed card for a post from a followed Bluesky/Mastodon/YouTube profile. */
 export default function ExternalPostCard({ item, onRepostChanged }: { item: ExternalFeedPost; onRepostChanged?: () => void }) {
@@ -28,7 +29,7 @@ export default function ExternalPostCard({ item, onRepostChanged }: { item: Exte
     },
   });
   return (
-    <article className={card}>
+    <article className={`${card} min-w-0`}>
       {item.repostedBy && <p className="mb-2 flex items-center gap-1.5 text-xs text-gray-500">
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 shrink-0"><path d="m4 8 3-3 3 3M7 5v12h9m4-1-3 3-3-3m3 3V7H8" /></svg>
         <Link to={`/u/${item.repostedBy.username}`} className="truncate font-semibold hover:underline">@{item.repostedBy.username}</Link> reposted
@@ -50,7 +51,7 @@ export default function ExternalPostCard({ item, onRepostChanged }: { item: Exte
         </span>
       </div>
       {item.text && (
-        <p className="mt-2 whitespace-pre-wrap text-[15px] leading-snug text-gray-800">{item.text}</p>
+        <p className="mt-2 whitespace-pre-wrap text-[15px] leading-snug text-gray-800 [overflow-wrap:anywhere]"><LinkedMentions text={item.text} linksOnly /></p>
       )}
       {item.text && item.platform !== "twitch" && <PostTranslation key={`${item.platform}:${item.externalId}:${item.text}`} post={item} />}
       {image && (

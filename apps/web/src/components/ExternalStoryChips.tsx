@@ -30,7 +30,7 @@ export default function ExternalStoryChips() {
             className="flex w-16 shrink-0 flex-col items-center gap-1"
           >
             <span className={`rounded-full p-0.5 ${item.live ? "bg-gradient-to-br from-purple-500 to-fuchsia-500" : "bg-gradient-to-br from-red-500 to-rose-400"}`}>
-              <span className="block h-[52px] w-[52px] overflow-hidden rounded-full border-2 border-white bg-gray-100">
+              <span className="block h-[52px] w-[52px] overflow-hidden rounded-full bg-gray-100">
                 {image ? (
                   <img src={image} alt="" loading="lazy" className="h-full w-full object-cover" />
                 ) : (

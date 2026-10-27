@@ -139,7 +139,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
               className="flex shrink-0 flex-col items-center gap-1 transition-transform active:scale-95 disabled:cursor-default"
             >
               <span className="live-ring relative block rounded-full bg-gradient-to-br from-red-500 via-[#FF5A5F] to-orange-400 p-0.5">
-                <span className="block rounded-full border-2 border-white">
+                <span className="block overflow-hidden rounded-full">
                   <Avatar avatarKey={host?.avatarKey ?? null} username={host?.username ?? "room"} size={52} />
                 </span>
                 <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-[#FF5A5F] px-1.5 text-[9px] font-bold uppercase leading-4 tracking-wider text-white ring-2 ring-white">
@@ -197,7 +197,7 @@ export default function LiveRoomsBar({ compact = false }: { compact?: boolean })
                 className="flex w-[4.5rem] shrink-0 flex-col items-center gap-1 text-center disabled:cursor-default"
               >
                 <span className="relative block rounded-full bg-gradient-to-br from-fuchsia-500 via-pink-500 to-orange-400 p-0.5">
-                  <span className="block rounded-full border-2 border-white">
+                  <span className="block overflow-hidden rounded-full">
                     <Avatar avatarKey={host?.avatarKey ?? null} username={host?.username ?? "room"} size={54} />
                   </span>
                   <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center">

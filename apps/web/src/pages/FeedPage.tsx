@@ -367,7 +367,7 @@ export default function FeedPage() {
   }, [queryClient]);
 
   return (
-    <div ref={pageRef} className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
+    <div ref={pageRef} className="mx-auto min-w-0 max-w-2xl overflow-x-clip px-4 py-4 sm:py-8">
       <PullToRefresh onRefresh={async () => {
         setPages([]);
         setLoadMoreError(false);

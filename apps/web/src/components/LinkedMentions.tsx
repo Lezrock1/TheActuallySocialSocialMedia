@@ -20,7 +20,7 @@ function splitTrailingPunctuation(raw: string): [string, string] {
   return [url, tail];
 }
 
-export default function LinkedMentions({ text }: { text: string }) {
+export default function LinkedMentions({ text, linksOnly = false }: { text: string; linksOnly?: boolean }) {
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -46,6 +46,8 @@ export default function LinkedMentions({ text }: { text: string }) {
       lastIndex = match.index + match[0].length;
       continue;
     }
+
+    if (linksOnly) continue;
 
     if (match[5]) {
       const start = match.index + match[4].length;

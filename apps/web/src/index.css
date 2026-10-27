@@ -212,7 +212,7 @@ html[data-theme="light"] .text-gray-500,
 html[data-theme="light"] .text-gray-600,
 html[data-theme="light"] .text-gray-400 { color: var(--secondary-text); }
 html[data-theme="light"] .border-gray-200 { border-color: var(--surface-border); }
-html[data-theme="dark"] [class*="bg-[linear-gradient("] {
+html[data-theme="dark"] [class*="bg-[linear-gradient("]:not(.bg-clip-text) {
   background-image: none !important;
   background-color: var(--surface-muted) !important;
 }

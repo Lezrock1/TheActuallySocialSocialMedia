@@ -10,6 +10,69 @@ test.beforeEach(async ({ context }, info) => {
   await context.request.post(`${API}/users/me/update-notice/acknowledge`);
 });
 
+for (const theme of ["light", "dark"]) {
+  test(`${theme} feed contains long clickable external links, rainbow invites and borderless story previews`, async ({ page, context }, info) => {
+    await page.addInitScript((value) => localStorage.setItem("intouch:theme", value), theme);
+    const headers = { "access-control-allow-origin": "http://localhost:5173", "access-control-allow-credentials": "true" };
+    const image = await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url));
+    await page.route(/\/media\/story-thumb/, (route) => route.fulfill({ contentType: "image/png", body: image }));
+    const url = `https://example.test/@404mediaco/1175083025053424006?source=${"long-link-".repeat(35)}`;
+    const text = `Long link example\nRE: ${url}\n\n${"UnbrokenText".repeat(45)}\n\n@not_an_intouch_user #external`;
+    await page.route(/\/feed\?/, (route) => route.fulfill({ headers, json: {
+      items: [{ type: "external", id: "external:overflow", createdAt: new Date().toISOString(), external: {
+        platform: "mastodon", externalId: "overflow", authorHandle: "molly0xfff@hachyderm.io", authorName: "Molly White", authorAvatarUrl: null,
+        profileUrl: "https://example.test/profile", text, mediaUrl: null, thumbnailUrl: null, url: "https://example.test/post", publishedAt: new Date().toISOString(),
+      } }], nextCursor: null, caughtUp: false, boundaryIndex: null,
+    } }));
+    await page.route(/\/stories$/, (route) => route.fulfill({ headers, json: { groups: Array.from({ length: 10 }, (_, index) => ({
+      author: { id: `story-author-${index}`, username: `friend${index}`, displayName: `Friend ${index}`, avatarKey: null, createdAt: new Date().toISOString() },
+      stories: [{ id: `story-${index}`, imageKey: "story-thumb.png", audioKey: null, audioDurationMs: null, videoKey: null, text: null,
+        viewedAt: null, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(), visibility: "public", circle: null, meetup: null, reactionCounts: [], myReaction: null }],
+    })) } }));
+    await page.route(/\/external\/story-items$/, (route) => route.fulfill({ headers, json: { items: [{ id: "short-demo", platform: "youtube", title: "A Short", thumbnailUrl: `${API}/media/story-thumb.png`, url: "https://example.test/short", authorName: "Creator", authorAvatarUrl: null, live: false }] } }));
+    await context.route("https://example.test/**", (route) => route.fulfill({ contentType: "text/html", body: "<title>External link</title>External destination" }));
+    await page.goto("/");
+    const card = page.locator("article").filter({ hasText: "Long link example" });
+    const link = card.getByRole("link", { name: url, exact: true });
+    await expect(link).toHaveAttribute("href", url);
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveCSS("text-decoration-line", "underline");
+    await expect(card.locator('a[href^="/u/not_an_intouch"]')).toHaveCount(0);
+    const bounds = await card.boundingBox();
+    const linkBounds = await link.boundingBox();
+    expect(linkBounds.x).toBeGreaterThanOrEqual(bounds.x);
+    expect(linkBounds.x + linkBounds.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.evaluate(() => window.scrollTo(200, 0));
+    expect(await page.evaluate(() => scrollX)).toBe(0);
+    const story = page.getByRole("button", { name: "Stories from @friend0 · Unseen stories", exact: true });
+    await expect(story).toBeVisible();
+    expect(await story.locator('[class*="border-white"]').count()).toBe(0);
+    const short = page.getByRole("link", { name: "Creator on YouTube: A Short", exact: true });
+    expect(await short.locator('[class*="border-white"]').count()).toBe(0);
+    const rowScroll = await story.evaluate((element) => { const row = element.parentElement; row.scrollLeft = 180; return row.scrollLeft; });
+    expect(rowScroll).toBeGreaterThan(0);
+    expect(await page.evaluate(() => scrollX)).toBe(0);
+    await story.evaluate((element) => { element.parentElement.scrollLeft = 0; });
+    await page.getByRole("button", { name: "Open settings menu", exact: true }).click();
+    const invite = page.getByRole("menuitem", { name: "Invites", exact: true });
+    const gradient = invite.locator("span");
+    await expect(gradient).toHaveCSS("background-image", /linear-gradient/);
+    await expect(gradient).toHaveCSS("background-clip", "text");
+    await page.screenshot({ path: `screenshots/${info.project.name}/feed-overflow-menu-${theme}.png`, animations: "disabled" });
+    await page.getByRole("button", { name: "Open settings menu", exact: true }).click();
+    const popupPromise = page.waitForEvent("popup");
+    await link.click();
+    const popup = await popupPromise;
+    await expect(popup).toHaveURL(url);
+    await popup.close();
+    await page.screenshot({ path: `screenshots/${info.project.name}/feed-overflow-links-${theme}.png`, animations: "disabled" });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `screenshots/${info.project.name}/feed-overflow-desktop-${theme}.png`, animations: "disabled" });
+  });
+}
+
 test("post photos open full screen and close with Escape or the close button", async ({ page, context }) => {
   const media = await context.request.post(`${API}/media`, { multipart: { file: { name: "post-photo.png", mimeType: "image/png", buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)) } } });
   expect(media.status()).toBe(201);
