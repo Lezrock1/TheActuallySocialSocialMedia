@@ -254,6 +254,37 @@ test("Snap camera replies open the camera with the sender selected", async ({ pa
   await expect(page.locator("#camera-file-picker")).toHaveCount(1);
 });
 
+test("Snap viewer replays on a left tap and the list shows Opened before the server answers", async ({ page }) => {
+  await page.addInitScript(() => { if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia = async () => { throw new DOMException("Test camera unavailable", "NotAllowedError"); }; });
+  const [red] = await images(page);
+  await page.clock.install();
+  await page.route(/\/snaps\/inbox$/, (route) => route.fulfill({ headers, json: { snaps: [{ id: "replay", sender: person("mia"), imageKey: "snap-replay.png", text: null, isEncrypted: false, createdAt, viewedAt: null }], recentlyViewed: [] } }));
+  await page.route(/\/snaps\/streaks$/, (route) => route.fulfill({ headers, json: { streaks: [] } }));
+  await page.route(/\/media\/snap-replay.png/, (route) => route.fulfill({ headers, contentType: "image/png", body: red }));
+  let releaseView;
+  const viewGate = new Promise((resolve) => { releaseView = resolve; });
+  await page.route(/\/snaps\/replay\/view$/, async (route) => {
+    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: { ...headers, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type,x-forwarded-for" } });
+    await viewGate;
+    return route.fulfill({ status: 204, headers });
+  });
+  await page.goto("/snaps");
+  const list = page.getByRole("region", { name: "Received Snaps" });
+  await list.getByRole("button", { name: /New Snap/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Snap from @mia", exact: true });
+  await expect(dialog.getByRole("img", { name: "Snap from @mia", exact: true })).toBeVisible();
+  const progress = page.getByRole("progressbar", { name: "Snap progress" });
+  await page.clock.fastForward(4000);
+  await expect.poll(async () => Number(await progress.getAttribute("aria-valuenow"))).toBeGreaterThan(30);
+  await dialog.click({ position: { x: 8, y: 300 } });
+  await expect.poll(async () => Number(await progress.getAttribute("aria-valuenow"))).toBeLessThan(15);
+  await dialog.getByRole("button", { name: "Close Snap" }).click();
+  await page.clock.fastForward(300);
+  await expect(dialog).toHaveCount(0);
+  await expect(list.getByRole("button", { name: /Opened/ })).toBeVisible();
+  releaseView();
+});
+
 test("Snap video pauses on hold and advances once when the clip ends", async ({ page }, info) => {
   test.skip(info.project.name !== "android", "Requires the Chromium synthetic canvas recording fixture");
   const [red] = await images(page);

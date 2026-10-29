@@ -2,7 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import type { FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { InfiniteData } from "@tanstack/react-query";
+import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import { MAX_LIVE_ROOM_PARTICIPANTS } from "@app/shared";
 import type {
   ConversationMessage,
@@ -40,7 +40,7 @@ import {
   btnPrimary,
   btnSecondary,
 } from "../lib/ui.js";
-import { InlineSkeletonText } from "../components/LoadingSkeleton.js";
+import { ConversationRowsSkeleton, InlineSkeletonText } from "../components/LoadingSkeleton.js";
 import MeetupCard from "../components/chat/MeetupCard.js";
 import VoiceMessage from "../components/chat/VoiceMessage.js";
 import MeetupSheet, { meetupToDraft } from "../components/MeetupFields.js";
@@ -69,6 +69,37 @@ import { UNREAD_FIRST_KEY, useListPreference } from "../lib/listPreferences.js";
 
 const MESSAGE_PAGE_LIMIT = 40;
 const PINNED_CHATS_KEY = "intouch:pinned-chats";
+const REACTION_CHOICES = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
+const REPLY_SWIPE_THRESHOLD = 72;
+
+function insertMessageIntoCache(queryClient: QueryClient, conversationId: string, message: ConversationMessage) {
+  queryClient.setQueryData<InfiniteData<ConversationMessagesPage>>(["messages", conversationId], (current) => {
+    if (!current || current.pages.length === 0) return current;
+    const [latestPage, ...olderPages] = current.pages;
+    if (current.pages.some((page) => page.messages.some((existing) => existing.id === message.id))) return current;
+    return { ...current, pages: [{ ...latestPage, messages: [...latestPage.messages, message] }, ...olderPages] };
+  });
+}
+
+function clearUnreadInCache(queryClient: QueryClient, conversationId: string) {
+  queryClient.setQueryData<ConversationSummary[]>(["conversations"], (current) =>
+    current?.some((conversation) => conversation.id === conversationId && conversation.unreadCount > 0)
+      ? current.map((conversation) => conversation.id === conversationId ? { ...conversation, unreadCount: 0 } : conversation)
+      : current);
+}
+
+function TypingDots() {
+  return <span aria-hidden="true" className="typing-dots"><span /><span /><span /></span>;
+}
+
+function ChatListSkeleton() {
+  return (
+    <div role="status" className="px-1">
+      <span className="sr-only">Loading chats...</span>
+      <ConversationRowsSkeleton rows={6} />
+    </div>
+  );
+}
 
 interface PendingMessage {
   id: string;
@@ -302,7 +333,18 @@ export default function DMsPage() {
   const [actionMessageId, setActionMessageId] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string>>({});
   const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
-  const replySwipeRef = useRef<{ id: string; startX: number; startY: number; mode: "x" | "y" | null } | null>(null);
+  const [unreadAnchorMessageId, setUnreadAnchorMessageId] = useState<string | null>(null);
+  const [newBelowCount, setNewBelowCount] = useState(0);
+  const [chatClosing, setChatClosing] = useState(false);
+  const [typingByConversation, setTypingByConversation] = useState<Record<string, string[]>>({});
+  const knownMessageIdsRef = useRef<Set<string>>(new Set());
+  const unreadAnchorSetRef = useRef<string | null>(null);
+  const [unreadCapturedId, setUnreadCapturedId] = useState<string | null>(null);
+  const typingTimersRef = useRef<Map<string, number>>(new Map());
+  const typingSentAtRef = useRef(0);
+  const typingStopTimerRef = useRef<number | null>(null);
+  const sendKeepFocusRef = useRef(false);
+  const replySwipeRef = useRef<{ id: string; startX: number; startY: number; mode: "x" | "y" | null; el: HTMLDivElement; armed: boolean } | null>(null);
   const longPressRef = useRef<number | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const recorder = useAudioRecorder({ maxMs: MAX_VOICE_MESSAGE_MS, onFinished: (recording) => void sendVoice(recording) });
@@ -437,9 +479,15 @@ export default function DMsPage() {
       return Number(!aName.startsWith(normalizedFriendSearch)) - Number(!bName.startsWith(normalizedFriendSearch));
     });
 
+  // Messages fetched from the server never pop in; only live arrivals do.
+  const loadMessagesPage = async (id: string, cursor: string | null) => {
+    const page = await fetchMessagesPage(id, cursor);
+    for (const message of page.messages) knownMessageIdsRef.current.add(message.id);
+    return page;
+  };
   const messagesQuery = useInfiniteQuery({
     queryKey: ["messages", activeId],
-    queryFn: ({ pageParam }) => fetchMessagesPage(activeId!, pageParam),
+    queryFn: ({ pageParam }) => loadMessagesPage(activeId!, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: !!activeId,
@@ -447,10 +495,29 @@ export default function DMsPage() {
   const messagePages = messagesQuery.data?.pages ?? [];
   const messages = [...messagePages].reverse().flatMap((page) => page.messages);
   const messagesLoaded = messagesQuery.isSuccess;
+  const messagesFetching = messagesQuery.isFetching;
   const newestMessageId = messages[messages.length - 1]?.id ?? null;
-  const unreadAnchorMessageId = initialUnreadCount > 0
-    ? messages[Math.max(0, messages.length - initialUnreadCount)]?.id ?? null
-    : null;
+
+  function warmChat(id: string) {
+    void queryClient.prefetchInfiniteQuery({
+      queryKey: ["messages", id],
+      queryFn: ({ pageParam }) => loadMessagesPage(id, pageParam),
+      initialPageParam: null as string | null,
+      staleTime: 15_000,
+    });
+  }
+
+  // The anchor is fixed once per chat, after fresh messages arrived, so later messages do not move it.
+  useEffect(() => {
+    if (!activeId) {
+      unreadAnchorSetRef.current = null;
+      setUnreadAnchorMessageId(null);
+      return;
+    }
+    if (!messagesLoaded || messagesFetching || unreadCapturedId !== activeId || initialUnreadCount <= 0 || unreadAnchorSetRef.current === activeId) return;
+    unreadAnchorSetRef.current = activeId;
+    setUnreadAnchorMessageId(messages[Math.max(0, messages.length - initialUnreadCount)]?.id ?? null);
+  }, [activeId, initialUnreadCount, messages, messagesFetching, messagesLoaded, unreadCapturedId]);
 
   useLayoutEffect(() => {
     if (!activeId) {
@@ -519,6 +586,7 @@ export default function DMsPage() {
     const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
     wasAtBottomRef.current = distance <= 120;
     setShowJumpToLatest(distance > 320);
+    if (distance <= 120) setNewBelowCount(0);
     if (container.scrollTop > 140) topAutoLoadReadyRef.current = true;
     if (container.scrollTop < 60 && topAutoLoadReadyRef.current) {
       topAutoLoadReadyRef.current = false;
@@ -528,7 +596,117 @@ export default function DMsPage() {
 
   function jumpToLatest() {
     messageScrollRef.current?.scrollTo({ top: messageScrollRef.current.scrollHeight, behavior: "smooth" });
+    setNewBelowCount(0);
   }
+
+  function setTypingState(conversationId: string, userId: string, typing: boolean) {
+    const key = `${conversationId}:${userId}`;
+    const existing = typingTimersRef.current.get(key);
+    if (existing !== undefined) window.clearTimeout(existing);
+    typingTimersRef.current.delete(key);
+    const apply = (isTyping: boolean) => setTypingByConversation((current) => {
+      const names = new Set(current[conversationId] ?? []);
+      if (isTyping) names.add(userId);
+      else names.delete(userId);
+      const next = { ...current };
+      if (names.size > 0) next[conversationId] = [...names];
+      else delete next[conversationId];
+      return next;
+    });
+    apply(typing);
+    // A lost "stopped typing" event must not leave the indicator stuck.
+    if (typing) typingTimersRef.current.set(key, window.setTimeout(() => { typingTimersRef.current.delete(key); apply(false); }, 6000));
+  }
+
+  function emitTyping(typing: boolean) {
+    if (!activeId) return;
+    getSocket().emit("typing", { conversationId: activeId, isTyping: typing });
+    typingSentAtRef.current = typing ? Date.now() : 0;
+  }
+
+  function stopTyping() {
+    if (typingStopTimerRef.current !== null) {
+      window.clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+    if (typingSentAtRef.current) emitTyping(false);
+  }
+
+  function onComposerInput(value: string) {
+    if (!value.trim()) {
+      stopTyping();
+      return;
+    }
+    if (Date.now() - typingSentAtRef.current > 2500) emitTyping(true);
+    if (typingStopTimerRef.current !== null) window.clearTimeout(typingStopTimerRef.current);
+    typingStopTimerRef.current = window.setTimeout(() => {
+      typingStopTimerRef.current = null;
+      emitTyping(false);
+    }, 4000);
+  }
+
+  function closeChat() {
+    if (chatClosing) return;
+    setChatClosing(true);
+    window.setTimeout(() => {
+      setActiveId(null);
+      setSearchParams({});
+      setChatClosing(false);
+    }, 170);
+  }
+
+  // Leaving a chat must not leave the other side staring at "typing…".
+  useEffect(() => () => {
+    if (typingStopTimerRef.current !== null) {
+      window.clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+    if (typingSentAtRef.current && activeId) getSocket().emit("typing", { conversationId: activeId, isTyping: false });
+    typingSentAtRef.current = 0;
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!activeId || !messagesLoaded || !window.matchMedia("(pointer: fine)").matches) return;
+    composerInputRef.current?.focus({ preventScroll: true });
+  }, [activeId, messagesLoaded]);
+
+  // Close the message menu on an outside tap or Escape.
+  useEffect(() => {
+    if (!actionMessageId) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest("[data-message-actions]")) return;
+      setActionMessageId(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActionMessageId(null);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [actionMessageId]);
+
+  // Sending always brings the new bubble into view, even when the reader scrolled up.
+  const activePendingCount = pendingMessages.filter((pending) => pending.conversationId === activeId).length;
+  useLayoutEffect(() => {
+    const container = messageScrollRef.current;
+    if (!container || activePendingCount === 0) return;
+    wasAtBottomRef.current = true;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    setNewBelowCount(0);
+  }, [activePendingCount]);
+
+  // Warm the two newest chats as soon as the list is known, so opening one is instant.
+  useEffect(() => {
+    if (!user || conversations.length === 0) return;
+    const newest = [...conversations]
+      .sort((a, b) => (b.lastMessage ? Date.parse(b.lastMessage.createdAt) : 0) - (a.lastMessage ? Date.parse(a.lastMessage.createdAt) : 0))
+      .slice(0, 2);
+    for (const conversation of newest) warmChat(conversation.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversations.length, user?.id]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -545,11 +723,15 @@ export default function DMsPage() {
   useEffect(() => {
     if (!activeId) {
       setInitialUnreadCount(0);
+      setUnreadCapturedId(null);
       return;
     }
-    const unread = conversations.find((conversation) => conversation.id === activeId)?.unreadCount ?? 0;
-    setInitialUnreadCount(unread);
-  }, [activeId, conversations]);
+    if (unreadCapturedId === activeId) return;
+    const conversation = conversations.find((item) => item.id === activeId);
+    if (!conversation) return;
+    setInitialUnreadCount(conversation.unreadCount);
+    setUnreadCapturedId(activeId);
+  }, [activeId, conversations, unreadCapturedId]);
   const { data: encryptionKeys = [], isError: encryptionKeysError } = useQuery({
     queryKey: ["conversation-encryption-keys", activeId],
     queryFn: () => fetchEncryptionKeys(activeId!),
@@ -641,6 +823,7 @@ export default function DMsPage() {
 
   useEffect(() => {
     if (!activeId || !messagesLoaded) return;
+    clearUnreadInCache(queryClient, activeId);
     void markConversationRead(activeId)
       .then(() => Promise.all([
         queryClient.invalidateQueries({ queryKey: ["conversations"] }),
@@ -656,28 +839,25 @@ export default function DMsPage() {
       conversationId: string;
       message: ConversationMessage;
     }) {
-      queryClient.setQueryData<InfiniteData<ConversationMessagesPage>>(
-        ["messages", payload.conversationId],
-        (current) => {
-          if (!current || current.pages.length === 0) return current;
-          const [latestPage, ...olderPages] = current.pages;
-          if (latestPage.messages.some((message) => message.id === payload.message.id)) {
-            return current;
-          }
-          return {
-            ...current,
-            pages: [
-              {
-                ...latestPage,
-                messages: [...latestPage.messages, payload.message],
-              },
-              ...olderPages,
-            ],
-          };
+      const { message } = payload;
+      const alreadyKnown = knownMessageIdsRef.current.has(message.id);
+      if (message.senderId === user?.id) {
+        // Our own message came back from the server: it replaces the oldest waiting bubble without a second pop.
+        knownMessageIdsRef.current.add(message.id);
+        if (!alreadyKnown) {
+          setPendingMessages((current) => {
+            const index = current.findIndex((pending) => pending.conversationId === payload.conversationId);
+            return index === -1 ? current : current.filter((_, position) => position !== index);
+          });
         }
-      );
+      } else {
+        setTypingState(payload.conversationId, message.senderId, false);
+        if (payload.conversationId === activeId && !wasAtBottomRef.current) setNewBelowCount((count) => count + 1);
+      }
+      insertMessageIntoCache(queryClient, payload.conversationId, message);
       void queryClient.invalidateQueries({ queryKey: ["conversations"] });
       if (payload.conversationId === activeId && document.visibilityState === "visible") {
+        clearUnreadInCache(queryClient, payload.conversationId);
         void markConversationRead(payload.conversationId)
           .then(() => Promise.all([
             queryClient.invalidateQueries({ queryKey: ["conversations"] }),
@@ -693,11 +873,22 @@ export default function DMsPage() {
       void queryClient.invalidateQueries({ queryKey: ["conversations"] });
     };
     socket.on("message:updated", onUpdatedMessage);
+    function onTypingUpdate(payload: { conversationId?: unknown; userId?: unknown; isTyping?: unknown }) {
+      if (typeof payload.conversationId !== "string" || typeof payload.userId !== "string" || typeof payload.isTyping !== "boolean") return;
+      setTypingState(payload.conversationId, payload.userId, payload.isTyping);
+    }
+    socket.on("typing:update", onTypingUpdate);
     return () => {
       socket.off("message:new", onNewMessage);
       socket.off("message:updated", onUpdatedMessage);
+      socket.off("typing:update", onTypingUpdate);
     };
-  }, [activeId, queryClient]);
+  }, [activeId, queryClient, user?.id]);
+
+  useEffect(() => () => {
+    for (const timer of typingTimersRef.current.values()) window.clearTimeout(timer);
+    typingTimersRef.current.clear();
+  }, []);
 
   useEffect(() => {
     if (!friendPickerOpen) return;
@@ -821,16 +1012,25 @@ export default function DMsPage() {
       throw new Error("Every participant must open Messages once before you can send an encrypted message.");
     }
     const encryptedPayload: EncryptedMessagePayload = await encryptMessage(content, encryptionKeys);
-    await apiFetch(`/conversations/${activeId}/messages`, {
+    const conversationId = activeId;
+    const res = await apiFetch<{ message: ConversationMessage }>(`/conversations/${conversationId}/messages`, {
       method: "POST",
       body: JSON.stringify({ encryptedPayload, ...(mediaKey ? { mediaKey } : {}), ...(storyId ? { storyId } : {}) }),
     });
+    // Show the confirmed message right away instead of waiting for the socket echo.
+    if (res?.message?.id && !knownMessageIdsRef.current.has(res.message.id)) {
+      knownMessageIdsRef.current.add(res.message.id);
+      insertMessageIntoCache(queryClient, conversationId, res.message);
+    }
   }
 
   async function sendMessage(e: FormEvent) {
     e.preventDefault();
     if (!messageText.trim() || !activeId || !deviceKeyReady) return;
     setMessageError(null);
+    stopTyping();
+    const keepKeyboard = sendKeepFocusRef.current || document.activeElement === composerInputRef.current;
+    sendKeepFocusRef.current = false;
     const draft = messageText;
     const replyContext = storyReplyContext;
     const snapContext = snapReplyContext;
@@ -858,6 +1058,7 @@ export default function DMsPage() {
     setStoryReplyContext(null);
     setSnapReplyContext(null);
     setReplyTarget(null);
+    if (keepKeyboard) composerInputRef.current?.focus({ preventScroll: true });
     try {
       let snapReply: SnapReplyContext | null = null;
       let snapPreviewKey: string | undefined;
@@ -988,12 +1189,29 @@ export default function DMsPage() {
 
   function onMessagePointerDown(messageId: string, event: React.PointerEvent<HTMLDivElement>) {
     if (!activeConversation) return;
-    replySwipeRef.current = { id: messageId, startX: event.clientX, startY: event.clientY, mode: null };
+    replySwipeRef.current = { id: messageId, startX: event.clientX, startY: event.clientY, mode: null, el: event.currentTarget, armed: false };
     if (longPressRef.current !== null) window.clearTimeout(longPressRef.current);
     longPressRef.current = window.setTimeout(() => {
+      navigator.vibrate?.(12);
       setActionMessageId(messageId);
-      replySwipeRef.current = null;
+      releaseSwipe();
     }, 420);
+  }
+
+  function releaseSwipe() {
+    if (longPressRef.current !== null) {
+      window.clearTimeout(longPressRef.current);
+      longPressRef.current = null;
+    }
+    const swipe = replySwipeRef.current;
+    replySwipeRef.current = null;
+    if (!swipe) return;
+    const el = swipe.el;
+    el.style.transition = "transform 240ms cubic-bezier(0.2, 0.9, 0.3, 1.2)";
+    el.style.transform = "";
+    el.style.setProperty("--swipe", "0");
+    el.querySelector<HTMLElement>(".chat-swipe-reply")?.setAttribute("data-armed", "false");
+    window.setTimeout(() => { el.style.transition = ""; }, 260);
   }
 
   function onMessagePointerMove(event: React.PointerEvent<HTMLDivElement>) {
@@ -1008,22 +1226,39 @@ export default function DMsPage() {
         longPressRef.current = null;
       }
     }
+    if (swipe.mode !== "x") return;
+    // The bubble follows the finger with resistance; the icon shows when letting go will reply.
+    const pull = Math.max(0, Math.min(deltaX, 110));
+    swipe.el.style.transition = "none";
+    swipe.el.style.transform = `translateX(${pull * 0.55}px)`;
+    swipe.el.style.setProperty("--swipe", String(Math.min(1, pull / REPLY_SWIPE_THRESHOLD)));
+    const armed = deltaX > REPLY_SWIPE_THRESHOLD;
+    if (armed !== swipe.armed) {
+      swipe.armed = armed;
+      swipe.el.querySelector<HTMLElement>(".chat-swipe-reply")?.setAttribute("data-armed", String(armed));
+      if (armed) navigator.vibrate?.(8);
+    }
   }
 
   function onMessagePointerUp(messageId: string, senderUsername: string, text: string, event: React.PointerEvent<HTMLDivElement>) {
     const swipe = replySwipeRef.current;
-    replySwipeRef.current = null;
     if (longPressRef.current !== null) {
       window.clearTimeout(longPressRef.current);
       longPressRef.current = null;
     }
+    releaseSwipe();
     if (!swipe || swipe.id !== messageId || swipe.mode !== "x") return;
     const deltaX = event.clientX - swipe.startX;
-    if (deltaX > 72) {
+    if (deltaX > REPLY_SWIPE_THRESHOLD) {
       setReplyTarget({ id: messageId, senderUsername, text: text.trim().slice(0, 120) || "message" });
       composerInputRef.current?.focus();
     }
   }
+
+  const typingIds = typingByConversation[activeId ?? ""] ?? [];
+  const typingLabel = typingIds.length === 0 ? null : activeConversation?.isGroup
+    ? `${typingIds.slice(0, 2).map((id) => `@${activeConversation.members.find((member) => member.id === id)?.username ?? "someone"}`).join(", ")} ${typingIds.length > 1 ? "are" : "is"} typing`
+    : "typing";
 
   const renderedMessages = [
     ...visibleParsedMessages.map((entry) => ({ ...entry, pending: false })),
@@ -1114,10 +1349,16 @@ export default function DMsPage() {
                   className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
                 >
                   {friendsLoading ? (
-                    <div aria-hidden="true" className="space-y-2 px-3 py-3">
-                      <InlineSkeletonText width="w-32" />
-                      <InlineSkeletonText width="w-44" />
-                      <InlineSkeletonText width="w-28" />
+                    <div aria-hidden="true" className="space-y-3 px-3 py-3">
+                      {[0, 1, 2].map((row) => (
+                        <div key={row} className="flex items-center gap-3">
+                          <span className="skeleton skeleton-round block h-9 w-9 shrink-0" />
+                          <span className="block flex-1 space-y-2">
+                            <span className="skeleton block h-3" style={{ width: `${44 + row * 14}%` }} />
+                            <span className="skeleton block h-2.5 w-1/4" />
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   ) : matchingFriends.length === 0 ? (
                     <p className="px-3 py-3 text-sm text-gray-500">
@@ -1220,12 +1461,14 @@ export default function DMsPage() {
             </div>
           )}
           {messageView === "chats" && <div aria-label="Chat list" className="chat-list lg:max-h-[calc(100dvh-19rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-3">
-            {conversationsLoading && <p role="status" className="px-4 py-4 text-sm text-gray-500">Loading chats...</p>}
+            {conversationsLoading && <ChatListSkeleton />}
             {conversationsFailed && <div role="alert" className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-red-600"><span>Could not load chats.</span><button type="button" onClick={() => void retryConversations()} className="min-h-11 shrink-0 px-2 font-semibold">Retry</button></div>}
-            {visibleConversations.map((c) => (
-              <div key={c.id} data-conversation-id={c.id} className={`chat-list-row ${activeId === c.id ? "chat-list-selected" : ""}`}>
+            {visibleConversations.map((c, rowIndex) => (
+              <div key={c.id} data-conversation-id={c.id} style={{ animationDelay: `${Math.min(rowIndex, 8) * 28}ms` }} className={`chat-list-row chat-list-row-press snap-row-enter ${activeId === c.id ? "chat-list-selected" : ""}`}>
                 <button
                   type="button"
+                  onPointerDown={() => warmChat(c.id)}
+                  onMouseEnter={() => warmChat(c.id)}
                   onClick={() => setActiveId(c.id)}
                   className="flex min-w-0 flex-1 items-center gap-3 text-left"
                 >
@@ -1251,6 +1494,9 @@ export default function DMsPage() {
                       </span>
                     </span>
                     <span className="mt-0.5 flex min-w-0 items-center gap-2">
+                      {typingByConversation[c.id]?.length ? (
+                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5 text-green-600">typing<TypingDots /></span>
+                      ) : (<>
                       {c.lastMessage?.isEncrypted && (
                         <span aria-hidden="true" className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500">
                           <svg viewBox="0 0 24 24" fill="none" className="h-2.5 w-2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
@@ -1259,6 +1505,7 @@ export default function DMsPage() {
                       <span className={`min-w-0 flex-1 truncate text-[13px] leading-5 ${c.unreadCount > 0 ? "font-medium text-gray-800" : "text-gray-500"}`}>
                         {chatPreview(c.lastMessage)}
                       </span>
+                      </>)}
                     </span>
                   </span>
                   <span className="flex w-14 shrink-0 flex-col items-end gap-1.5 self-center">
@@ -1267,8 +1514,9 @@ export default function DMsPage() {
                     )}
                     {c.unreadCount > 0 ? (
                         <span
+                          key={c.unreadCount}
                           aria-label={`${c.unreadCount} unread messages`}
-                          className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-green-600 px-1.5 text-[11px] font-bold text-white"
+                          className="chat-badge-pop inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-green-600 px-1.5 text-[11px] font-bold text-white"
                         >
                           {c.unreadCount > 99 ? "99+" : c.unreadCount}
                         </span>
@@ -1314,7 +1562,7 @@ export default function DMsPage() {
         {activeId && (
           <section
             key={activeId}
-            className="chat-conversation fixed inset-x-0 top-0 z-[56] flex flex-col bg-gray-50 lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-12rem)] lg:min-h-[34rem] lg:overflow-hidden lg:border-l lg:border-gray-200"
+            className={`chat-conversation fixed inset-x-0 top-0 z-[56] flex flex-col bg-gray-50 lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-12rem)] lg:min-h-[34rem] lg:overflow-hidden lg:border-l lg:border-gray-200 ${chatClosing ? "chat-slide-out" : "chat-slide-in"}`}
             style={{ bottom: keyboardOffset }}
             aria-label="Conversation"
           >
@@ -1322,10 +1570,7 @@ export default function DMsPage() {
               <div className="mx-auto flex w-full max-w-2xl items-center gap-1.5 px-1.5 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] lg:max-w-none lg:gap-2.5 lg:px-4 lg:pt-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveId(null);
-                    setSearchParams({});
-                  }}
+                  onClick={closeChat}
                   aria-label="Back to Messages"
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-700 transition-[background-color,transform] hover:bg-gray-100 active:scale-90 lg:hidden"
                 >
@@ -1352,8 +1597,8 @@ export default function DMsPage() {
                       <span className="block truncate text-[15px] font-semibold leading-5 text-gray-900">
                         {activeConversation.otherMember.displayName || `@${activeConversation.otherMember.username}`}
                       </span>
-                      <span className={`block truncate text-[11px] leading-4 ${deviceKeyReady && allMembersHaveKeys && !encryptionKeysError ? "text-green-700" : "text-amber-700"}`}>
-                        {deviceKeyReady && allMembersHaveKeys && !encryptionKeysError
+                      <span className={`block truncate text-[11px] leading-4 ${typingLabel ? "font-medium text-green-600" : deviceKeyReady && allMembersHaveKeys && !encryptionKeysError ? "text-green-700" : "text-amber-700"}`}>
+                        {typingLabel ? <>{typingLabel}<TypingDots /></> : deviceKeyReady && allMembersHaveKeys && !encryptionKeysError
                           ? `End-to-end encrypted${onlineUserIds.has(activeConversation.otherMember.id) ? " · Online now" : ""}`
                           : "Not ready for encryption yet"}
                       </span>
@@ -1366,8 +1611,8 @@ export default function DMsPage() {
                       ? activeConversation.name ?? activeConversation.members.map((member) => `@${member.username}`).join(", ")
                       : `@${activeConversation?.otherMember?.username ?? "Conversation"}`}
                   </h2>
-                  <p className={`truncate text-[11px] leading-4 ${deviceKeyReady && allMembersHaveKeys && !encryptionKeysError ? "text-green-700" : "text-amber-700"}`}>
-                    {deviceKeyReady && allMembersHaveKeys && !encryptionKeysError
+                  <p className={`truncate text-[11px] leading-4 ${typingLabel ? "font-medium text-green-600" : deviceKeyReady && allMembersHaveKeys && !encryptionKeysError ? "text-green-700" : "text-amber-700"}`}>
+                    {typingLabel ? <>{typingLabel}<TypingDots /></> : deviceKeyReady && allMembersHaveKeys && !encryptionKeysError
                       ? (activeConversation?.isGroup ? `${activeConversation.members.length} members · end-to-end encrypted` : "End-to-end encrypted")
                       : "Not ready for encryption yet"}
                   </p>
@@ -1440,12 +1685,12 @@ export default function DMsPage() {
                 ))}
               </div>
             )}
-            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-3 sm:px-[max(0.75rem,calc((100%-42rem)/2))]">
+            <div ref={messageScrollRef} onScroll={trackMessageScroll} style={conversationBackgroundStyle} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none] px-3 py-3 sm:px-[max(0.75rem,calc((100%-42rem)/2))]">
               {messagesQuery.isPending && (
                 <div aria-hidden="true" className="space-y-2 px-1 py-2">
-                  <div className="chat-bubble chat-bubble-theirs h-16 animate-pulse" />
-                  <div className="chat-bubble chat-bubble-mine ml-auto h-12 animate-pulse" />
-                  <div className="chat-bubble chat-bubble-theirs h-20 animate-pulse" />
+                  <div className="skeleton h-14 w-2/3 rounded-lg" />
+                  <div className="skeleton ml-auto h-10 w-1/2 rounded-lg" />
+                  <div className="skeleton h-[4.5rem] w-3/4 rounded-lg" />
                 </div>
               )}
               {messagesQuery.hasNextPage && (
@@ -1543,15 +1788,12 @@ export default function DMsPage() {
                     onPointerDown={(event) => onMessagePointerDown(message.id, event)}
                     onPointerMove={onMessagePointerMove}
                     onPointerUp={(event) => onMessagePointerUp(message.id, sender?.username ?? "someone", replyPreview, event)}
-                    onPointerCancel={() => {
-                      replySwipeRef.current = null;
-                      if (longPressRef.current !== null) {
-                        window.clearTimeout(longPressRef.current);
-                        longPressRef.current = null;
-                      }
-                    }}
-                    className={`chat-bubble transition-transform ${startsGroup ? "mt-2" : ""} ${mine ? "chat-bubble-mine self-end" : "chat-bubble-theirs self-start"} ${isPending ? "opacity-75" : ""}`}
+                    onPointerCancel={releaseSwipe}
+                    className={`chat-bubble ${startsGroup ? "mt-2" : ""} ${mine ? "chat-bubble-mine self-end" : "chat-bubble-theirs self-start"} ${isPending ? "opacity-75" : ""} ${isPending || !knownMessageIdsRef.current.has(message.id) ? "chat-bubble-pop" : ""} ${actionMessageId === message.id ? "chat-bubble-selected" : ""}`}
                   >
+                    <span aria-hidden="true" className="chat-swipe-reply" data-armed="false">
+                      <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10a6 6 0 0 1 6 6v3" /></svg>
+                    </span>
                     {unreadAnchorMessageId === message.id && (
                       <div className="-mt-1 mb-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                         New messages
@@ -1605,7 +1847,7 @@ export default function DMsPage() {
                       <p className="whitespace-pre-wrap">Message</p>
                     )}
                     {messageReactions[message.id] && (
-                      <div className="mt-1 inline-flex rounded-full bg-black/8 px-2 py-0.5 text-xs">
+                      <div key={messageReactions[message.id]} className="chat-badge-pop mt-1 inline-flex rounded-full bg-black/8 px-2 py-0.5 text-xs">
                         {messageReactions[message.id]}
                       </div>
                     )}
@@ -1619,7 +1861,29 @@ export default function DMsPage() {
                       <time dateTime={message.createdAt}>{formatClock(message.createdAt)}</time>
                     </div>
                     {actionMessageId === message.id && (
-                      <div className="mt-2 flex flex-wrap gap-1.5 rounded-xl border border-black/10 bg-white/95 p-1.5 text-xs text-gray-700 shadow-sm">
+                      <div data-message-actions className="chat-menu-pop mt-2 flex flex-wrap gap-1.5 rounded-xl border border-black/10 bg-white/95 p-1.5 text-xs text-gray-700 shadow-sm">
+                        <div className="flex w-full justify-between gap-0.5 pb-0.5">
+                          {REACTION_CHOICES.map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              aria-label={`React ${emoji}`}
+                              aria-pressed={messageReactions[message.id] === emoji}
+                              onClick={() => {
+                                setMessageReactions((current) => {
+                                  const next = { ...current };
+                                  if (current[message.id] === emoji) delete next[message.id];
+                                  else next[message.id] = emoji;
+                                  return next;
+                                });
+                                setActionMessageId(null);
+                              }}
+                              className={`flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform active:scale-75 ${messageReactions[message.id] === emoji ? "bg-green-100" : "hover:bg-gray-100"}`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
                         <button
                           type="button"
                           onClick={() => {
@@ -1666,16 +1930,6 @@ export default function DMsPage() {
                         >
                           Delete for me
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMessageReactions((current) => ({ ...current, [message.id]: "❤️" }));
-                            setActionMessageId(null);
-                          }}
-                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
-                        >
-                          React ❤️
-                        </button>
                       </div>
                     )}
                   </div>
@@ -1687,14 +1941,17 @@ export default function DMsPage() {
                   <p className="rounded-full bg-white/90 px-4 py-2 text-sm text-gray-500 shadow-sm">No messages yet. Say hi!</p>
                 </div>
               )}
-              {showJumpToLatest && (
+              {(showJumpToLatest || newBelowCount > 0) && (
                 <button
                   type="button"
                   onClick={jumpToLatest}
-                  aria-label="Jump to latest message"
-                  className="sticky bottom-1 z-10 mt-1 flex h-10 w-10 shrink-0 items-center justify-center self-end rounded-full border border-gray-200 bg-white text-gray-600 shadow-md transition-transform active:scale-90"
+                  aria-label={newBelowCount > 0 ? `Jump to latest message, ${newBelowCount} new` : "Jump to latest message"}
+                  className="chat-badge-pop sticky bottom-1 z-10 mt-1 flex h-10 w-10 shrink-0 items-center justify-center self-end rounded-full border border-gray-200 bg-white text-gray-600 shadow-md transition-transform active:scale-90"
                 >
                   <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                  {newBelowCount > 0 && (
+                    <span aria-hidden="true" className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-green-600 px-1 text-[11px] font-bold text-white">{newBelowCount > 99 ? "99+" : newBelowCount}</span>
+                  )}
                 </button>
               )}
             </div>
@@ -1832,6 +2089,7 @@ export default function DMsPage() {
                     }}
                     onChange={(e) => {
                       setMessageText(e.target.value);
+                      onComposerInput(e.target.value);
                       e.target.style.height = "auto";
                       e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
                     }}
@@ -1848,21 +2106,25 @@ export default function DMsPage() {
                   />
                   {messageText.trim() || voiceBusy ? (
                     <button
+                      key="send"
                       type="submit"
                       aria-label="Send message"
                       disabled={!deviceKeyReady || !allMembersHaveKeys || voiceBusy}
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-700 text-white transition-transform hover:bg-green-800 active:scale-90 disabled:opacity-50"
+                      onPointerDown={() => { sendKeepFocusRef.current = document.activeElement === composerInputRef.current; }}
+                      onMouseDown={(event) => event.preventDefault()}
+                      className="composer-btn-pop flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-700 text-white transition-transform hover:bg-green-800 active:scale-90 disabled:opacity-50"
                     >
                       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12 20 4l-4 16-4.5-6.5L5 12Zm6.5 1.5L20 4" /></svg>
                     </button>
                   ) : (
                     <button
+                      key="mic"
                       type="button"
                       onClick={() => void recorder.start()}
                       disabled={!deviceKeyReady || !allMembersHaveKeys}
                       aria-label="Record a voice message"
                       title="Voice message"
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-700 text-white transition-transform hover:bg-green-800 active:scale-95 disabled:opacity-50"
+                      className="composer-btn-pop flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-700 text-white transition-transform hover:bg-green-800 active:scale-95 disabled:opacity-50"
                     >
                       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="9" y="3" width="6" height="12" rx="3" />

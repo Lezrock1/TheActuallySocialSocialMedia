@@ -12,6 +12,7 @@ import { ownsMedia } from "../mediaAccess.js";
 import { isBlocked } from "../visibility.js";
 import { completeUserNotifications, createUserNotification } from "../notifications.js";
 import { recordSnapInStreak } from "../snapStreak.js";
+import { emitToUsers } from "../realtime.js";
 
 const SNAP_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
@@ -157,6 +158,7 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
         }).catch((error) => request.log.error(error, "Snap notification creation failed"))
       )
     );
+    emitToUsers(app.io, [request.userId!, ...recipients.map((recipient) => recipient.id)], "snaps:changed", {});
     return reply.code(201).send({ snapId: snap.id });
   });
 
@@ -289,6 +291,7 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
           await prisma.snap.delete({ where: { id: snap.id } });
           await deleteMediaIfUnreferenced(snap.imageKey);
         }
+        emitToUsers(app.io, [request.userId!, snap.senderId], "snaps:changed", {});
       }
       return reply.code(204).send();
     }

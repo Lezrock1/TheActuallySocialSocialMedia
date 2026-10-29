@@ -117,10 +117,16 @@ export default function FollowBox({ focusRequest = 0 }: { focusRequest?: number 
               }}
             >
               {directoryQuery.isPending ? (
-                <div aria-hidden="true" className="space-y-2 px-3 py-3">
-                  <InlineSkeletonText width="w-32" />
-                  <InlineSkeletonText width="w-44" />
-                  <InlineSkeletonText width="w-28" />
+                <div aria-hidden="true" className="space-y-3 px-3 py-3">
+                  {[0, 1, 2].map((row) => (
+                    <div key={row} className="flex items-center gap-3">
+                      <span className="skeleton skeleton-round block h-9 w-9 shrink-0" />
+                      <span className="block flex-1 space-y-2">
+                        <span className="skeleton block h-3" style={{ width: `${44 + row * 14}%` }} />
+                        <span className="skeleton block h-2.5 w-1/4" />
+                      </span>
+                    </div>
+                  ))}
                 </div>
               ) : directoryQuery.isError ? (
                 <button

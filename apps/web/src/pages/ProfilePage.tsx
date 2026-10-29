@@ -8,6 +8,7 @@ import { mediaUrl, uploadMedia } from "../lib/upload.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import PullToRefresh from "../components/PullToRefresh.js";
 import PostCard from "../components/PostCard.js";
 import ExternalPostCard from "../components/ExternalPostCard.js";
 import FilterChips from "../components/FilterChips.js";
@@ -20,8 +21,8 @@ import SecurityCodeSheet from "../components/SecurityCodeSheet.js";
 import CloseFriendsSheet from "../components/CloseFriendsSheet.js";
 import { useCircles } from "../lib/circles.js";
 import type { PublicEncryptionKey } from "../lib/encryption.js";
-import { CardListSkeleton } from "../components/LoadingSkeleton.js";
-import { InlineSkeletonText } from "../components/LoadingSkeleton.js";
+import { CardListSkeleton, PersonRowsSkeleton, ProfileSkeleton } from "../components/LoadingSkeleton.js";
+import { EmptyState, ErrorState } from "../components/StateMessage.js";
 import { card, input, btnPrimary, btnSecondary } from "../lib/ui.js";
 import MusicControls, { MusicIcon } from "../components/music/MusicControls.js";
 
@@ -288,12 +289,14 @@ export default function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
+      <PullToRefresh onRefresh={async () => { setReloadKey((key) => key + 1); await profileQuery.refetch(); }} />
       <PageHeader title="Profile" />
       <NavBar />
-      {profileQuery.isLoading && <CardListSkeleton rows={3} />}
+      {profileQuery.isLoading && <ProfileSkeleton />}
+      {profileQuery.isError && <ErrorState onRetry={() => void profileQuery.refetch()}>Could not load this profile.</ErrorState>}
       {profile && (
         <>
-          <div className={`${card} mb-6 overflow-hidden !p-5`}>
+          <div className={`${card} content-enter mb-6 overflow-hidden !p-5`}>
             <div className="flex items-center gap-4">
               <div className="shrink-0">
                 {profile.isMe && editing ? (
@@ -450,7 +453,7 @@ export default function ProfilePage() {
             isActive={(value) => value === filter}
             onSelect={setFilter}
           />
-          <div className={`flex flex-col gap-3 transition-opacity duration-200 ${postsLoaded ? "opacity-100" : "opacity-50"}`}>
+          <div className={`flex flex-col gap-3 transition-opacity duration-200 ${postsLoaded || items.length === 0 ? "opacity-100" : "opacity-50"}`}>
             {items.map((item) => item.type === "post" ? (
               <PostCard
                 key={item.id}
@@ -461,10 +464,11 @@ export default function ProfilePage() {
             ) : item.type === "external" ? (
               <ExternalPostCard key={item.id} item={item.external} onRepostChanged={() => setReloadKey((key) => key + 1)} />
             ) : null)}
+            {items.length === 0 && !postsLoaded && <CardListSkeleton rows={2} />}
             {items.length === 0 && postsLoaded && (
-              <p className="text-sm text-gray-400">
+              <EmptyState icon="📝">
                 {filter === "all" ? "Nothing here yet." : filter === "intouch" ? "No posts yet." : "No reposts yet."}
-              </p>
+              </EmptyState>
             )}
           </div>
 
@@ -556,10 +560,8 @@ export default function ProfilePage() {
             </div>
             <div className="max-h-[60vh] overflow-y-auto px-4">
               {connectionQuery.isLoading ? (
-                <div aria-hidden="true" className="space-y-2 py-5">
-                  <InlineSkeletonText width="w-28" />
-                  <InlineSkeletonText width="w-40" />
-                  <InlineSkeletonText width="w-32" />
+                <div aria-hidden="true" className="py-4">
+                  <PersonRowsSkeleton rows={4} action={false} />
                 </div>
               ) : connectionQuery.isError ? (
                 <p role="alert" className="py-5 text-sm text-red-600">Could not load this list.</p>

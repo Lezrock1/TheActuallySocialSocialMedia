@@ -14,6 +14,8 @@ function Avatar({
   if (avatarKey) {
     return (
       <img
+        ref={(image) => { if (image?.complete && image.naturalWidth > 0) image.dataset.loaded = "1"; }}
+        onLoad={(event) => { event.currentTarget.dataset.loaded = "1"; event.currentTarget.dataset.animate = "1"; }}
         src={mediaUrl(avatarKey)}
         alt={username}
         loading="eager"
@@ -24,7 +26,7 @@ function Avatar({
         width={size}
         height={size}
         style={{ width: size, height: size, WebkitTouchCallout: "none" }}
-        className="pointer-events-none shrink-0 select-none rounded-full bg-gray-200 object-cover"
+        className="avatar-fade pointer-events-none shrink-0 select-none rounded-full bg-gray-200 object-cover"
       />
     );
   }

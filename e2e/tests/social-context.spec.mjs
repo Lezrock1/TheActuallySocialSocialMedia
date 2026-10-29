@@ -82,6 +82,90 @@ test("Chat messages stay encrypted with delivery ticks across light and dark con
   } finally { await mia.close(); }
 });
 
+test("Chat shows typing live, sends one bubble per message and swipes to reply", async ({ browser, context }) => {
+  const mia = await friend(browser);
+  try {
+    const recipient = await prepare(mia, "mia");
+    const sender = await prepare(context, "leo");
+    const conversationId = (await (await context.request.post(`${API}/conversations`, { data: { username: "mia" } })).json()).conversationId;
+    await sender.goto(`/dms?conversation=${conversationId}`);
+    await recipient.goto(`/dms?conversation=${conversationId}`);
+    const field = sender.getByRole("textbox", { name: "Message", exact: true });
+    await expect.poll(() => recipient.evaluate(async () => (await import("/src/lib/socket.ts")).getSocket().connected)).toBe(true);
+    await field.pressSequentially("Hel");
+    const recipientChat = recipient.getByRole("region", { name: "Conversation", exact: true });
+    const typing = recipientChat.getByText("typing", { exact: true }).filter({ visible: true });
+    await expect(typing).toBeVisible();
+    await field.fill("");
+    await expect(typing).toHaveCount(0);
+
+    await sender.evaluate(() => {
+      window.__maxBubbles = 0;
+      const tick = () => {
+        const count = [...document.querySelectorAll(".chat-bubble p")].filter((node) => node.textContent === "Instant hello").length;
+        window.__maxBubbles = Math.max(window.__maxBubbles, count);
+        window.__bubbleFrame = requestAnimationFrame(tick);
+      };
+      tick();
+    });
+    await field.fill("Instant hello");
+    await sender.getByRole("button", { name: "Send message", exact: true }).click();
+    await expect(recipient.getByText("Instant hello", { exact: true })).toBeVisible();
+    await expect(sender.getByRole("img", { name: /Sent|Delivered|Read/ }).first()).toBeVisible();
+    await sender.waitForTimeout(600);
+    expect(await sender.evaluate(() => { cancelAnimationFrame(window.__bubbleFrame); return window.__maxBubbles; })).toBe(1);
+
+    const bubble = recipient.locator(".chat-bubble", { hasText: "Instant hello" });
+    const box = await bubble.boundingBox();
+    await recipient.mouse.move(box.x + 20, box.y + box.height / 2);
+    await recipient.mouse.down();
+    await recipient.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 4 });
+    await expect.poll(() => bubble.evaluate((node) => node.style.transform)).toContain("translateX");
+    await recipient.mouse.move(box.x + 120, box.y + box.height / 2, { steps: 4 });
+    await recipient.mouse.up();
+    await expect(recipient.getByText(/Replying to @leo/)).toBeVisible();
+    await expect.poll(() => bubble.evaluate((node) => node.style.transform)).toBe("");
+  } finally { await mia.close(); }
+});
+
+test("Chat counts new messages while scrolled up and closes the message menu on outside tap", async ({ browser, context }) => {
+  const mia = await friend(browser);
+  try {
+    const recipient = await prepare(mia, "mia");
+    const reader = await prepare(context, "leo");
+    const conversationId = (await (await context.request.post(`${API}/conversations`, { data: { username: "mia" } })).json()).conversationId;
+    const members = await database.conversationMember.findMany({ where: { conversationId }, select: { userId: true } });
+    const start = Date.now() - 3_600_000;
+    await database.message.createMany({ data: Array.from({ length: 30 }, (_, index) => ({
+      conversationId, senderId: members[index % 2].userId, text: `Earlier message ${index}`, isEncrypted: false, createdAt: new Date(start + index * 1000),
+    })) });
+    await reader.goto(`/dms?conversation=${conversationId}`);
+    await recipient.goto(`/dms?conversation=${conversationId}`);
+    await expect(reader.getByRole("region", { name: "Conversation", exact: true }).getByText("Earlier message 29", { exact: true })).toBeVisible();
+    // The chat pins itself to the newest message while late content settles; scroll up until it stays.
+    const scroller = reader.locator("div.overflow-y-auto", { has: reader.locator(".chat-bubble") }).first();
+    await expect(async () => {
+      await scroller.evaluate((node) => { node.scrollTop = 0; });
+      await expect(reader.getByRole("button", { name: "Jump to latest message", exact: true })).toBeVisible({ timeout: 700 });
+    }).toPass();
+    await recipient.getByRole("textbox", { name: "Message", exact: true }).fill("Fresh arrival");
+    await recipient.getByRole("button", { name: "Send message", exact: true }).click();
+    await expect(reader.getByRole("button", { name: "Jump to latest message, 1 new", exact: true })).toBeVisible();
+    await reader.getByRole("button", { name: /Jump to latest message/ }).click();
+    await expect(reader.getByText("Fresh arrival", { exact: true })).toBeInViewport();
+    await expect(reader.getByRole("button", { name: /Jump to latest message/ })).toHaveCount(0);
+
+    const bubble = reader.locator(".chat-bubble", { hasText: "Fresh arrival" });
+    const box = await bubble.boundingBox();
+    await reader.mouse.move(box.x + 20, box.y + box.height / 2);
+    await reader.mouse.down();
+    await expect(reader.getByRole("button", { name: "React ❤️", exact: true })).toBeVisible();
+    await reader.mouse.up();
+    await reader.getByRole("textbox", { name: "Message", exact: true }).click();
+    await expect(reader.getByRole("button", { name: "React ❤️", exact: true })).toHaveCount(0);
+  } finally { await mia.close(); }
+});
+
 test("Story reply sends directly and keeps its thumbnail after Story deletion", async ({ browser, context }, info) => {
   const mia = await friend(browser);
   await prepare(mia, "mia");

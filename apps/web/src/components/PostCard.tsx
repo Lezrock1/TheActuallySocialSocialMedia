@@ -19,6 +19,7 @@ import { detectPostLanguage } from "../lib/translationLanguage.js";
 import type { TranslationLanguage } from "@app/shared";
 import AppDialog from "./AppDialog.js";
 import ImageLightbox from "./ImageLightbox.js";
+import { warmProfile } from "../lib/prefetch.js";
 
 const languageCodes: Record<string, string> = {
   de: "deu",
@@ -121,7 +122,12 @@ function PostCard({
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Avatar avatarKey={post.author.avatarKey} username={post.author.username} />
-          <Link to={`/u/${post.author.username}`} className="text-sm font-semibold hover:underline">
+          <Link
+            to={`/u/${post.author.username}`}
+            onPointerDown={() => warmProfile(queryClient, post.author.username)}
+            onMouseEnter={() => warmProfile(queryClient, post.author.username)}
+            className="text-sm font-semibold hover:underline"
+          >
             @{post.author.username}
           </Link>
           {post.visibility === "close_friends" && (

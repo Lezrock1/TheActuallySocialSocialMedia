@@ -744,3 +744,23 @@ test("media permission sharing reuses compatible tracks across differing constra
     afterAllStopped: 4,
   });
 });
+
+test("loading placeholders mirror the page that is loading", async ({ page }) => {
+  const cases = [
+    { route: "/notifications", selector: ".skeleton-card > div", count: 6 },
+    { route: "/people", selector: ".skeleton-card > div", count: 5 },
+    { route: "/circles", selector: ".skeleton-card > div", count: 3 },
+    { route: "/settings/notifications", selector: ".skeleton-card", count: 2 },
+    { route: "/u/mia", selector: ".skeleton.h-20.w-20", count: 1 },
+  ];
+  await page.route(`${API}/**`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  for (const { route, selector, count } of cases) {
+    await page.goto(route, { waitUntil: "commit" });
+    // Auth bootstrap is delayed as well, so the first placeholder is the route-aware boot one.
+    await expect(page.locator(selector)).toHaveCount(count);
+    await expect(page.locator(selector)).toHaveCount(0, { timeout: 15_000 });
+  }
+});

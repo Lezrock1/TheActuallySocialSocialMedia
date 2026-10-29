@@ -4,7 +4,7 @@ import { Link, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import type { VirtualItem } from "@tanstack/react-virtual";
-import type { FeedItem, FeedPage as FeedPageType } from "@app/shared";
+import type { FeedItem, FeedPage as FeedPageType, FeedPost } from "@app/shared";
 import { audienceBody, PUBLIC_AUDIENCE } from "../lib/circles.js";
 import type { Audience } from "../lib/circles.js";
 import AudiencePicker from "../components/AudiencePicker.js";
@@ -295,7 +295,7 @@ export default function FeedPage() {
     setPostSuccess(false);
     setPosting(true);
     try {
-      await apiFetch("/posts", {
+      const created = await apiFetch<{ post: FeedPost }>("/posts", {
         method: "POST",
         body: JSON.stringify({
           text: text || undefined,
@@ -305,6 +305,14 @@ export default function FeedPage() {
           poll: pollEnabled ? { question: pollQuestion.trim(), options: normalizedOptions } : undefined,
         }),
       });
+      // The new post shows at the top right away; the refetch below only reconciles.
+      if (created?.post) {
+        queryClient.setQueryData<FeedPageType>(["feed", "first"], (current) => current && {
+          ...current,
+          items: [{ type: "post", id: created.post.id, createdAt: created.post.createdAt, post: created.post }, ...current.items.filter((item) => !(item.type === "post" && item.id === created.post.id))],
+          boundaryIndex: current.boundaryIndex ? current.boundaryIndex + 1 : current.boundaryIndex,
+        });
+      }
       setPostSuccess(true);
       postSuccessTimeoutRef.current = window.setTimeout(() => {
         setPostSuccess(false);
@@ -623,7 +631,7 @@ export default function FeedPage() {
 
       {lastPage?.nextCursor && (
         <div className="flex min-h-12 items-center justify-center py-3">
-          {loadingMore && <p className="text-xs text-gray-400">Loading more posts...</p>}
+          {loadingMore && <div className="w-full"><CardListSkeleton rows={1} /><p role="status" className="sr-only">Loading more posts...</p></div>}
           {loadMoreError && (
             <button
               type="button"

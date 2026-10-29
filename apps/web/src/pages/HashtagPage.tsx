@@ -5,8 +5,10 @@ import { apiFetch } from "../lib/api.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import PullToRefresh from "../components/PullToRefresh.js";
 import PostCard from "../components/PostCard.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import { EmptyState, ErrorState } from "../components/StateMessage.js";
 
 export default function HashtagPage() {
   const { tag = "" } = useParams();
@@ -19,12 +21,13 @@ export default function HashtagPage() {
   const posts = query.data?.pages.flatMap((page) => page.posts) ?? [];
   return (
     <main className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
+      <PullToRefresh onRefresh={() => query.refetch()} />
       <PageHeader title={`#${tag}`} /><NavBar />
       <p className="mb-5 text-xs text-gray-500">Recent posts</p>
       {query.isPending && <CardListSkeleton rows={3} />}
-      {query.isError && <p role="alert" className="py-6 text-sm text-gray-600">Could not load this hashtag. <button type="button" className="font-semibold underline" onClick={() => void query.refetch()}>Retry</button></p>}
-      <div className="space-y-3">{posts.map((post) => <PostCard key={post.id} post={post} currentUserId={user?.id} onDeleted={() => void query.refetch()} />)}</div>
-      {query.isSuccess && !posts.length && <p className="py-10 text-center text-sm text-gray-500">No posts with this hashtag yet.</p>}
+      {query.isError && <ErrorState onRetry={() => void query.refetch()}>Could not load this hashtag.</ErrorState>}
+      <div className="content-enter space-y-3">{posts.map((post) => <PostCard key={post.id} post={post} currentUserId={user?.id} onDeleted={() => void query.refetch()} />)}</div>
+      {query.isSuccess && !posts.length && <EmptyState icon="#️⃣">No posts with this hashtag yet.</EmptyState>}
       {query.hasNextPage && <button type="button" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()} className="mt-5 w-full rounded-lg border border-gray-200 py-3 text-sm font-semibold disabled:opacity-50">{query.isFetchingNextPage ? "Loading..." : "Load more"}</button>}
     </main>
   );

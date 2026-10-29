@@ -8,7 +8,8 @@ import { forgetDeviceEncryptionKeyRegistration } from "../lib/encryptionRegistra
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import TranslationLanguageSettings from "../components/TranslationLanguageSettings.js";
-import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import { SettingsSkeleton } from "../components/LoadingSkeleton.js";
+import { ErrorState } from "../components/StateMessage.js";
 import Sheet from "../components/Sheet.js";
 import { btnPrimary, card, input } from "../lib/ui.js";
 
@@ -236,8 +237,8 @@ export default function AccountSettingsPage() {
       <p className="mb-4 text-sm leading-5 text-gray-500">Manage the details you use to sign in.</p>
       <TranslationLanguageSettings />
 
-      {accountQuery.isLoading && <CardListSkeleton rows={2} />}
-      {accountQuery.isError && <p role="alert" className="mb-4 text-sm text-red-600">Could not load account settings.</p>}
+      {accountQuery.isLoading && <SettingsSkeleton sections={2} />}
+      {accountQuery.isError && <ErrorState onRetry={() => void accountQuery.refetch()}>Could not load account settings.</ErrorState>}
 
       {accountQuery.data && (
         <>

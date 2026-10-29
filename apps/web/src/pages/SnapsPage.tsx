@@ -40,6 +40,24 @@ async function fetchStreaks(): Promise<SnapStreakSummary[]> {
   return res.streaks;
 }
 
+function SnapRowsSkeleton() {
+  return (
+    <div aria-hidden="true">
+      {[0, 1, 2, 3, 4].map((row) => (
+        <div key={row} className="flex items-center gap-3 border-b border-gray-100 px-1 py-2">
+          <span className="skeleton skeleton-round block h-12 w-12 shrink-0" />
+          <span className="flex flex-1 flex-col gap-2">
+            <span className="skeleton block h-3" style={{ width: `${46 + ((row * 17) % 30)}%` }} />
+            <span className="skeleton block h-2.5 w-1/4" />
+          </span>
+          <span className="skeleton skeleton-round block h-8 w-8 shrink-0" />
+          <span className="skeleton skeleton-round block h-8 w-8 shrink-0" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function SnapsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -71,6 +89,7 @@ export default function SnapsPage() {
   const [friendSearch, setFriendSearch] = useState("");
   const [listFilter, setListFilter] = useState<"all" | "unread" | "streaks">("all");
   const [openingChat, setOpeningChat] = useState<string | null>(null);
+  const [restartKey, setRestartKey] = useState(0);
 
   const { data: inbox, isLoading: inboxLoading, isError: inboxFailed, refetch: retryInbox } = useQuery({
     queryKey: ["snaps-inbox"],
@@ -83,16 +102,19 @@ export default function SnapsPage() {
     for (const [key, pending] of prefetchRef.current) {
       if (!keys.has(key)) { pending.controller.abort(); prefetchRef.current.delete(key); }
     }
-    for (const snap of upcoming) {
-      if (prefetchRef.current.has(snap.imageKey)) continue;
-      const controller = new AbortController();
-      const promise = downloadMediaBlob(snap.imageKey, controller.signal);
-      prefetchRef.current.set(snap.imageKey, { promise, controller, startedAt: Date.now() });
-      void promise.catch(() => {
-        if (prefetchRef.current.get(snap.imageKey)?.controller === controller) prefetchRef.current.delete(snap.imageKey);
-      });
-    }
+    for (const snap of upcoming) warmSnap(snap);
   }, [inbox]);
+
+  // Starts downloading a Snap early (on touch-down, before the tap completes) so it opens instantly.
+  function warmSnap(snap: InboxSnap) {
+    if (prefetchRef.current.has(snap.imageKey)) return;
+    const controller = new AbortController();
+    const promise = downloadMediaBlob(snap.imageKey, controller.signal);
+    prefetchRef.current.set(snap.imageKey, { promise, controller, startedAt: Date.now() });
+    void promise.catch(() => {
+      if (prefetchRef.current.get(snap.imageKey)?.controller === controller) prefetchRef.current.delete(snap.imageKey);
+    });
+  }
   const seenToday = inbox?.recentlyViewed ?? [];
   const { data: following = [], isLoading: followingLoading, isError: followingFailed, refetch: retryFollowing } = useQuery({
     queryKey: ["following", user?.username],
@@ -206,13 +228,25 @@ export default function SnapsPage() {
     if (markedSnapsRef.current.has(viewing.id)) return;
     const snapId = viewing.id;
     markedSnapsRef.current.add(snapId);
+    // The row flips to "Opened" the moment the Snap shows; the server sync below confirms it.
+    queryClient.setQueryData<SnapInboxData>(["snaps-inbox"], (current) => current && {
+      snaps: current.snaps.filter((snap) => snap.id !== snapId),
+      recentlyViewed: [{ ...viewing, viewedAt: new Date().toISOString() }, ...current.recentlyViewed.filter((snap) => snap.id !== snapId)],
+    });
     void apiFetch(`/snaps/${snapId}/view`, { method: "POST" }).then(() => Promise.all([
       queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
       queryClient.invalidateQueries({ queryKey: ["snaps", "unread-count"] }),
     ])).catch(() => {
       markedSnapsRef.current.delete(snapId);
+      void queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] });
       setSnapError("Could not sync this Snap's view status.");
     });
+  }
+
+  function restartSnap() {
+    if (!viewing || snapClosing) return;
+    if (videoRef.current) videoRef.current.currentTime = 0;
+    setRestartKey((value) => value + 1);
   }
 
   function advanceSnap() {
@@ -314,12 +348,13 @@ export default function SnapsPage() {
     }
   }
 
-  const dragStyle: React.CSSProperties | undefined = (dragY > 0 || dragX > 0) && !snapClosing
+  const mediaStyle: React.CSSProperties = (dragY > 0 || dragX > 0) && !snapClosing
     ? {
         transform: `translate(${dragX}px, ${dragY}px) scale(${Math.max(0.85, 1 - Math.max(dragY, dragX) / 1400)})`,
-        animation: "none",
+        transition: "none",
       }
-    : undefined;
+    : { transition: "transform 260ms cubic-bezier(0.22, 0.8, 0.25, 1)" };
+  const openingSnap = snaps.find((snap) => snap.id === openingSnapId);
 
 
   return (
@@ -337,23 +372,24 @@ export default function SnapsPage() {
           <section aria-label="Snap filters" className="space-y-3">
             <input type="search" aria-label="Search Snap friends" placeholder="Search friends" value={friendSearch} onChange={(event) => setFriendSearch(event.target.value)} className="app-search snap-search w-full" />
             <div role="tablist" aria-label="Snap list" className="flex gap-1 border-b border-gray-200">
-              {([ ["all", "All"], ["unread", "New Snaps"], ["streaks", "Streaks"] ] as const).map(([value, label]) => <button key={value} role="tab" type="button" aria-selected={listFilter === value} onClick={() => setListFilter(value)} className={`snap-tab min-h-11 flex-1 border-b-2 px-2 text-sm font-semibold ${listFilter === value ? "snap-tab-active" : "border-transparent text-gray-500"}`}>{label}{value === "unread" && snaps.length ? ` (${snaps.length})` : ""}</button>)}
+              {([ ["all", "All"], ["unread", "New Snaps"], ["streaks", "Streaks"] ] as const).map(([value, label]) => <button key={value} role="tab" type="button" aria-selected={listFilter === value} onClick={() => setListFilter(value)} className={`snap-tab min-h-11 flex-1 border-b-2 px-2 text-sm font-semibold transition-colors ${listFilter === value ? "snap-tab-active" : "border-transparent text-gray-500"}`}>{label}{value === "unread" && snaps.length ? ` (${snaps.length})` : ""}</button>)}
             </div>
           </section>
           <section aria-label="Received Snaps" className="divide-y divide-gray-200">
             {snapError && <p role="alert" className="px-4 pt-3 text-sm text-red-600">{snapError}</p>}
-            {(inboxLoading || followingLoading) && <p role="status" className="px-4 py-4 text-sm text-gray-500">Loading Snaps...</p>}
+            {(inboxLoading || followingLoading) && <><p role="status" className="sr-only">Loading Snaps...</p><SnapRowsSkeleton /></>}
             {(inboxFailed || followingFailed) && <div role="alert" className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-red-600"><span>Could not load all Snap friends.</span><button type="button" onClick={() => { void retryInbox(); void retryFollowing(); }} className="min-h-11 shrink-0 px-2 font-semibold">Retry</button></div>}
             <div>
-              {snapFriends.map(({ friend, snap, seen, streak }) => (
-                <div key={friend.id} className="flex items-center gap-1 border-b border-gray-100 py-2">
+              {snapFriends.map(({ friend, snap, seen, streak }, rowIndex) => (
+                <div key={friend.id} style={{ animationDelay: `${Math.min(rowIndex, 8) * 30}ms` }} className="snap-row-enter flex items-center gap-1 border-b border-gray-100 py-2">
                 <button
                   onClick={() => snap ? void openSnap(snap) : void openFriendChat(friend.username)}
+                  onPointerDown={() => { if (snap) warmSnap(snap); }}
                   disabled={!!openingSnapId || !!openingChat}
                   aria-busy={!!snap && openingSnapId === snap.id}
-                  className="flex min-h-16 min-w-0 flex-1 items-center gap-3 px-1 text-left"
+                  className="flex min-h-16 min-w-0 flex-1 items-center gap-3 rounded-xl px-1 text-left transition-[background-color,transform] duration-150 active:scale-[0.985] active:bg-gray-50"
                 >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white p-0.5">
+                  <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white p-0.5 transition-shadow duration-300 ${snap ? "ring-2 ring-red-500 ring-offset-1" : ""}`}>
                     <Avatar avatarKey={friend.avatarKey} username={friend.username} size={44} />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -369,7 +405,7 @@ export default function SnapsPage() {
                         title={streak.atRisk ? "Streak expires soon – send a snap to keep it" : undefined}
                         className="text-[10px]"
                       >
-                        🔥 {streak.currentStreak}{streak.atRisk && " ⌛"}
+                        🔥 {streak.currentStreak}{streak.atRisk && <span className="animate-pulse motion-reduce:animate-none"> ⌛</span>}
                       </span>
                     )}
                   </span>
@@ -384,7 +420,10 @@ export default function SnapsPage() {
                 </div>
               ))}
               {!snapFriends.length && !followingLoading && !inboxLoading && !inboxFailed && !followingFailed && (
-                <p className="px-4 py-4 text-sm text-gray-500">{friendSearch ? "No matching friends." : listFilter === "unread" ? "No unopened Snaps." : listFilter === "streaks" ? "No active streaks yet." : "Follow friends to start a conversation."}</p>
+                <div className="snap-row-enter flex flex-col items-center gap-2 px-4 py-10 text-center">
+                  <span aria-hidden="true" className="text-4xl">👻</span>
+                  <p className="text-sm text-gray-500">{friendSearch ? "No matching friends." : listFilter === "unread" ? "No unopened Snaps." : listFilter === "streaks" ? "No active streaks yet." : "Follow friends to start a conversation."}</p>
+                </div>
               )}
 
             </div>
@@ -399,8 +438,14 @@ export default function SnapsPage() {
         </p>
       </details>
 
-      {openingSnapId && createPortal(<div role="dialog" aria-modal="true" aria-label="Opening Snap" className="fixed inset-0 z-[60] flex items-center justify-center bg-black text-white">
-        <span role="status" aria-label="Loading Snap" className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+      {openingSnapId && createPortal(<div role="dialog" aria-modal="true" aria-label="Opening Snap" className="snap-viewer-enter fixed inset-0 z-[60] flex flex-col items-center justify-center gap-5 bg-black text-white">
+        {openingSnap && (
+          <span aria-hidden="true" className="relative flex h-20 w-20 items-center justify-center">
+            <span className="absolute inset-0 animate-ping rounded-full bg-white/15" />
+            <Avatar avatarKey={openingSnap.sender.avatarKey} username={openingSnap.sender.username} size={72} />
+          </span>
+        )}
+        <span role="status" aria-label="Loading Snap" className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
         <button type="button" aria-label="Cancel opening Snap" onClick={closeSnap} className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center text-2xl">×</button>
       </div>, document.body)}
       {viewing && createPortal(
@@ -412,14 +457,19 @@ export default function SnapsPage() {
           role="dialog"
           aria-modal="true"
           aria-label={`Snap from @${viewing.sender.username}`}
-          onClick={() => { if (!suppressClickRef.current) advanceSnap(); }}
+          onClick={(event) => {
+            if (suppressClickRef.current) return;
+            // Left edge replays the current Snap, the rest moves on (like Snapchat).
+            if (event.clientX < window.innerWidth * 0.3) restartSnap();
+            else advanceSnap();
+          }}
           onPointerDown={onViewerPointerDown}
           onPointerMove={onViewerPointerMove}
           onPointerUp={onViewerPointerEnd}
           onPointerCancel={onViewerPointerEnd}
         >
           {!viewingIsVideo && !snapClosing && (
-            <span key={viewing.id} className="pointer-events-none absolute inset-x-4 top-[max(0.5rem,env(safe-area-inset-top))] z-20 h-[3px] overflow-hidden rounded-full">
+            <span key={`${viewing.id}:${restartKey}`} className="pointer-events-none absolute inset-x-4 top-[max(0.5rem,env(safe-area-inset-top))] z-20 h-[3px] overflow-hidden rounded-full">
               <PlaybackProgress label="Snap progress" durationMs={10_000} ready={viewerRevealed} paused={snapHeld || replyFocused || quickReplyBusy} onComplete={advanceSnap} />
             </span>
           )}
@@ -437,6 +487,7 @@ export default function SnapsPage() {
               Swipe right to reply
             </div>
           )}
+          <div className="flex h-[100dvh] w-full items-center justify-center" style={mediaStyle}>
           {viewingIsVideo ? (
             <video
               key={viewing.id}
@@ -448,7 +499,6 @@ export default function SnapsPage() {
               muted={videoMuted}
               onLoadedData={revealSnap}
               onEnded={advanceSnap}
-              style={dragStyle}
               className={`max-h-[100dvh] max-w-full object-contain ${snapClosing ? "snap-media-exit" : ""}`}
             />
           ) : (
@@ -460,6 +510,7 @@ export default function SnapsPage() {
             className={`h-[100dvh] w-full ${snapClosing ? "snap-media-exit" : ""}`}
           />
           )}
+          </div>
           {viewing.isEncrypted && (
             <div className="absolute left-4 top-[calc(max(1rem,env(safe-area-inset-top))+3.25rem)] z-10 flex items-center gap-1.5 rounded-full bg-black/55 px-3 py-1 text-[11px] font-medium text-green-300 backdrop-blur-md" onClick={(event) => event.stopPropagation()}>
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-3 w-3" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4.5 4.5L19 7" /></svg>

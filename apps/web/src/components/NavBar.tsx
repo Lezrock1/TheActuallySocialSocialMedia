@@ -1,8 +1,11 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
+import type { MouseEvent } from "react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../lib/api.js";
+import { warmTab } from "../lib/prefetch.js";
+import { getSocket } from "../lib/socket.js";
 import CameraIcon from "./CameraIcon.js";
 import { useCamera } from "./camera/CameraProvider.js";
 
@@ -40,6 +43,21 @@ function MobileTabIcon({
   );
 }
 
+function useTabProps() {
+  const queryClient = useQueryClient();
+  const location = useLocation();
+  // Pressing a tab warms its page; pressing the tab you are on scrolls back to the top, like native apps.
+  return (path: string) => ({
+    onPointerDown: () => warmTab(queryClient, path),
+    onMouseEnter: () => warmTab(queryClient, path),
+    onClick: (event: MouseEvent) => {
+      if (location.pathname !== path || location.search) return;
+      event.preventDefault();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+  });
+}
+
 function CountBadge({
   count,
   tone,
@@ -56,13 +74,25 @@ function CountBadge({
     magenta: "bg-[#c0268a] text-white",
   }[tone];
   return (
-    <span className={`absolute -right-2 -top-1.5 z-10 inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-4 shadow-sm ring-2 ring-white ${toneClass}`}>
+    <span key={count} className={`chat-badge-pop absolute -right-2 -top-1.5 z-10 inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-4 shadow-sm ring-2 ring-white ${toneClass}`}>
       {count > 9 ? "9+" : count}
     </span>
   );
 }
 
 function useNavCounts() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const socket = getSocket();
+    // A Snap arrived, was opened, or changed a streak: refresh the badge, the Snap list and streaks.
+    const refresh = () => {
+      void queryClient.invalidateQueries({ queryKey: ["snaps", "unread-count"] });
+      void queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] });
+      void queryClient.invalidateQueries({ queryKey: ["snap-streaks"] });
+    };
+    socket.on("snaps:changed", refresh);
+    return () => { socket.off("snaps:changed", refresh); };
+  }, [queryClient]);
   const { data: { unreadCount: notificationCount = 0, messageUnreadCount = 0, feedUnreadCount = 0 } = {} } = useQuery({
     queryKey: ["notifications", "unread-count"],
     queryFn: () => apiFetch<{ unreadCount: number; messageUnreadCount: number; feedUnreadCount: number }>("/notifications/unread-count"),
@@ -80,12 +110,13 @@ function useNavCounts() {
 
 export default function NavBar() {
   const { notificationCount, messageUnreadCount, feedUnreadCount, snapUnreadCount } = useNavCounts();
+  const tab = useTabProps();
 
   return (
     <>
       <nav aria-label="Primary navigation" className="mx-auto mb-3 hidden max-w-2xl items-center justify-between border-b border-gray-200 pb-2 sm:flex">
         <div className="flex items-center gap-6">
-          <NavLink to="/" end className={primaryLinkClass}>
+          <NavLink to="/" end className={primaryLinkClass} {...tab("/")}>
             <span className="inline-flex items-center gap-1.5">
               <span className="relative inline-flex">
                 <MobileTabIcon name="feed" className="h-5 w-5" />
@@ -94,7 +125,7 @@ export default function NavBar() {
               Forum
             </span>
           </NavLink>
-          <NavLink to="/snaps" className={primaryLinkClass}>
+          <NavLink to="/snaps" className={primaryLinkClass} {...tab("/snaps")}>
             <span className="inline-flex items-center gap-1.5">
               <span className="relative inline-flex">
                 <MobileTabIcon name="snaps" className="h-5 w-5" />
@@ -103,7 +134,7 @@ export default function NavBar() {
               Snaps
             </span>
           </NavLink>
-          <NavLink to="/dms" className={primaryLinkClass}>
+          <NavLink to="/dms" className={primaryLinkClass} {...tab("/dms")}>
             <span className="inline-flex items-center gap-1.5">
               <span className="relative inline-flex">
                 <MobileTabIcon name="messages" className="h-5 w-5" />
@@ -122,6 +153,7 @@ export default function NavBar() {
           </NavLink>
           <NavLink
             to="/notifications"
+            {...tab("/notifications")}
             className={({ isActive }) => `inline-flex h-10 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors ${isActive ? "border-[#c0268a] alerts-command" : "border-transparent text-gray-600 hover:text-gray-900"}`}
           >
             <span className="relative inline-flex">
@@ -140,6 +172,7 @@ export default function NavBar() {
 export function MobileNav() {
   const { notificationCount, messageUnreadCount, feedUnreadCount, snapUnreadCount } = useNavCounts();
   const camera = useCamera();
+  const tab = useTabProps();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -165,14 +198,14 @@ export function MobileNav() {
         className={`${keyboardOpen ? "hidden" : "grid"} fixed inset-x-0 bottom-0 z-40 w-full grid-cols-5 items-stretch gap-1 border-t border-gray-200 bg-white px-4 pt-1 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:hidden`}
         style={{ paddingBottom: "calc(max(0.5rem, env(safe-area-inset-bottom)) + 0.75rem)" }}
       >
-        <NavLink to="/" end className={mobileLinkClass}>
+        <NavLink to="/" end className={mobileLinkClass} {...tab("/")}>
           <span className="relative inline-flex">
             <MobileTabIcon name="feed" />
             <CountBadge count={feedUnreadCount} tone="blue" />
           </span>
           <span>Forum</span>
         </NavLink>
-        <NavLink to="/snaps" className={(state) => mobileLinkClass(state, "snap-nav-active")}>
+        <NavLink to="/snaps" className={(state) => mobileLinkClass(state, "snap-nav-active")} {...tab("/snaps")}>
           <span className="relative inline-flex">
             <MobileTabIcon name="snaps" />
             <CountBadge count={snapUnreadCount} tone="yellow" />
@@ -180,14 +213,14 @@ export function MobileNav() {
           <span>Snaps</span>
         </NavLink>
         <span aria-hidden="true" className="min-w-0" />
-        <NavLink to="/dms" className={(state) => mobileLinkClass(state, "messages-nav-active")}>
+        <NavLink to="/dms" className={(state) => mobileLinkClass(state, "messages-nav-active")} {...tab("/dms")}>
           <span className="relative inline-flex">
             <MobileTabIcon name="messages" />
             <CountBadge count={messageUnreadCount} tone="green" />
           </span>
           <span>Messages</span>
         </NavLink>
-        <NavLink to="/notifications" className={(state) => mobileLinkClass(state, "alerts-command")}>
+        <NavLink to="/notifications" className={(state) => mobileLinkClass(state, "alerts-command")} {...tab("/notifications")}>
           <span className="relative inline-flex">
             <MobileTabIcon name="alerts" />
             <CountBadge count={notificationCount} tone="magenta" />

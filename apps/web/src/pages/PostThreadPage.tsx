@@ -7,8 +7,10 @@ import { apiFetch } from "../lib/api.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import PullToRefresh from "../components/PullToRefresh.js";
 import PostCard from "../components/PostCard.js";
-import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import { ThreadSkeleton } from "../components/LoadingSkeleton.js";
+import { ErrorState } from "../components/StateMessage.js";
 import { card, input, btnPrimary } from "../lib/ui.js";
 
 interface ThreadResponse {
@@ -27,7 +29,7 @@ export default function PostThreadPage() {
   const queryClient = useQueryClient();
   const [replyText, setReplyText] = useState("");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["thread", id],
     queryFn: () => fetchThread(id),
   });
@@ -49,11 +51,13 @@ export default function PostThreadPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
+      <PullToRefresh onRefresh={() => refetch()} />
       <PageHeader title="Post" />
       <NavBar />
-      {isLoading && <CardListSkeleton rows={2} />}
+      {isLoading && <ThreadSkeleton />}
+      {isError && <ErrorState onRetry={() => void refetch()}>Could not load this post.</ErrorState>}
       {data && (
-        <div className="flex flex-col gap-3">
+        <div className="content-enter flex flex-col gap-3">
           {data.parent && (
             <div className="text-xs text-gray-400">
               Reply to @{data.parent.author.username}

@@ -6,6 +6,7 @@ import { AI_PROVIDER_TYPES } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import { SettingsSkeleton } from "../components/LoadingSkeleton.js";
 import { card, input, btnPrimary, btnSecondary, btnDanger } from "../lib/ui.js";
 
 async function fetchProviders(): Promise<AiProviderConfigPublic[]> {
@@ -17,7 +18,7 @@ async function fetchProviders(): Promise<AiProviderConfigPublic[]> {
 
 export default function AiSettingsPage() {
   const queryClient = useQueryClient();
-  const { data: providers = [] } = useQuery({
+  const { data: providers = [], isLoading: providersLoading } = useQuery({
     queryKey: ["ai-providers"],
     queryFn: fetchProviders,
   });
@@ -105,6 +106,7 @@ export default function AiSettingsPage() {
       </p>
 
       <div className="mb-6 flex flex-col gap-2">
+        {providersLoading && <SettingsSkeleton sections={1} />}
         {providers.map((p) => (
           <div key={p.id} className={`${card} text-sm`}>
             <div className="flex items-center justify-between">
@@ -192,7 +194,7 @@ export default function AiSettingsPage() {
             )}
           </div>
         ))}
-        {providers.length === 0 && (
+        {providers.length === 0 && !providersLoading && (
           <p className="text-sm text-gray-400">No providers configured yet.</p>
         )}
       </div>

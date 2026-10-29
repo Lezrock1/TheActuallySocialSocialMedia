@@ -12,7 +12,6 @@ import ProgressiveImage from "./ProgressiveImage.js";
 import ImageLightbox from "./ImageLightbox.js";
 import Avatar from "./Avatar.js";
 import LinkedMentions from "./LinkedMentions.js";
-import { InlineSkeletonText } from "./LoadingSkeleton.js";
 
 async function fetchComments(postId: string, path: string): Promise<Comment[]> {
   const res = await apiFetch<{ comments: Comment[] }>(path);
@@ -327,9 +326,16 @@ export default function CommentsSection({
       <div className="flex flex-col gap-3">
           <div id={`comments-${targetId}`} className="flex max-h-72 flex-col gap-3 overflow-y-auto">
             {isLoading && (
-              <div aria-hidden="true" className="space-y-2 py-1">
-                <InlineSkeletonText width="w-40" />
-                <InlineSkeletonText width="w-52" />
+              <div aria-hidden="true" className="space-y-3 py-1">
+                {[0, 1].map((row) => (
+                  <div key={row} className="flex gap-2">
+                    <span className="skeleton skeleton-round block h-7 w-7 shrink-0" />
+                    <span className="block flex-1 space-y-2">
+                      <span className="skeleton block h-2.5 w-24" />
+                      <span className="skeleton block h-3" style={{ width: `${row ? 55 : 82}%` }} />
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
             {rootComments.filter((comment) => previewIds.has(comment.id)).map((comment) => renderCommentTree(comment))}

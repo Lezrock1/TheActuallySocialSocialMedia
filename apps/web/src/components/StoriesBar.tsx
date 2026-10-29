@@ -362,7 +362,7 @@ export default function StoriesBar() {
   const suppressStoryTapRef = useRef(false);
   const [loadingPolicy, setLoadingPolicy] = useState(getStoryLoadingPolicy);
 
-  const { data: storyGroups = [] } = useQuery({
+  const { data: storyGroups = [], isLoading: storiesLoading } = useQuery({
     queryKey: ["stories"],
     queryFn: fetchStoryGroups,
     refetchInterval: 15_000,
@@ -688,6 +688,12 @@ export default function StoriesBar() {
         <LiveRoomsBar compact />
         <RadioRoomsBar compact />
         <ExternalStoryChips />
+        {storiesLoading && [0, 1, 2, 3].map((index) => (
+          <span key={index} aria-hidden="true" className="flex shrink-0 flex-col items-center gap-1">
+            <span className="skeleton skeleton-round block h-14 w-14" />
+            <span className="skeleton block h-2.5 w-10" />
+          </span>
+        ))}
         {momentSummary && (momentStatus !== "none" || momentSummary.previousMoment) && (
           <button
             type="button"

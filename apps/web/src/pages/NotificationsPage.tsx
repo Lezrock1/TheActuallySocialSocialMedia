@@ -10,7 +10,8 @@ import Avatar from "../components/Avatar.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import PullToRefresh from "../components/PullToRefresh.js";
-import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import { NotificationRowsSkeleton } from "../components/LoadingSkeleton.js";
+import { EmptyState, ErrorState } from "../components/StateMessage.js";
 import PreferenceSwitch from "../components/PreferenceSwitch.js";
 import { ALERTS_UNREAD_ONLY_KEY, useListPreference } from "../lib/listPreferences.js";
 
@@ -219,17 +220,17 @@ export default function NotificationsPage() {
       </section>
 
       {filter === "friends" && <section aria-label="Your friends activity">
-        {friendsActivity.isPending && <CardListSkeleton rows={3} />}
-        {friendsActivity.isError && <p role="alert" className="py-6 text-sm text-red-600">Could not load friends activity. <button type="button" onClick={() => void friendsActivity.refetch()} className="underline">Retry</button></p>}
+        {friendsActivity.isPending && <NotificationRowsSkeleton rows={4} />}
+        {friendsActivity.isError && <ErrorState onRetry={() => void friendsActivity.refetch()}>Could not load friends activity.</ErrorState>}
         <div className={activityList}>{friendsActivity.data?.pages.flatMap((page) => page.activities).map((activity) => <div key={activity.id} className={activityRow}>
           <Avatar avatarKey={activity.follower.avatarKey} username={activity.follower.username} size={40} />
           <span className="min-w-0 flex-1 text-sm"><Link className="font-semibold" to={`/u/${activity.follower.username}`}>@{activity.follower.username}</Link>{" followed "}<Link className="font-semibold" to={`/u/${activity.followee.username}`}>@{activity.followee.username}</Link><time className="mt-1 block text-xs text-gray-500">{formatActivityTime(activity.createdAt)}</time></span>
         </div>)}</div>
-        {friendsActivity.isSuccess && !friendsActivity.data.pages[0]?.activities.length && <p className="py-8 text-sm text-gray-500">No recent friends activity.</p>}
+        {friendsActivity.isSuccess && !friendsActivity.data.pages[0]?.activities.length && <EmptyState icon="👥">No recent friends activity.</EmptyState>}
         {friendsActivity.hasNextPage && <button type="button" disabled={friendsActivity.isFetchingNextPage} onClick={() => void friendsActivity.fetchNextPage()} className={`${btnSecondary} mt-4 w-full`}>{friendsActivity.isFetchingNextPage ? "Loading..." : "Load more activity"}</button>}
       </section>}
-      {filter !== "friends" && query.isLoading && <CardListSkeleton rows={3} />}
-      {filter !== "friends" && query.isError && <p role="alert" className="py-6 text-center text-sm text-red-600">Could not load notifications.</p>}
+      {filter !== "friends" && query.isLoading && <NotificationRowsSkeleton rows={6} />}
+      {filter !== "friends" && query.isError && <ErrorState onRetry={() => void query.refetch()}>Could not load notifications.</ErrorState>}
 
       <div hidden={filter === "friends"} ref={notificationsListRef} className={activityList} style={{ position: "relative", height: `${rowVirtualizer.getTotalSize()}px` }}>
         {virtualRows.map((virtualRow) => {
@@ -291,9 +292,9 @@ export default function NotificationsPage() {
       </div>
 
       {filter !== "friends" && !query.isLoading && !query.isError && filteredNotifications.length === 0 && (
-        <p className="py-12 text-center text-sm text-gray-500">
+        <EmptyState icon="🔔" hint={filter === "all" ? "Comments, replies and new followers show up here." : undefined}>
           {filter === "all" ? "No notifications yet." : "No notifications match this filter."}
-        </p>
+        </EmptyState>
       )}
       {filter !== "friends" && query.hasNextPage && (
         <button

@@ -241,6 +241,27 @@ test("Story viewer follows a downward swipe and closes past the threshold", asyn
   }
 });
 
+test("a new Snap appears in the list live without reloading", async ({ page, browser, context }, info) => {
+  const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+  const sender = await browser.newContext({ storageState: ".auth/mia.json", extraHTTPHeaders: { "x-forwarded-for": "198.51.100.66" } });
+  const text = `Live Snap ${info.project.name}`;
+  try {
+    await page.goto("/snaps");
+    const list = page.getByRole("region", { name: "Received Snaps" });
+    await expect(list.getByRole("button", { name: /Chat with @mia/ })).toBeVisible();
+    const inbox = async () => (await (await context.request.get(`${API}/snaps/inbox`)).json()).snaps.filter((snap) => snap.sender.username === "mia").length;
+    const before = await inbox();
+    const media = await sender.request.post(`${API}/media`, { multipart: { file: { name: "snap.png", mimeType: "image/png", buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)) } } });
+    expect(media.status()).toBe(201);
+    const sent = await sender.request.post(`${API}/snaps`, { data: { imageKey: (await media.json()).key, text, recipientUsernames: ["leo"] } });
+    expect(sent.status()).toBe(201);
+    await expect(list.getByRole("button", { name: new RegExp(`New Snap · ${before + 1}`) })).toBeVisible({ timeout: 10_000 });
+  } finally {
+    await database.snap.deleteMany({ where: { senderId: mia.id, text } });
+    await sender.close();
+  }
+});
+
 test("post photos open full screen and close with Escape or the close button", async ({ page, context }) => {
   const media = await context.request.post(`${API}/media`, { multipart: { file: { name: "post-photo.png", mimeType: "image/png", buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)) } } });
   expect(media.status()).toBe(201);
@@ -259,7 +280,46 @@ test("post photos open full screen and close with Escape or the close button", a
     await open.click();
     await page.getByRole("button", { name: "Close photo", exact: true }).click();
     await expect(dialog).toHaveCount(0);
+    await open.click();
+    const box = await dialog.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 220, { steps: 6 });
+    await page.mouse.up();
+    await expect(dialog).toHaveCount(0);
   } finally { await context.request.delete(`${API}/posts/${post.id}`); }
+});
+
+test("app feels native: offline bar, detail slide, tab re-tap and sheet drag", async ({ page, context }, info) => {
+  await page.goto("/notifications");
+  await expect(page.getByRole("heading", { name: "Notifications", exact: true })).toBeVisible();
+
+  await context.setOffline(true);
+  await expect(page.getByRole("status").filter({ hasText: "You're offline" })).toBeVisible();
+  await context.setOffline(false);
+  await expect(page.getByRole("status").filter({ hasText: "Back online" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Back online" })).toHaveCount(0, { timeout: 6000 });
+
+  await page.evaluate(() => { document.body.style.minHeight = "4000px"; window.scrollTo(0, 1500); });
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+  await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: /Alerts|Notifications/ }).filter({ visible: true }).click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeLessThan(5);
+
+  await page.getByRole("link", { name: "Your profile: @leo" }).click();
+  await expect(page.locator(".route-enter-detail")).toHaveCount(1);
+
+  if (info.project.name === "iphone" || info.project.name === "android") {
+    await page.goto("/settings/account");
+    await page.getByRole("button", { name: "Delete my account…" }).click();
+    const sheet = page.getByRole("dialog", { name: "Delete your account?" });
+    await expect(sheet).toBeVisible();
+    const box = await sheet.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + 14);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + 250, { steps: 8 });
+    await page.mouse.up();
+    await expect(sheet).toHaveCount(0);
+  }
 });
 
 for (const platform of ["bluesky", "mastodon", "youtube"]) {

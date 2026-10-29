@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { EXTERNAL_SUGGESTION_TOPICS } from "@app/shared";
 import type { ExternalFollowSummary, ExternalPlatform, ExternalProfile, ExternalSuggestionTopic, PublicUser } from "@app/shared";
@@ -7,7 +7,9 @@ import { apiFetch } from "../lib/api.js";
 import Avatar from "../components/Avatar.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
-import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import PullToRefresh from "../components/PullToRefresh.js";
+import { PersonRowsSkeleton } from "../components/LoadingSkeleton.js";
+import { EmptyState, ErrorState } from "../components/StateMessage.js";
 import ExternalProfileRow from "../components/ExternalProfileRow.js";
 import { activityList, activityRow, btnSecondary, input } from "../lib/ui.js";
 import { PLATFORM_META } from "../lib/platforms.js";
@@ -59,6 +61,8 @@ export default function PeopleSearchPage() {
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     enabled: !!deferredQuery,
     staleTime: 30_000,
+    // Results stay on screen while the next keystroke loads, instead of flashing placeholders.
+    placeholderData: keepPreviousData,
   });
 
   const users: Array<PublicUser & { mutualCount?: number }> = deferredQuery
@@ -69,6 +73,16 @@ export default function PeopleSearchPage() {
   const isError = deferredQuery ? searchQuery.isError : suggestionsQuery.isError;
   const followMutation = useMutation({
     mutationFn: (person: PublicUser) => apiFetch(`/users/${person.username}/follow`, { method: "POST" }),
+    // The followed person leaves the suggestions right away; a failure puts them back.
+    onMutate: async (person) => {
+      await queryClient.cancelQueries({ queryKey: ["people-suggestions"] });
+      const previous = queryClient.getQueryData<PublicUser[]>(["people-suggestions"]);
+      queryClient.setQueryData<PublicUser[]>(["people-suggestions"], (current) => current?.filter((candidate) => candidate.id !== person.id));
+      return { previous };
+    },
+    onError: (_error, _person, context) => {
+      if (context?.previous) queryClient.setQueryData(["people-suggestions"], context.previous);
+    },
     onSuccess: async (_data, person) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["people-suggestions"] }),
@@ -133,6 +147,7 @@ export default function PeopleSearchPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
+      <PullToRefresh onRefresh={() => (deferredQuery ? searchQuery.refetch() : suggestionsQuery.refetch())} />
       <PageHeader title="Find people" />
       <NavBar />
 
@@ -187,15 +202,15 @@ export default function PeopleSearchPage() {
           {deferredQuery ? "Search results" : "Suggested for you"}
         </h2>
         {isLoading ? (
-          <CardListSkeleton rows={3} />
+          <PersonRowsSkeleton rows={5} />
         ) : isError ? (
-          <p role="alert" className="py-4 text-sm text-red-600">Could not load people. Try again.</p>
+          <ErrorState onRetry={() => void (deferredQuery ? searchQuery.refetch() : suggestionsQuery.refetch())}>Could not load people. Try again.</ErrorState>
         ) : users.length === 0 ? (
-          <p className="py-4 text-sm text-gray-500">
+          <EmptyState icon="🔍">
             {deferredQuery ? "No matching profiles found." : "No more suggestions right now."}
-          </p>
+          </EmptyState>
         ) : (
-          <div className={activityList}>
+          <div className={`${activityList} content-enter`}>
             {users.map((person) => (
               <div
                 key={person.id}
@@ -234,7 +249,7 @@ export default function PeopleSearchPage() {
             <>
               <h2 className="mb-2 text-sm font-semibold text-gray-700">{PLATFORM_META[scope].label} results</h2>
               {externalSearchQuery.isLoading ? (
-                <CardListSkeleton rows={3} />
+                <PersonRowsSkeleton rows={5} />
               ) : externalResults.length === 0 ? (
                 <p className="py-4 text-sm text-gray-500">No matching profiles found.</p>
               ) : (
@@ -270,7 +285,7 @@ export default function PeopleSearchPage() {
                 </select>
               </div>
               {externalSuggestionsQuery.isLoading ? (
-                <CardListSkeleton rows={3} />
+                <PersonRowsSkeleton rows={5} />
               ) : externalSuggestions.length === 0 ? (
                 <p className="py-4 text-sm text-gray-500">No suggestions here yet – try another topic.</p>
               ) : (

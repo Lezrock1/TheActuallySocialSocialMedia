@@ -78,10 +78,10 @@ export default function UsageDashboardPage() {
 
         {isPending && ACTIVITY_ROWS.map(({ key, label }) => (
           <div key={key} aria-hidden="true" className="grid min-h-14 grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,64px))] items-center gap-2 border-b border-gray-100 px-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_repeat(3,120px)] sm:px-6">
-            <span className="h-3 w-full max-w-28 animate-pulse rounded bg-gray-100">{label}</span>
-            <span className="ml-auto h-5 w-10 animate-pulse rounded bg-gray-100" />
-            <span className="ml-auto h-5 w-10 animate-pulse rounded bg-gray-100" />
-            <span className="ml-auto h-5 w-10 animate-pulse rounded bg-gray-100" />
+            <span className="h-3 w-full max-w-28 skeleton block text-transparent">{label}</span>
+            <span className="skeleton ml-auto block h-5 w-10" />
+            <span className="skeleton ml-auto block h-5 w-10" />
+            <span className="skeleton ml-auto block h-5 w-10" />
           </div>
         ))}
 

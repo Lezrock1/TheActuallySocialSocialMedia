@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 const LoginPage = lazy(() => import("./pages/LoginPage.js"));
@@ -28,7 +28,9 @@ import DeviceSetupPrompt from "./components/DeviceSetupPrompt.js";
 import LocalMeetupReminderProvider from "./components/LocalMeetupReminderProvider.js";
 import { pageSurfaceForPath, usePageBackground } from "./lib/pageBackground.js";
 import { restorePushSubscription } from "./lib/push.js";
-import { AppBootSkeleton } from "./components/LoadingSkeleton.js";
+import { RouteSkeleton } from "./components/LoadingSkeleton.js";
+import OfflineBanner from "./components/OfflineBanner.js";
+import { preloadMainRoutes } from "./lib/prefetch.js";
 import { getSocket } from "./lib/socket.js";
 import { apiFetch } from "./lib/api.js";
 import CallProvider from "./components/CallProvider.js";
@@ -190,7 +192,7 @@ function NewUpdateNotice() {
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading, bootError, retryBootstrap } = useAuth();
-  if (loading) return <AppBootSkeleton />;
+  if (loading) return <RouteSkeleton />;
   if (!user && bootError) {
     return <ApiUnavailablePage onRetry={() => void retryBootstrap()} />;
   }
@@ -226,6 +228,16 @@ function AppRoutes() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   usePageBackground(pageSurfaceForPath(location.pathname));
+  const navigationType = useNavigationType();
+  // Decided once per page so later re-renders never replay the transition.
+  const transitionRef = useRef({ path: location.pathname, className: "route-enter" });
+  if (transitionRef.current.path !== location.pathname) {
+    const isDetail = /^\/(u|post|tags)\//.test(location.pathname);
+    transitionRef.current = { path: location.pathname, className: isDetail && navigationType === "PUSH" ? "route-enter-detail" : "route-enter" };
+  }
+  useEffect(() => {
+    if (user) preloadMainRoutes();
+  }, [user?.id]);
   useEffect(() => {
     if (!user || !("serviceWorker" in navigator)) return;
     let cancelled = false;
@@ -292,9 +304,10 @@ function AppRoutes() {
   return (
     <>
     <NewUpdateNotice />
+    <OfflineBanner />
     <DeploymentNotice />
-    <div key={location.pathname} className="route-enter">
-      <Suspense fallback={<AppBootSkeleton />}>
+    <div key={location.pathname} className={transitionRef.current.className}>
+      <Suspense fallback={<RouteSkeleton />}>
         <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

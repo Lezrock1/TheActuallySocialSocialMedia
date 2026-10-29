@@ -361,6 +361,13 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         where: { conversationId: request.params.id },
         select: { userId: true },
       });
+      // Deliver the message first; notifications (push) must not delay it.
+      emitToUsers(
+        request.server.io,
+        members.map((m) => m.userId),
+        "message:new",
+        { conversationId: request.params.id, message: messageDto }
+      );
       await Promise.all(
         members
           .filter((member) => member.userId !== request.userId)
@@ -373,12 +380,6 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
               conversationId: request.params.id,
             }).catch((error) => request.log.error(error, "Message notification creation failed"))
           )
-      );
-      emitToUsers(
-        request.server.io,
-        members.map((m) => m.userId),
-        "message:new",
-        { conversationId: request.params.id, message: messageDto }
       );
 
       return reply.code(201).send({ message: messageDto });

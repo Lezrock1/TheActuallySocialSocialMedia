@@ -8,10 +8,12 @@ import { useAuth } from "../auth/AuthContext.js";
 import { activityList, activityRow, btnPrimary, btnSecondary, card, input } from "../lib/ui.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import PullToRefresh from "../components/PullToRefresh.js";
 import Avatar from "../components/Avatar.js";
 import Sheet from "../components/Sheet.js";
 import AppDialog from "../components/AppDialog.js";
-import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import { ListRowsSkeleton } from "../components/LoadingSkeleton.js";
+import { EmptyState, ErrorState } from "../components/StateMessage.js";
 
 function CircleSheet({ circleId, onClose }: { circleId: string; onClose: () => void }) {
   const { user } = useAuth();
@@ -101,7 +103,7 @@ function CircleSheet({ circleId, onClose }: { circleId: string; onClose: () => v
   return (
     <>
       <Sheet open onClose={onClose} title={circle?.name ?? "Circle"} tall>
-        {detailQuery.isLoading && <CardListSkeleton rows={2} />}
+        {detailQuery.isLoading && <ListRowsSkeleton rows={3} />}
         {circle && (
           <div className="flex flex-col gap-4">
             <form onSubmit={rename} className="flex gap-2">
@@ -250,6 +252,7 @@ export default function CirclesPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
+      <PullToRefresh onRefresh={() => circlesQuery.refetch()} />
       <PageHeader title="Circles" />
       <NavBar />
       <p className="mb-4 text-sm leading-6 text-gray-600">
@@ -277,10 +280,10 @@ export default function CirclesPage() {
         {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
       </form>
 
-      {circlesQuery.isLoading && <CardListSkeleton rows={2} />}
-      {circlesQuery.isError && <p role="alert" className="text-sm text-red-600">Could not load your circles.</p>}
+      {circlesQuery.isLoading && <ListRowsSkeleton rows={3} />}
+      {circlesQuery.isError && <ErrorState onRetry={() => void circlesQuery.refetch()}>Could not load your circles.</ErrorState>}
       {circles.length > 0 && (
-        <div className={activityList}>
+        <div className={`${activityList} content-enter`}>
           {circles.map((circle) => (
             <button key={circle.id} type="button" onClick={() => setOpenId(circle.id)} className={activityRow}>
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-sm font-bold text-white">
@@ -298,9 +301,9 @@ export default function CirclesPage() {
         </div>
       )}
       {!circlesQuery.isLoading && circles.length === 0 && (
-        <p className="rounded-xl bg-white px-4 py-6 text-center text-sm text-gray-500 shadow-sm">
+        <EmptyState icon="⭕">
           No circles yet. Create your first one above.
-        </p>
+        </EmptyState>
       )}
 
       {openId && <CircleSheet circleId={openId} onClose={() => setOpenId(null)} />}

@@ -6,7 +6,8 @@ import { btnPrimary, card } from "../lib/ui.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import PushNotificationSettings from "../components/PushNotificationSettings.js";
-import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import { SettingsSkeleton } from "../components/LoadingSkeleton.js";
+import { ErrorState } from "../components/StateMessage.js";
 import { getTimeZone } from "../lib/theme.js";
 
 type BooleanPreferenceKey = {
@@ -129,8 +130,8 @@ export default function NotificationSettingsPage() {
         Choose which new activity creates an in-app alert and a phone notification. Existing alerts stay in your history.
       </p>
       <PushNotificationSettings />
-      {preferencesQuery.isLoading && <CardListSkeleton rows={2} />}
-      {preferencesQuery.isError && <p role="alert" className="py-4 text-sm text-red-600">Could not load notification settings.</p>}
+      {preferencesQuery.isLoading && <SettingsSkeleton sections={2} />}
+      {preferencesQuery.isError && <ErrorState onRetry={() => void preferencesQuery.refetch()}>Could not load notification settings.</ErrorState>}
       {draft && (
         <form onSubmit={(event) => void savePreferences(event)}>
           <fieldset disabled={saving}>

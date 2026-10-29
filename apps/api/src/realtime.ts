@@ -286,6 +286,34 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
       })().catch(() => acknowledge([]));
     });
 
+    // Member lists are cached briefly so a typing burst does not hit the database on every event.
+    const typingAudience = new Map<string, { recipientIds: string[]; memberIds: string[]; at: number }>();
+    socket.on("typing", (payload: unknown) => {
+      if (!payload || typeof payload !== "object") return;
+      const { conversationId, isTyping } = payload as { conversationId?: unknown; isTyping?: unknown };
+      if (typeof conversationId !== "string" || typeof isTyping !== "boolean") return;
+      void (async () => {
+        let audience = typingAudience.get(conversationId);
+        if (!audience || Date.now() - audience.at > 60_000) {
+          const members = await prisma.conversationMember.findMany({
+            where: { conversationId },
+            select: { userId: true },
+          });
+          const memberIds = members.map((member) => member.userId);
+          const blockedIds = new Set(await getBlockedUserIds(userId));
+          audience = {
+            memberIds,
+            recipientIds: memberIds.filter((id) => id !== userId && !blockedIds.has(id)),
+            at: Date.now(),
+          };
+          if (typingAudience.size >= 50) typingAudience.clear();
+          typingAudience.set(conversationId, audience);
+        }
+        if (!audience.memberIds.includes(userId)) return;
+        emitToUsers(io, audience.recipientIds, "typing:update", { conversationId, userId, isTyping });
+      })().catch(() => undefined);
+    });
+
     socket.on("radio:start", (payload: {
       radioId: string;
       conversationId: string;
