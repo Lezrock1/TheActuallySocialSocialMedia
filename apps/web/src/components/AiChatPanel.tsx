@@ -204,7 +204,7 @@ export default function AiChatPanel({
           expanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
         }`}
       >
-        <div className="mt-1 flex flex-wrap justify-start gap-1">
+        <div className="mt-1 flex flex-wrap justify-end gap-1">
           {providers.length === 0 ? null :
             (Object.keys(MODE_CONFIG) as AiMode[]).map((mode) => (
               <button
