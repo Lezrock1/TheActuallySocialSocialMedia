@@ -196,7 +196,7 @@ export default function CameraCapture({
             width: { ideal: 1920 },
             height: { ideal: 1080 },
           },
-          audio: false,
+          audio: true,
         });
         if (cancelled || document.hidden) {
           next.getTracks().forEach((track) => track.stop());

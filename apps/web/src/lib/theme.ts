@@ -115,9 +115,14 @@ export function useThemePreference(): [AppTheme, (theme: AppTheme) => void] {
 }
 
 export function initializeTheme(): void {
+  let lastResolved: AppTheme | null = null;
   const restore = () => {
     const schedule = readThemeSchedule();
-    renderTheme(schedule.mode === "sun" ? resolveScheduledTheme(schedule) : readTheme());
+    const resolved = schedule.mode === "sun" ? resolveScheduledTheme(schedule) : readTheme();
+    if (resolved !== lastResolved) {
+      lastResolved = resolved;
+      renderTheme(resolved);
+    }
   };
   restore();
   window.addEventListener("pageshow", restore);
@@ -126,6 +131,7 @@ export function initializeTheme(): void {
   });
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY && event.key !== SCHEDULE_KEY && event.key !== null) return;
+    lastResolved = null;
     restore();
   });
   window.setInterval(restore, 60_000);
