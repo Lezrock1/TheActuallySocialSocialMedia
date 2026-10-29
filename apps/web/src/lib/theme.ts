@@ -119,7 +119,7 @@ export function initializeTheme(): void {
   const restore = () => {
     const schedule = readThemeSchedule();
     const resolved = schedule.mode === "sun" ? resolveScheduledTheme(schedule) : readTheme();
-    if (resolved !== lastResolved) {
+    if (resolved !== lastResolved || document.documentElement.dataset.theme !== resolved) {
       lastResolved = resolved;
       renderTheme(resolved);
     }

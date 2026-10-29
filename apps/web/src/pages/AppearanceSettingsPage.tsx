@@ -8,14 +8,16 @@ import PreferenceSwitch from "../components/PreferenceSwitch.js";
 import FeedSourceSettings from "../components/FeedSourceSettings.js";
 import { UNREAD_FIRST_KEY, useListPreference } from "../lib/listPreferences.js";
 
-function ThemePreview({ dark, selected }: { dark: boolean; selected: boolean }) {
+function ThemePreview({ dark, selected, auto = false }: { dark: boolean; selected: boolean; auto?: boolean }) {
+  const split = (light: string, night: string) => `linear-gradient(90deg, ${light} 50%, ${night} 50%)`;
   return (
     <span
       aria-hidden="true"
-      className={`block w-full overflow-hidden rounded-xl border p-2 transition-colors ${selected ? "border-[#007AFF] ring-2 ring-[#007AFF]/15" : "border-gray-200"} ${dark ? "bg-[#151820]" : "bg-[#f7f7f8]"}`}
+      className={`block w-full overflow-hidden rounded-xl border p-2 transition-colors ${selected ? "border-[#007AFF] ring-2 ring-[#007AFF]/15" : "border-gray-200"} ${auto ? "" : dark ? "bg-[#151820]" : "bg-[#f7f7f8]"}`}
+      style={auto ? { backgroundImage: split("#f7f7f8", "#151820") } : undefined}
     >
       <span className="mb-2 block h-1.5 w-10 rounded-full bg-gray-400/60" />
-      <span className="block rounded-lg p-2" style={{ backgroundColor: dark ? "#222630" : "#ffffff" }}>
+      <span className="block rounded-lg p-2" style={auto ? { backgroundImage: split("#ffffff", "#222630") } : { backgroundColor: dark ? "#222630" : "#ffffff" }}>
         <span className={`mb-1 block h-1 w-14 rounded-full ${dark ? "bg-gray-400/70" : "bg-gray-300"}`} />
         <span className={`block h-1 w-9 rounded-full ${dark ? "bg-gray-500/60" : "bg-gray-200"}`} />
       </span>
@@ -25,9 +27,20 @@ function ThemePreview({ dark, selected }: { dark: boolean; selected: boolean }) 
 
 export default function AppearanceSettingsPage() {
   const [theme, setTheme] = useThemePreference();
-  const [schedule] = useThemeSchedule();
+  const [schedule, updateSchedule] = useThemeSchedule();
   const [unreadFirst, setUnreadFirst] = useListPreference(UNREAD_FIRST_KEY);
   const isDark = theme === "dark";
+  const isAuto = schedule.mode === "sun";
+
+  function chooseAuto() {
+    updateSchedule({ mode: "sun" });
+    if (schedule.latitude !== null && schedule.longitude !== null) return;
+    navigator.geolocation?.getCurrentPosition(
+      ({ coords }) => updateSchedule({ latitude: coords.latitude, longitude: coords.longitude }),
+      () => undefined,
+      { timeout: 10000, maximumAge: 3600000 }
+    );
+  }
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:py-8">
@@ -48,7 +61,7 @@ export default function AppearanceSettingsPage() {
           <h2 id="theme-heading" className="text-sm font-semibold text-gray-900">Color theme</h2>
           <p className="mt-1 text-xs leading-5 text-gray-500">Applied across the app and saved on this device. Page backgrounds are dimmed in dark mode and restored in light mode.</p>
         </div>
-        <div role="group" aria-label="Color theme" className="grid grid-cols-2 gap-3">
+        <div role="group" aria-label="Color theme" className="grid grid-cols-3 gap-3">
           {(["light", "dark"] as const).map((option) => {
             const selected = schedule.mode === "manual" && theme === option;
             return (
@@ -70,7 +83,25 @@ export default function AppearanceSettingsPage() {
               </button>
             );
           })}
+          <button
+            type="button"
+            aria-label="Auto"
+            onClick={chooseAuto}
+            aria-pressed={isAuto}
+            className="min-w-0 text-left"
+          >
+            <ThemePreview dark={false} auto selected={isAuto} />
+            <span className="mt-2 flex items-center justify-between gap-2 px-1">
+              <span className="text-sm font-medium text-gray-800">Auto</span>
+              <span aria-hidden="true" className={`flex h-5 w-5 items-center justify-center rounded-full border text-xs ${isAuto ? "border-[#007AFF] bg-[#007AFF] text-white" : "border-gray-300 text-transparent"}`}>
+                ✓
+              </span>
+            </span>
+          </button>
         </div>
+        <p className="mt-3 text-xs leading-5 text-gray-500">
+          Auto switches to dark mode from sunset to sunrise and to light mode during the day.
+        </p>
       </section>
 
       <section aria-labelledby="messages-settings-heading" className="mb-4 border-y border-gray-200 py-3">

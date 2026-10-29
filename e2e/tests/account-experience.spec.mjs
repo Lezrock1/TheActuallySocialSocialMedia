@@ -80,6 +80,10 @@ test("sunset scheduling survives reload and resume and respects selected time zo
     expect(themes).toEqual(["light", "light", "light", "dark"]);
     await page.getByRole("button", { name: "Dark", exact: true }).click();
     await expect(page.getByRole("switch", { name: "Sunset to sunrise", exact: true })).toHaveAttribute("aria-checked", "false");
+    await page.getByRole("button", { name: "Auto", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Auto", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("switch", { name: "Sunset to sunrise", exact: true })).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     await page.getByLabel("Time zone", { exact: true }).selectOption("America/New_York");
     await expect.poll(async () => (await (await context.request.get(`${API}/notifications/preferences`)).json()).preferences.timezone).toBe("America/New_York");
     await page.getByRole("region", { name: "Time and automatic appearance", exact: true }).scrollIntoViewIfNeeded();
