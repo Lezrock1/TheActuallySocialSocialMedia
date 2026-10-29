@@ -67,8 +67,8 @@ export default function ExternalPostCard({ item, onRepostChanged }: { item: Exte
           />
         </a>
       )}
-      <div className="mt-3 flex min-w-0 items-center justify-between gap-2">
-        <time dateTime={item.publishedAt} className="shrink-0 text-[11px] text-gray-400">
+      <div className="mt-3 flex min-w-0 items-start justify-between gap-2">
+        <time dateTime={item.publishedAt} className="mt-2 shrink-0 text-[11px] text-gray-400">
           {new Date(item.publishedAt).toLocaleString("en-US", {
             timeZone: getTimeZone(),
             month: "short",
