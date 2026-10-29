@@ -9,7 +9,15 @@ import type {
 } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
 import AiMarkdown from "./AiMarkdown.js";
-import { InlineSkeletonText } from "./LoadingSkeleton.js";
+
+function Reasoning() {
+  return (
+    <span role="status" className="ai-reasoning">
+      Reasoning
+      <span aria-hidden="true" className="ai-reasoning-dots"><i>.</i><i>.</i><i>.</i></span>
+    </span>
+  );
+}
 
 async function fetchProviders(): Promise<AiProviderConfigPublic[]> {
   const res = await apiFetch<{ providers: AiProviderConfigPublic[] }>(
@@ -56,12 +64,12 @@ export default function AiChatPanel({
   const lastScrollY = useRef(0);
   const {
     data: providers = [],
-    isLoading: providersLoading,
     isError: providersError,
+    isSuccess: providersLoaded,
   } = useQuery({
     queryKey: ["ai-providers"],
     queryFn: fetchProviders,
-    enabled: expanded,
+    staleTime: 5 * 60 * 1000,
   });
 
   const [activeMode, setActiveMode] = useState<AiMode | null>(null);
@@ -206,14 +214,17 @@ export default function AiChatPanel({
       >
         <div className="mt-1 flex flex-wrap justify-end gap-1">
           {providers.length === 0 ? null :
-            (Object.keys(MODE_CONFIG) as AiMode[]).map((mode) => (
+            (Object.keys(MODE_CONFIG) as AiMode[]).map((mode, index) => (
               <button
                 key={mode}
                 type="button"
                 tabIndex={expanded ? 0 : -1}
                 aria-label={MODE_CONFIG[mode].label}
                 onClick={() => openMode(mode)}
-                className={`min-h-8 shrink-0 rounded-full px-2 text-[11px] font-semibold text-white transition-colors ${
+                style={{ transitionDelay: expanded ? `${index * 45}ms` : "0ms" }}
+                className={`min-h-8 shrink-0 rounded-full px-2 text-[11px] font-semibold text-white transition-[opacity,transform,background-color] duration-200 ease-out ${
+                  expanded ? "translate-y-0 scale-100 opacity-100" : "-translate-y-1 scale-95 opacity-0"
+                } ${
                   activeMode === mode
                     ? MODE_CONFIG[mode].activeColorClass
                     : MODE_CONFIG[mode].colorClass
@@ -225,22 +236,17 @@ export default function AiChatPanel({
         </div>
       </div>
 
-      {expanded && providersLoading && (
-        <div className="mt-2 flex" aria-hidden="true">
-          <InlineSkeletonText width="w-24" />
-        </div>
-      )}
       {expanded && providersError && (
         <p className="mt-2 text-xs text-red-600">Could not load AI providers.</p>
       )}
-      {expanded && !providersLoading && !providersError && providers.length === 0 && (
+      {expanded && providersLoaded && providers.length === 0 && (
         <p className="mt-2 text-xs text-gray-600">
           No providers configured. <Link to="/settings/ai" className="underline">Set up AI Tools</Link>.
         </p>
       )}
 
       {activeMode && providers.length > 0 && (
-        <div className="mt-2 w-full rounded-lg border border-gray-200 p-3 text-sm">
+        <div className="ai-panel-enter mt-2 w-full rounded-lg border border-gray-200 p-3 text-sm">
           {!conversation && (
             <div className="flex flex-col gap-2">
               <select
@@ -278,7 +284,7 @@ export default function AiChatPanel({
                 disabled={loading}
                 className={`min-h-10 self-start rounded px-3 py-1 text-white disabled:opacity-50 ${MODE_CONFIG[activeMode].colorClass}`}
               >
-                {loading ? "..." : "Start"}
+                {loading ? <Reasoning /> : "Start"}
               </button>
             </div>
           )}
@@ -295,6 +301,11 @@ export default function AiChatPanel({
                     )}
                   </div>
                 ))}
+                {loading && (
+                  <div className="ai-panel-enter self-start rounded border bg-gray-50 px-3 py-2 text-gray-500">
+                    <Reasoning />
+                  </div>
+                )}
               </div>
               <div className="flex gap-2">
                 <input
@@ -309,7 +320,7 @@ export default function AiChatPanel({
                   disabled={loading}
                   className={`min-h-10 shrink-0 rounded px-3 text-white disabled:opacity-50 ${MODE_CONFIG[activeMode].colorClass}`}
                 >
-                  {loading ? "..." : "Send"}
+                  Send
                 </button>
               </div>
             </div>
