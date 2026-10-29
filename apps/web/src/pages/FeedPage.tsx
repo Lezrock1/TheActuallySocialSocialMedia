@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
+import type { VirtualItem } from "@tanstack/react-virtual";
 import type { FeedItem, FeedPage as FeedPageType } from "@app/shared";
 import { audienceBody, PUBLIC_AUDIENCE } from "../lib/circles.js";
 import type { Audience } from "../lib/circles.js";
@@ -111,10 +112,22 @@ function FeedCaughtUp({ hasEarlierPosts = false }: { hasEarlierPosts?: boolean }
   );
 }
 
+// Lets browser Back return to the same spot in the feed instead of the top.
+const SNAPSHOT_MAX_AGE_MS = 30 * 60_000;
+let feedSnapshot: { pages: FeedPageType[]; scrollY: number; measurements: VirtualItem[]; savedAt: number } | null = null;
+
 export default function FeedPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [pages, setPages] = useState<FeedPageType[]>([]);
+  const navigationType = useNavigationType();
+  const restoreRef = useRef(
+    navigationType === "POP" && feedSnapshot && Date.now() - feedSnapshot.savedAt < SNAPSHOT_MAX_AGE_MS ? feedSnapshot : null
+  );
+  const initialMeasurementsRef = useRef(restoreRef.current?.measurements);
+  const [pages, setPages] = useState<FeedPageType[]>(() => restoreRef.current?.pages ?? []);
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+  const scrollYRef = useRef(0);
   const [text, setText] = useState("");
   const [imageKey, setImageKey] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video">("image");
@@ -226,7 +239,30 @@ export default function FeedPage() {
     getItemKey: (index) => feedRows[index]?.key ?? index,
     overscan: 4,
     scrollMargin: virtualScrollMargin,
+    initialMeasurementsCache: initialMeasurementsRef.current,
   });
+  const rowVirtualizerRef = useRef(rowVirtualizer);
+  rowVirtualizerRef.current = rowVirtualizer;
+
+  useEffect(() => {
+    const track = () => { scrollYRef.current = window.scrollY; };
+    window.addEventListener("scroll", track, { passive: true });
+    return () => window.removeEventListener("scroll", track);
+  }, []);
+  useLayoutEffect(() => () => {
+    feedSnapshot = {
+      pages: pagesRef.current,
+      scrollY: scrollYRef.current,
+      measurements: [...rowVirtualizerRef.current.measurementsCache],
+      savedAt: Date.now(),
+    };
+  }, []);
+  useEffect(() => {
+    const snapshot = restoreRef.current;
+    if (!snapshot || feedRows.length === 0 || virtualScrollMargin === 0) return;
+    restoreRef.current = null;
+    window.scrollTo(0, snapshot.scrollY);
+  }, [feedRows.length, virtualScrollMargin]);
   const virtualRows = rowVirtualizer.getVirtualItems();
   const firstRenderedPostIndex = virtualRows.find((virtualRow) => feedRows[virtualRow.index]?.kind === "post")?.index;
 

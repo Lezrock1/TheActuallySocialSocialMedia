@@ -99,7 +99,7 @@ test("repost comments work for reposter and followers, notify and disappear when
     await expect(card.getByRole("textbox", { name: "Write a comment", exact: true })).toBeVisible();
     await card.getByRole("textbox", { name: "Write a comment", exact: true }).fill("First comment by Mia");
     await card.getByRole("button", { name: "Post", exact: true }).click();
-    await expect(card.getByText("First comment by Mia", { exact: true })).toBeVisible();
+    await expect(card.locator("p").filter({ hasText: "First comment by Mia" })).toBeVisible();
     await expect.poll(async () => (await database.comment.findFirst({ where: { repostId: repost.id, text: "First comment by Mia" } }))).not.toBeNull();
     const created = await database.comment.findFirst({ where: { repostId: repost.id, text: "First comment by Mia" } });
     expect(created.repostId).toBe(repost.id);
@@ -151,6 +151,93 @@ test("profiles list reposts for the reposter and followers and filter by source"
     if (originalFollow) await database.follow.upsert({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } }, create: { followerId: mia.id, followeeId: leo.id }, update: {} });
     else await database.follow.deleteMany({ where: { followerId: mia.id, followeeId: leo.id } });
     await recipient.close();
+  }
+});
+
+test("authors see who viewed their story and nobody else can", async ({ page, context, browser }, info) => {
+  const leo = await database.user.findUniqueOrThrow({ where: { username: "leo" } });
+  const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+  const originalFollow = await database.follow.findUnique({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } } });
+  await database.follow.upsert({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } }, create: { followerId: mia.id, followeeId: leo.id }, update: {} });
+  const media = await context.request.post(`${API}/media`, { multipart: { file: { name: "story.png", mimeType: "image/png", buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)) } } });
+  expect(media.status()).toBe(201);
+  const created = await context.request.post(`${API}/stories`, { data: { imageKey: (await media.json()).key, text: `Viewers ${info.project.name}` } });
+  expect(created.status()).toBe(201);
+  const storyId = (await created.json()).story.id;
+  const recipient = await browser.newContext({ storageState: ".auth/mia.json", extraHTTPHeaders: { "x-forwarded-for": "198.51.100.65" } });
+  try {
+    expect((await recipient.request.post(`${API}/stories/${storyId}/view`)).status()).toBe(204);
+    expect((await recipient.request.get(`${API}/stories/${storyId}/viewers`)).status()).toBe(404);
+    await page.goto(`/?story=${storyId}`);
+    const dialog = page.getByRole("dialog", { name: "Stories from @leo" });
+    await dialog.getByRole("button", { name: "Seen by 1", exact: true }).click();
+    const panel = dialog.getByRole("region", { name: "Story viewers", exact: true });
+    await expect(panel.getByText("@mia", { exact: true })).toBeVisible();
+    await expect(panel.getByRole("heading", { name: "Seen by 1" })).toBeVisible();
+    await panel.getByRole("button", { name: "Close viewers", exact: true }).click();
+    await expect(panel).toHaveCount(0);
+  } finally {
+    await database.story.deleteMany({ where: { id: storyId } });
+    if (!originalFollow) await database.follow.deleteMany({ where: { followerId: mia.id, followeeId: leo.id } });
+    await recipient.close();
+  }
+});
+
+test("browser Back returns to the same place in the Forum", async ({ page }, info) => {
+  test.skip(info.project.name !== "android", "Mocked cross-origin /feed responses are not applied in the WebKit project");
+  const headers = { "access-control-allow-origin": "http://localhost:5173", "access-control-allow-credentials": "true" };
+  const now = Date.now();
+  const external = (n) => ({ type: "external", id: `external:scroll-${n}`, createdAt: new Date(now - n * 60_000).toISOString(), external: {
+    platform: "mastodon", externalId: `scroll-${n}`, authorHandle: `scroll${n}@example.test`, authorName: `Scroll ${n}`, authorAvatarUrl: null,
+    profileUrl: "https://example.test/profile", text: `Scroll item ${n}`, mediaUrl: null, thumbnailUrl: null, url: `https://example.test/${n}`, publishedAt: new Date(now - n * 60_000).toISOString(),
+  } });
+  const chunk = (start, next) => ({ items: Array.from({ length: 12 }, (_, index) => external(start + index)), nextCursor: next, caughtUp: false, boundaryIndex: null });
+  await page.route(/\/feed\?/, (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    return route.fulfill({ headers, json: cursor === "c2" ? chunk(24, null) : cursor === "c1" ? chunk(12, "c2") : chunk(0, "c1") });
+  });
+  await page.goto("/");
+  await expect(page.getByText("Scroll item 0", { exact: true })).toBeVisible();
+  let target = 0;
+  for (let step = 0; step < 12; step++) {
+    await page.evaluate(() => window.scrollBy(0, 1200));
+    await page.waitForTimeout(250);
+    if (await page.getByText("Scroll item 30", { exact: true }).count()) break;
+  }
+  await expect(page.getByText(/Scroll item (2[4-9]|3\d)$/).first()).toBeAttached();
+  target = await page.evaluate(() => Math.round(scrollY));
+  expect(target).toBeGreaterThan(3000);
+  await page.locator('a[href="/notifications"]:visible').first().click();
+  await expect(page).toHaveURL(/\/notifications/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/$/);
+  await expect.poll(() => page.evaluate(() => Math.round(scrollY)), { timeout: 5000 }).toBeGreaterThan(target - 150);
+  expect(await page.evaluate(() => Math.round(scrollY))).toBeLessThan(target + 150);
+});
+
+test("Story viewer follows a downward swipe and closes past the threshold", async ({ page, context }, info) => {
+  const media = await context.request.post(`${API}/media`, { multipart: { file: { name: "story.png", mimeType: "image/png", buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)) } } });
+  expect(media.status()).toBe(201);
+  const created = await context.request.post(`${API}/stories`, { data: { imageKey: (await media.json()).key, text: `Swipe ${info.project.name}` } });
+  const storyId = (await created.json()).story.id;
+  try {
+    await page.goto(`/?story=${storyId}`);
+    const dialog = page.getByRole("dialog", { name: "Stories from @leo" });
+    const next = dialog.getByRole("button", { name: "Next story", exact: true });
+    await expect(next).toBeAttached();
+    const card = dialog.locator("> div");
+    await next.dispatchEvent("pointerdown", { clientX: 200, clientY: 200 });
+    await next.dispatchEvent("pointermove", { clientX: 202, clientY: 260 });
+    await expect.poll(() => card.evaluate((element) => element.style.transform)).toContain("translateY(60px)");
+    await next.dispatchEvent("pointermove", { clientX: 202, clientY: 200 });
+    await next.dispatchEvent("pointerup", { clientX: 202, clientY: 200 });
+    await expect.poll(() => card.evaluate((element) => element.style.transform)).toBe("");
+    await next.dispatchEvent("pointerdown", { clientX: 200, clientY: 200 });
+    await next.dispatchEvent("pointermove", { clientX: 202, clientY: 330 });
+    await next.dispatchEvent("pointerup", { clientX: 202, clientY: 330 });
+    await expect(dialog).toHaveCount(0);
+  } finally {
+    await database.story.deleteMany({ where: { id: storyId } });
   }
 });
 

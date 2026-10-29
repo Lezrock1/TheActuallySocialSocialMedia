@@ -1,5 +1,16 @@
-import { test } from "@playwright/test";
-import { API, PASSWORD, email } from "../seed.mjs";
+import { execSync } from "node:child_process";
+import { test, expect } from "@playwright/test";
+import { API } from "../seed.mjs";
+
+// A fresh database shows the "New Update" dialog, which would cover every screenshot.
+test.beforeEach(async ({ context }) => {
+  await context.request.post(`${API}/users/me/update-notice/acknowledge`);
+});
+
+// Earlier tests fill the per-user device key limit (10); this flow registers fresh browsers.
+function clearDeviceKeys() {
+  execSync(`docker exec code-postgres-1 psql -U app -d e2e -c 'DELETE FROM "EncryptionKey"'`, { stdio: "ignore" });
+}
 
 const SCREENS = [
   { name: "feed", path: "/" },
@@ -14,12 +25,8 @@ const SCREENS = [
 
 for (const theme of ["light", "dark"]) {
   test.describe(`${theme} theme`, () => {
-    test.beforeEach(async ({ page, context }) => {
+    test.beforeEach(async ({ page }) => {
       await page.addInitScript((value) => localStorage.setItem("intouch:theme", value), theme);
-      const response = await context.request.post(`${API}/auth/login`, {
-        data: { email: email("leo"), password: PASSWORD },
-      });
-      if (!response.ok()) throw new Error(`Login failed: ${response.status()}`);
     });
 
     for (const screen of SCREENS) {
@@ -34,9 +41,8 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
-test("camera opens with a live preview", async ({ page, context }, info) => {
+test("camera opens with a live preview", async ({ page }, info) => {
   test.skip(info.project.name !== "android", "needs the fake camera of Chromium");
-  await context.request.post(`${API}/auth/login`, { data: { email: email("leo"), password: PASSWORD } });
   await page.goto("/");
   await page.getByRole("button", { name: "Open camera" }).click();
   await page.waitForTimeout(1500);
@@ -44,25 +50,27 @@ test("camera opens with a live preview", async ({ page, context }, info) => {
 });
 
 for (const theme of ["light", "dark"]) {
-  test(`chat conversation ${theme}`, async ({ browser, page, context }, info) => {
+  test(`chat conversation ${theme}`, async ({ browser, page }, info) => {
+    clearDeviceKeys();
     await page.addInitScript((value) => localStorage.setItem("intouch:theme", value), theme);
     // Messages are end-to-end encrypted, so the friend must have opened Messages once to own a key.
-    const friend = await browser.newContext();
-    await friend.request.post(`${API}/auth/login`, { data: { email: email("mia"), password: PASSWORD } });
+    const friend = await browser.newContext({ storageState: ".auth/mia.json" });
     const friendPage = await friend.newPage();
     await friendPage.goto("http://localhost:5173/dms");
-    await friendPage.waitForTimeout(3000);
+    await expect.poll(async () => (await (await friend.request.get(`${API}/users/mia/encryption-keys`)).json()).keys.length).toBeGreaterThan(0);
     await friend.close();
 
-    await context.request.post(`${API}/auth/login`, { data: { email: email("leo"), password: PASSWORD } });
     await page.goto("/dms");
     await page.waitForTimeout(1200);
     await page.screenshot({ path: `screenshots/${info.project.name}/${theme}/messages-list.png` });
     await page.getByRole("button", { name: /@mia/ }).first().click();
     await page.waitForTimeout(800);
     for (const text of ["Hey! Are you coming tonight?", "I can bring snacks 🍿"]) {
-      await page.getByLabel("Message", { exact: true }).fill(text);
-      await page.getByRole("button", { name: "Send message" }).click();
+      // Incoming delivery updates can clear the draft in WebKit, so retype until it can be sent.
+      await expect(async () => {
+        await page.getByLabel("Message", { exact: true }).fill(text);
+        await page.getByRole("button", { name: "Send message" }).click({ timeout: 2000 });
+      }).toPass({ timeout: 20_000 });
       await page.waitForTimeout(900);
     }
     await page.screenshot({ path: `screenshots/${info.project.name}/${theme}/messages-chat.png` });

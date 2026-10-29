@@ -17,6 +17,9 @@ export default defineConfig({
   globalSetup: "./global-setup.mjs",
   use: {
     baseURL: "http://localhost:5173",
+    storageState: ".auth/leo.json",
+    // The app's service worker would answer requests before page.route mocks see them (WebKit).
+    serviceWorkers: "block",
     locale: "en-US",
     colorScheme: "light",
   },
@@ -37,7 +40,7 @@ export default defineConfig({
   webServer: [
     {
       // A separate database keeps demo data away from real local data; migrate deploy creates it when missing.
-      command: "sh -c './node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/tsx --env-file=.env src/server.ts'",
+      command: "sh -c 'node ../../e2e/reset-db.mjs && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/tsx --env-file=.env src/server.ts'",
       cwd: `${root}apps/api`,
       url: "http://localhost:4000/health",
       reuseExistingServer: true,

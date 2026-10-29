@@ -62,6 +62,8 @@ export default function AiChatPanel({
   const panelKey = postId ?? `external-${externalPost?.url ?? "post"}`;
   const [expanded, setExpanded] = useState(false);
   const lastScrollY = useRef(0);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const {
     data: providers = [],
     isError: providersError,
@@ -92,6 +94,17 @@ export default function AiChatPanel({
     window.addEventListener("scroll", collapseOnDownwardScroll, { passive: true });
     return () => window.removeEventListener("scroll", collapseOnDownwardScroll);
   }, [expanded]);
+
+  // Keep the newest message (or the "Reasoning" bubble) in view while the answer arrives.
+  const messageCount = conversation?.messages.length ?? 0;
+  useEffect(() => {
+    const list = messagesRef.current;
+    if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+  }, [messageCount, loading]);
+  const conversationId = conversation?.id;
+  useEffect(() => {
+    if (conversationId) panelRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [conversationId]);
 
   function openMode(mode: AiMode) {
     setExpanded(false);
@@ -198,7 +211,7 @@ export default function AiChatPanel({
             onClick={() => setExpanded((value) => !value)}
             aria-expanded={expanded}
             aria-controls={`ai-modes-${panelKey}`}
-            className="flex h-9 shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            className="flex h-9 shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-semibold text-gray-700 transition-[background-color,transform] hover:bg-gray-50 active:scale-95"
           >
             AI Tools
             <span aria-hidden="true" className="text-gray-400">{expanded ? "−" : "+"}</span>
@@ -222,7 +235,7 @@ export default function AiChatPanel({
                 aria-label={MODE_CONFIG[mode].label}
                 onClick={() => openMode(mode)}
                 style={{ transitionDelay: expanded ? `${index * 45}ms` : "0ms" }}
-                className={`min-h-8 shrink-0 rounded-full px-2 text-[11px] font-semibold text-white transition-[opacity,transform,background-color] duration-200 ease-out ${
+                className={`min-h-8 shrink-0 rounded-full px-2 text-[11px] font-semibold text-white transition-[opacity,transform,background-color] duration-200 ease-out active:!scale-95 ${
                   expanded ? "translate-y-0 scale-100 opacity-100" : "-translate-y-1 scale-95 opacity-0"
                 } ${
                   activeMode === mode
@@ -246,7 +259,7 @@ export default function AiChatPanel({
       )}
 
       {activeMode && providers.length > 0 && (
-        <div className="ai-panel-enter mt-2 w-full rounded-lg border border-gray-200 p-3 text-sm">
+        <div ref={panelRef} className="ai-panel-enter mt-2 w-full rounded-lg border border-gray-200 p-3 text-sm">
           {!conversation && (
             <div className="flex flex-col gap-2">
               <select
@@ -291,7 +304,7 @@ export default function AiChatPanel({
 
           {conversation && (
             <div className="flex flex-col gap-2">
-              <div className="flex max-h-72 flex-col gap-2 overflow-y-auto">
+              <div ref={messagesRef} className="flex max-h-72 flex-col gap-2 overflow-y-auto">
                 {conversation.messages.filter((message, index) => !(index === 0 && message.role === "user" && message.content.startsWith("Post context:"))).map((message) => (
                   <div key={message.id} className={`max-w-[90%] break-words rounded px-3 py-2 ${message.role === "user" ? "self-end bg-gray-100" : "self-start border bg-gray-50"}`}>
                     {message.role === "user" ? (

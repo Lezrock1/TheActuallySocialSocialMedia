@@ -451,6 +451,33 @@ a {
   animation: ai-panel-enter 240ms cubic-bezier(0.22, 0.8, 0.25, 1) both;
 }
 
+.comment-enter {
+  animation: comment-enter 260ms cubic-bezier(0.22, 0.8, 0.25, 1) backwards;
+}
+
+@keyframes comment-enter {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.story-viewer-enter {
+  animation: story-viewer-enter 220ms cubic-bezier(0.22, 0.8, 0.25, 1) backwards;
+}
+
+.story-viewer-enter > div {
+  animation: story-viewer-card-enter 260ms cubic-bezier(0.22, 0.8, 0.25, 1) backwards;
+}
+
+@keyframes story-viewer-enter {
+  from { background-color: rgba(0, 0, 0, 0); }
+  to { background-color: rgb(0, 0, 0); }
+}
+
+@keyframes story-viewer-card-enter {
+  from { opacity: 0; transform: scale(0.94) translateY(12px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 @keyframes ai-panel-enter {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
@@ -485,7 +512,7 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ai-panel-enter, .ai-reasoning, .ai-reasoning-dots i {
+  .ai-panel-enter, .ai-reasoning, .ai-reasoning-dots i, .comment-enter, .story-viewer-enter, .story-viewer-enter > div {
     animation: none;
   }
 }

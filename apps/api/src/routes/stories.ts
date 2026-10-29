@@ -19,6 +19,7 @@ import { emitToUsers } from "../realtime.js";
 const STORY_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const MAX_MEETUP_LEAD_MS = 365 * 24 * 60 * 60 * 1000;
 const MAX_LISTED_ATTENDEES = 20;
+const MAX_LISTED_VIEWERS = 200;
 
 const storyInclude = {
   author: true,
@@ -125,8 +126,23 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
       where: { storyId_userId: { storyId: story.id, userId: request.userId! } },
       create: { storyId: story.id, userId: request.userId! }, update: {},
     });
-    emitToUsers(app.io, [request.userId!], "stories:changed", {});
+    emitToUsers(app.io, [request.userId!, story.authorId], "stories:changed", {});
     return reply.code(204).send();
+  });
+  // Only the author sees who watched; blocked users and the author's own views are left out.
+  app.get<{ Params: { id: string } }>("/stories/:id/viewers", { preHandler: requireAuth }, async (request, reply) => {
+    const story = await prisma.story.findUnique({ where: { id: request.params.id }, select: { authorId: true } });
+    if (!story || story.authorId !== request.userId) return reply.code(404).send({ error: "Story unavailable" });
+    const blocked = await getBlockedUserIds(request.userId!);
+    const where = { storyId: request.params.id, userId: { notIn: [request.userId!, ...blocked] } };
+    const [views, count] = await Promise.all([
+      prisma.storyView.findMany({ where, include: { user: true }, orderBy: [{ viewedAt: "desc" }], take: MAX_LISTED_VIEWERS }),
+      prisma.storyView.count({ where }),
+    ]);
+    return reply.send({
+      count,
+      viewers: views.map((view) => ({ user: toPublicUser(view.user), viewedAt: view.viewedAt.toISOString() })),
+    });
   });
   app.post("/stories", { preHandler: requireAuth }, async (request, reply) => {
     const parsed = createStorySchema.safeParse(request.body);
@@ -219,9 +235,21 @@ export async function storyRoutes(app: FastifyInstance): Promise<void> {
 
     const views = await prisma.storyView.findMany({ where: { userId: viewerId, storyId: { in: stories.map((story) => story.id) } }, select: { storyId: true, viewedAt: true } });
     const viewedAt = new Map(views.map((view) => [view.storyId, view.viewedAt.toISOString()]));
+    const ownStoryIds = stories.filter((story) => story.authorId === viewerId).map((story) => story.id);
+    const viewCounts = new Map<string, number>(
+      ownStoryIds.length === 0 ? [] : (await prisma.storyView.groupBy({
+        by: ["storyId"],
+        where: { storyId: { in: ownStoryIds }, userId: { notIn: [viewerId, ...blockedIds] } },
+        _count: { _all: true },
+      })).map((row) => [row.storyId, row._count._all])
+    );
     const groups = new Map<string, StoryGroup>();
     for (const story of stories) {
-      const storyDto = { ...toStoryDto(story, viewerId), viewedAt: viewedAt.get(story.id) ?? null };
+      const storyDto = {
+        ...toStoryDto(story, viewerId),
+        viewedAt: viewedAt.get(story.id) ?? null,
+        ...(story.authorId === viewerId ? { viewCount: viewCounts.get(story.id) ?? 0 } : {}),
+      };
       const existing = groups.get(story.authorId);
       if (existing) {
         existing.stories.push(storyDto);

@@ -197,13 +197,25 @@ export default function ProfilePage() {
   }
 
   async function toggleFollow() {
-    if (!profileQuery.data) return;
-    const method = profileQuery.data.isFollowedByMe ? "DELETE" : "POST";
-    await apiFetch(`/users/${username}/follow`, { method });
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["profile", username] }),
-      queryClient.invalidateQueries({ queryKey: ["people-suggestions"] }),
-    ]);
+    const profile = profileQuery.data;
+    if (!profile) return;
+    const wasFollowing = profile.isFollowedByMe;
+    // Flip the button right away; restore the old state if the request fails.
+    queryClient.setQueryData<UserProfile>(["profile", username], (current) => current && {
+      ...current,
+      isFollowedByMe: !wasFollowing,
+      followerCount: Math.max(0, current.followerCount + (wasFollowing ? -1 : 1)),
+    });
+    try {
+      await apiFetch(`/users/${username}/follow`, { method: wasFollowing ? "DELETE" : "POST" });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["profile", username] }),
+        queryClient.invalidateQueries({ queryKey: ["people-suggestions"] }),
+      ]);
+    } catch (caught) {
+      queryClient.setQueryData(["profile", username], profile);
+      setProfileActionError(caught instanceof Error ? caught.message : "Could not update following.");
+    }
   }
 
   const closeFriendsQuery = useQuery({
@@ -217,8 +229,16 @@ export default function ProfilePage() {
 
   async function toggleCloseFriend() {
     const method = isCloseFriend ? "DELETE" : "POST";
-    await apiFetch(`/users/${username}/close-friend`, { method });
-    await queryClient.invalidateQueries({ queryKey: ["close-friends"] });
+    const previous = queryClient.getQueryData<{ username: string }[]>(["close-friends"]);
+    queryClient.setQueryData<{ username: string }[]>(["close-friends"], (current = []) =>
+      isCloseFriend ? current.filter((entry) => entry.username !== username) : [...current, { username }]);
+    try {
+      await apiFetch(`/users/${username}/close-friend`, { method });
+      await queryClient.invalidateQueries({ queryKey: ["close-friends"] });
+    } catch (caught) {
+      queryClient.setQueryData(["close-friends"], previous);
+      setProfileActionError(caught instanceof Error ? caught.message : "Could not update close friends.");
+    }
   }
 
   async function toggleBlock() {
@@ -430,7 +450,7 @@ export default function ProfilePage() {
             isActive={(value) => value === filter}
             onSelect={setFilter}
           />
-          <div className="flex flex-col gap-3">
+          <div className={`flex flex-col gap-3 transition-opacity duration-200 ${postsLoaded ? "opacity-100" : "opacity-50"}`}>
             {items.map((item) => item.type === "post" ? (
               <PostCard
                 key={item.id}

@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { COMMENT_REACTIONS } from "@app/shared";
 import type { Comment } from "@app/shared";
 import { ApiError, apiFetch } from "../lib/api.js";
+import { useAuth } from "../auth/AuthContext.js";
 import { mediaUrl, uploadMedia } from "../lib/upload.js";
 import ProgressiveImage from "./ProgressiveImage.js";
 import ImageLightbox from "./ImageLightbox.js";
@@ -16,6 +17,17 @@ import { InlineSkeletonText } from "./LoadingSkeleton.js";
 async function fetchComments(postId: string, path: string): Promise<Comment[]> {
   const res = await apiFetch<{ comments: Comment[] }>(path);
   return res.comments;
+}
+
+// Mirrors the server's reaction counting so a tap shows its result immediately.
+function withReaction(comment: Comment, emoji: string): Comment {
+  const previous = comment.myReaction;
+  const next = previous === emoji ? null : emoji;
+  const counts = new Map(comment.reactions.map((reaction) => [reaction.emoji, reaction.count]));
+  if (previous) counts.set(previous, (counts.get(previous) ?? 1) - 1);
+  if (next) counts.set(next, (counts.get(next) ?? 0) + 1);
+  const reactions = [...counts].filter(([, count]) => count > 0).map(([reactionEmoji, count]) => ({ emoji: reactionEmoji, count })).sort((a, b) => b.count - a.count);
+  return { ...comment, myReaction: next, reactions };
 }
 
 function CommentItem({
@@ -149,6 +161,7 @@ export default function CommentsSection({
   onCommentAdded: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const targetId = repostId ?? postId;
   const targetPath = repostId ? `/external/reposts/${repostId}/comments` : `/posts/${postId}/comments`;
   const [showAllComments, setShowAllComments] = useState(false);
@@ -186,8 +199,9 @@ export default function CommentsSection({
 
   function renderCommentTree(comment: Comment, depth = 0) {
     const children = (repliesByParent.get(comment.id) ?? []).filter((reply) => previewIds.has(reply.id));
+    const pending = comment.id.startsWith("pending-");
     return (
-      <div key={comment.id} className="flex flex-col gap-2">
+      <div key={comment.id} className={`comment-enter flex flex-col gap-2 transition-opacity duration-200 ${pending ? "pointer-events-none opacity-60" : ""}`}>
         <CommentItem
           comment={comment}
           onReply={() => {
@@ -227,21 +241,39 @@ export default function CommentsSection({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if ((!text.trim() && !imageKey) || posting || uploading || !targetId) return;
-    setPosting(true);
+    const draft = { text: text.trim(), imageKey, replyTarget };
+    const pendingId = `pending-${Date.now()}`;
     setError(null);
+    // Show the comment and reset the form straight away; roll back if the server refuses it.
+    if (user) {
+      queryClient.setQueryData<Comment[]>(["comments", targetId], (current) => [
+        ...(current ?? []),
+        {
+          id: pendingId, author: user, text: draft.text, imageKey: draft.imageKey,
+          parentCommentId: draft.replyTarget?.id ?? null, replyCount: 0, likeCount: 0, likedByMe: false,
+          reactions: [], myReaction: null, createdAt: new Date().toISOString(),
+        },
+      ]);
+      setShowAllComments(true);
+      setText("");
+      setImageKey(null);
+      setReplyTarget(null);
+    } else {
+      setPosting(true);
+    }
     try {
       const res = await apiFetch<{ comment: Comment }>(targetPath, {
         method: "POST",
         body: JSON.stringify({
-          text: text.trim(),
-          imageKey: imageKey ?? undefined,
-          parentCommentId: replyTarget?.id,
+          text: draft.text,
+          imageKey: draft.imageKey ?? undefined,
+          parentCommentId: draft.replyTarget?.id,
         }),
       });
-      queryClient.setQueryData<Comment[]>(["comments", targetId], (current) => [
-        ...(current ?? []),
-        res.comment,
-      ]);
+      queryClient.setQueryData<Comment[]>(["comments", targetId], (current) => {
+        const rest = (current ?? []).filter((comment) => comment.id !== pendingId);
+        return rest.some((comment) => comment.id === res.comment.id) ? rest : [...rest, res.comment];
+      });
       if (repostId) {
         void queryClient.invalidateQueries({ queryKey: ["feed", "first"] });
         void queryClient.invalidateQueries({ queryKey: ["feed"] });
@@ -252,6 +284,10 @@ export default function CommentsSection({
       setImageKey(null);
       setReplyTarget(null);
     } catch (err) {
+      queryClient.setQueryData<Comment[]>(["comments", targetId], (current) => (current ?? []).filter((comment) => comment.id !== pendingId));
+      setText((current) => current || draft.text);
+      setImageKey((current) => current ?? draft.imageKey);
+      setReplyTarget((current) => current ?? draft.replyTarget);
       setError(err instanceof ApiError ? err.message : "Could not post comment");
     } finally {
       setPosting(false);
@@ -261,6 +297,8 @@ export default function CommentsSection({
   async function reactToComment(comment: Comment, emoji: string) {
     setLikingId(comment.id);
     setError(null);
+    queryClient.setQueryData<Comment[]>(["comments", targetId], (current) =>
+      (current ?? []).map((item) => (item.id === comment.id ? withReaction(item, emoji) : item)));
     try {
       if (comment.myReaction === emoji) {
         await apiFetch(`/comments/${comment.id}/like`, { method: "DELETE" });
@@ -270,9 +308,10 @@ export default function CommentsSection({
           body: JSON.stringify({ emoji }),
         });
       }
-      await queryClient.invalidateQueries({ queryKey: ["comments", targetId] });
-      await queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] });
+      void queryClient.invalidateQueries({ queryKey: ["comments", targetId] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] });
     } catch (err) {
+      await queryClient.invalidateQueries({ queryKey: ["comments", targetId] });
       setError(err instanceof ApiError ? err.message : "Could not update reaction");
     } finally {
       setLikingId(null);

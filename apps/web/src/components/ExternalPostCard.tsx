@@ -19,12 +19,14 @@ export default function ExternalPostCard({ item, onRepostChanged }: { item: Exte
   const [reposted, setReposted] = useState(!!item.repostedByMe);
   useEffect(() => { setReposted(!!item.repostedByMe); }, [item.repostedByMe]);
   const repost = useMutation({
-    mutationFn: () => apiFetch("/external/reposts", {
-      method: reposted ? "DELETE" : "POST",
+    mutationFn: (shouldRepost: boolean) => apiFetch("/external/reposts", {
+      method: shouldRepost ? "POST" : "DELETE",
       body: JSON.stringify({ platform: item.platform, externalId: item.externalId, url: item.url }),
     }),
+    // The button flips right away and flips back if the request fails.
+    onMutate: (shouldRepost) => setReposted(shouldRepost),
+    onError: (_error, shouldRepost) => setReposted(!shouldRepost),
     onSuccess: async () => {
-      setReposted((value) => !value);
       onRepostChanged?.();
       await queryClient.invalidateQueries({ queryKey: ["feed"] });
     },
@@ -85,10 +87,10 @@ export default function ExternalPostCard({ item, onRepostChanged }: { item: Exte
       <div className="mt-2 flex items-center justify-between gap-2">
         {item.platform !== "twitch" && <button type="button" title={reposted ? "Undo repost" : "Repost to your followers"}
           aria-label={reposted ? "Undo repost" : "Repost"} aria-pressed={reposted} disabled={repost.isPending}
-          onClick={() => repost.mutate()}
-          className={`flex min-h-9 items-center gap-1.5 rounded-full px-2 text-xs font-semibold transition-colors disabled:opacity-50 ${reposted ? "bg-emerald-50 text-emerald-700" : "text-gray-500 hover:bg-gray-50"}`}>
+          onClick={() => repost.mutate(!reposted)}
+          className={`flex min-h-9 items-center gap-1.5 rounded-full px-2 text-xs font-semibold transition-[background-color,color,transform] active:scale-95 disabled:opacity-50 ${reposted ? "bg-emerald-50 text-emerald-700" : "text-gray-500 hover:bg-gray-50"}`}>
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-[18px] w-[18px]"><path d="m4 8 3-3 3 3M7 5v12h9m4-1-3 3-3-3m3 3V7H8" /></svg>
-          {repost.isPending ? "Saving..." : reposted ? "Reposted" : "Repost"}
+          {reposted ? "Reposted" : "Repost"}
         </button>}
         <a
           href={item.url}

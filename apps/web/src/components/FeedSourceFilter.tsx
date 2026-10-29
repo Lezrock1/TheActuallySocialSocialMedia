@@ -24,6 +24,16 @@ export default function FeedSourceFilter({ onChanged }: { onChanged?: () => void
       apiFetch<{ hiddenPlatforms: ExternalPlatform[] }>("/external/preferences", {
         method: "PATCH", body: JSON.stringify({ hiddenPlatforms }),
       }),
+    // Flip the chip immediately and roll back if saving fails.
+    onMutate: async (hiddenPlatforms) => {
+      await client.cancelQueries({ queryKey: ["feed-source-preferences"] });
+      const previous = client.getQueryData<{ hiddenPlatforms: ExternalPlatform[] }>(["feed-source-preferences"]);
+      client.setQueryData(["feed-source-preferences"], { hiddenPlatforms });
+      return { previous };
+    },
+    onError: (_error, _value, context) => {
+      if (context?.previous) client.setQueryData(["feed-source-preferences"], context.previous);
+    },
     onSuccess: async (value) => {
       client.setQueryData(["feed-source-preferences"], value);
       onChanged?.();

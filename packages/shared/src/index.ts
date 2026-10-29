@@ -473,6 +473,8 @@ export interface StoryMeetup {
 export interface Story {
   id: string;
   viewedAt?: string | null;
+  // only set on the author's own stories
+  viewCount?: number;
   imageKey: string;
   audioKey: string | null;
   audioDurationMs: number | null;
@@ -490,6 +492,11 @@ export interface Story {
 export interface StoryGroup {
   author: PublicUser;
   stories: Story[];
+}
+
+export interface StoryViewer {
+  user: PublicUser;
+  viewedAt: string;
 }
 
 export const STORY_REACTIONS = ["❤️", "😂", "🔥", "👏", "😮"] as const;

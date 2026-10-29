@@ -5,8 +5,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import type { FormEvent } from "react";
 import { STORY_REACTIONS } from "@app/shared";
-import type { MomentFeed, MomentPostItem, StoryGroup, StoryMeetup } from "@app/shared";
+import type { MomentFeed, MomentPostItem, StoryGroup, StoryMeetup, StoryViewer } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
+import { getTimeZone } from "../lib/theme.js";
 import { mediaPosterUrl, mediaPreviewUrl, mediaUrl, preloadMediaKeys, preloadMediaUrl } from "../lib/upload.js";
 import Avatar from "./Avatar.js";
 import DecodedImage from "./DecodedImage.js";
@@ -352,6 +353,8 @@ export default function StoriesBar() {
   const [storyReadyId, setStoryReadyId] = useState<string | null>(null);
   const [storyHeld, setStoryHeld] = useState(false);
   const [replyFocused, setReplyFocused] = useState(false);
+  const [viewersOpen, setViewersOpen] = useState(false);
+  const [storyDrag, setStoryDrag] = useState(0);
   const [videoDurationMs, setVideoDurationMs] = useState(7000);
   const { completed: seenStories, complete: saveCompletedView } = useStoryViews(user?.id);
   const storyOrderRef = useRef<StoryGroup[]>([]);
@@ -412,7 +415,15 @@ export default function StoriesBar() {
     ? groups.findIndex((group) => group.author.id === viewing.author.id)
     : -1;
   const activeStory = viewing?.stories[storyIndex];
-  const storyPaused = storyHeld || replyFocused || replySending || meetupBusy || !!editingMeetup || !!cancelMeetupId;
+  const isOwnStory = !!viewing && viewing.author.id === user?.id;
+  const storyPaused = storyHeld || replyFocused || replySending || meetupBusy || !!editingMeetup || !!cancelMeetupId || viewersOpen;
+  useEffect(() => { setViewersOpen(false); }, [viewing?.author.id, storyIndex]);
+  const { data: viewerList, isLoading: viewersLoading } = useQuery({
+    queryKey: ["story-viewers", activeStory?.id],
+    queryFn: () => apiFetch<{ count: number; viewers: StoryViewer[] }>(`/stories/${activeStory!.id}/viewers`),
+    enabled: viewersOpen && isOwnStory && !!activeStory,
+    refetchInterval: 15_000,
+  });
   function storyLoaded(durationMs?: number) {
     if (!activeStory) return;
     setStoryReadyId(activeStory.id);
@@ -732,14 +743,18 @@ export default function StoriesBar() {
       </div>
       {viewing && activeStory && createPortal(
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black sm:px-3"
+          className="story-viewer-enter fixed inset-0 z-[60] flex items-center justify-center bg-black sm:px-3"
           role="dialog"
           aria-modal="true"
           aria-label={`Stories from @${viewing.author.username}`}
+          style={storyDrag > 0 ? { backgroundColor: `rgba(0,0,0,${Math.max(0.3, 1 - storyDrag / 500)})` } : undefined}
           onClick={() => setViewing(null)}
         >
           <div
             className="flex h-[100dvh] w-full max-w-md flex-col overflow-hidden bg-black sm:h-[min(100dvh,900px)] sm:rounded-lg"
+            style={storyDrag > 0
+              ? { transform: `translateY(${storyDrag}px) scale(${Math.max(0.88, 1 - storyDrag / 1400)})`, transition: "none" }
+              : { transition: "transform 240ms cubic-bezier(0.22, 0.8, 0.25, 1)" }}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex shrink-0 gap-1 px-3 pt-[max(0.75rem,env(safe-area-inset-top))]" aria-label={`Story ${storyIndex + 1} of ${viewing.stories.length}`}>
@@ -777,10 +792,18 @@ export default function StoriesBar() {
                 storyGestureRef.current = { x: event.clientX, y: event.clientY, startedAt: performance.now() };
                 setStoryHeld(true);
               }}
+              onPointerMove={(event) => {
+                const gesture = storyGestureRef.current;
+                if (!gesture) return;
+                const deltaX = event.clientX - gesture.x;
+                const deltaY = event.clientY - gesture.y;
+                if (deltaY > 12 && deltaY > Math.abs(deltaX)) setStoryDrag(deltaY);
+              }}
               onPointerUp={(event) => {
                 const gesture = storyGestureRef.current;
                 storyGestureRef.current = null;
                 setStoryHeld(false);
+                setStoryDrag(0);
                 if (!gesture) return;
                 const deltaX = event.clientX - gesture.x;
                 const deltaY = event.clientY - gesture.y;
@@ -792,7 +815,7 @@ export default function StoriesBar() {
                   setViewing(null);
                 } else if (performance.now() - gesture.startedAt > 220) suppressStoryTapRef.current = true;
               }}
-              onPointerCancel={() => { storyGestureRef.current = null; setStoryHeld(false); suppressStoryTapRef.current = true; }}>
+              onPointerCancel={() => { storyGestureRef.current = null; setStoryHeld(false); setStoryDrag(0); suppressStoryTapRef.current = true; }}>
               {viewing.stories[storyIndex].videoKey ? (
                 <StoryVideo
                   key={viewing.stories[storyIndex].id}
@@ -883,6 +906,17 @@ export default function StoriesBar() {
                     ))}
                   </div>
                 )}
+                {isOwnStory ? (
+                  <button
+                    type="button"
+                    onClick={() => setViewersOpen(true)}
+                    aria-label={`Seen by ${activeStory.viewCount ?? 0}`}
+                    className="mb-1 flex min-h-10 w-full items-center justify-center gap-2 rounded-full border border-white/30 bg-black/30 px-4 text-sm font-medium text-white transition-colors hover:bg-white/15"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+                    Seen by {activeStory.viewCount ?? 0}
+                  </button>
+                ) : (<>
                 <div className="mb-2 flex items-center justify-between">
                   {STORY_REACTIONS.map((emoji) => {
                     const selected = viewing.stories[storyIndex].myReaction === emoji;
@@ -918,8 +952,47 @@ export default function StoriesBar() {
                     {replySending ? "..." : "Reply"}
                   </button>
                 </form>
+                </>)}
                 {reactionError && <p role="alert" className="mt-2 text-xs text-white">{reactionError}</p>}
               </div>
+              {viewersOpen && isOwnStory && (
+                <div
+                  data-viewer-controls
+                  role="region"
+                  aria-label="Story viewers"
+                  className="absolute inset-x-0 bottom-0 z-20 flex max-h-[70%] flex-col rounded-t-2xl bg-neutral-900/95 pb-[max(1rem,env(safe-area-inset-bottom))] text-white shadow-2xl backdrop-blur"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="flex shrink-0 items-center justify-between px-4 py-3">
+                    <h3 className="text-sm font-semibold">Seen by {viewerList?.count ?? activeStory.viewCount ?? 0}</h3>
+                    <button type="button" onClick={() => setViewersOpen(false)} aria-label="Close viewers" className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-white/80 hover:bg-white/10">×</button>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-4">
+                    {viewersLoading && <p role="status" className="py-4 text-center text-sm text-white/60">Loading...</p>}
+                    {viewerList && viewerList.viewers.length === 0 && <p className="py-4 text-center text-sm text-white/60">No one has seen this story yet.</p>}
+                    <ul className="flex flex-col">
+                      {viewerList?.viewers.map((viewer) => (
+                        <li key={viewer.user.id}>
+                          <Link
+                            to={`/u/${viewer.user.username}`}
+                            onClick={() => setViewing(null)}
+                            className="flex items-center gap-3 rounded-xl py-2 transition-colors hover:bg-white/10"
+                          >
+                            <Avatar avatarKey={viewer.user.avatarKey} username={viewer.user.username} size={36} />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">@{viewer.user.username}</span>
+                              {viewer.user.displayName && <span className="block truncate text-xs text-white/60">{viewer.user.displayName}</span>}
+                            </span>
+                            <time dateTime={viewer.viewedAt} className="shrink-0 text-xs text-white/60">
+                              {new Date(viewer.viewedAt).toLocaleString("en-US", { timeZone: getTimeZone(), month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                            </time>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>, document.body
