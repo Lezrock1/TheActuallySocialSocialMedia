@@ -175,8 +175,8 @@ function PostCard({
         </button>
       )}
       {photoOpen && post.imageKey && <ImageLightbox mediaKey={post.imageKey} onClose={() => setPhotoOpen(false)} />}
-      <div className="mt-3 flex min-w-0 items-start justify-between gap-2">
-        <time dateTime={post.createdAt} className="mt-2 shrink-0 text-[11px] text-gray-400">
+      <div className="mt-3 flex min-w-0 items-center justify-between gap-2">
+        <time dateTime={post.createdAt} className="shrink-0 text-[11px] text-gray-400">
           {new Date(post.createdAt).toLocaleString("en-US", {
             timeZone: getTimeZone(),
             month: "short",
@@ -185,13 +185,13 @@ function PostCard({
             minute: "2-digit",
           })}
         </time>
-        <div className="flex min-w-0 flex-1 items-start justify-end gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => setSelfieOpen(true)}
             aria-label="React with a selfie"
             title="React with a selfie"
-            className="mt-1.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-[background-color,transform] hover:bg-gray-50 active:scale-90"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-[background-color,transform] hover:bg-gray-50 active:scale-90"
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="8.5" />
@@ -200,9 +200,7 @@ function PostCard({
               <path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8" />
             </svg>
           </button>
-          <div className="min-w-0 flex-1">
-            <AiChatPanel postId={post.id} />
-          </div>
+          <AiChatPanel postId={post.id} />
         </div>
       </div>
       {selfieOpen && (

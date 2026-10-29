@@ -171,7 +171,7 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
 
   return (
     <section className="w-full min-w-0">
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
@@ -182,31 +182,31 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
           AI Tools
           <span aria-hidden="true" className="text-gray-400">{expanded ? "−" : "+"}</span>
         </button>
-        <div
-          id={`ai-modes-${panelKey}`}
-          aria-hidden={!expanded}
-          className={`flex w-full flex-wrap justify-end gap-1 overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${
-            expanded ? "max-h-20 opacity-100" : "max-h-0 opacity-0"
-          }`}
-        >
-          {providers.length === 0 ? null :
-            (Object.keys(MODE_CONFIG) as AiMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                tabIndex={expanded ? 0 : -1}
-                aria-label={MODE_CONFIG[mode].label}
-                onClick={() => openMode(mode)}
-                className={`min-h-8 shrink-0 rounded-full px-2 text-[11px] font-semibold text-white transition-colors ${
-                  activeMode === mode
-                    ? MODE_CONFIG[mode].activeColorClass
-                    : MODE_CONFIG[mode].colorClass
-                }`}
-              >
-                {MODE_CONFIG[mode].label}
-              </button>
-            ))}
-        </div>
+      </div>
+      <div
+        id={`ai-modes-${panelKey}`}
+        aria-hidden={!expanded}
+        className={`mt-1 flex w-full flex-wrap justify-end gap-1 overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${
+          expanded ? "max-h-20 opacity-100" : "max-h-0 opacity-0"
+        }`}
+      >
+        {providers.length === 0 ? null :
+          (Object.keys(MODE_CONFIG) as AiMode[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              tabIndex={expanded ? 0 : -1}
+              aria-label={MODE_CONFIG[mode].label}
+              onClick={() => openMode(mode)}
+              className={`min-h-8 shrink-0 rounded-full px-2 text-[11px] font-semibold text-white transition-colors ${
+                activeMode === mode
+                  ? MODE_CONFIG[mode].activeColorClass
+                  : MODE_CONFIG[mode].colorClass
+              }`}
+            >
+              {MODE_CONFIG[mode].label}
+            </button>
+          ))}
       </div>
 
       {expanded && providersLoading && (
