@@ -185,8 +185,8 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
         <div
           id={`ai-modes-${panelKey}`}
           aria-hidden={!expanded}
-          className={`flex w-full flex-col gap-1.5 overflow-hidden rounded-2xl border border-gray-200 bg-white p-2 shadow-lg shadow-gray-900/5 transition-[max-height,opacity] duration-300 ease-out ${
-            expanded ? "max-h-40 opacity-100" : "max-h-0 border-transparent p-0 opacity-0"
+          className={`flex w-full flex-wrap justify-end gap-1 overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${
+            expanded ? "max-h-20 opacity-100" : "max-h-0 opacity-0"
           }`}
         >
           {providers.length === 0 ? null :
@@ -197,14 +197,13 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
                 tabIndex={expanded ? 0 : -1}
                 aria-label={MODE_CONFIG[mode].label}
                 onClick={() => openMode(mode)}
-                className={`flex min-h-11 w-full items-center justify-between rounded-xl px-3 text-sm font-semibold transition-colors ${
+                className={`min-h-8 shrink-0 rounded-full px-2 text-[11px] font-semibold text-white transition-colors ${
                   activeMode === mode
-                    ? `${MODE_CONFIG[mode].activeColorClass} text-white shadow-sm`
-                    : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                    ? MODE_CONFIG[mode].activeColorClass
+                    : MODE_CONFIG[mode].colorClass
                 }`}
               >
-                <span>{MODE_CONFIG[mode].label}</span>
-                <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${activeMode === mode ? "bg-white" : "bg-gray-300"}`} />
+                {MODE_CONFIG[mode].label}
               </button>
             ))}
         </div>
@@ -225,13 +224,13 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
       )}
 
       {activeMode && providers.length > 0 && (
-        <div className="mt-2 rounded-2xl border border-gray-200 bg-white p-4 text-sm shadow-sm">
+        <div className="mt-2 rounded-lg border border-gray-200 p-3 text-sm">
           {!conversation && (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
               <select
                 value={providerId}
                 onChange={(e) => setProviderId(e.target.value)}
-                className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm focus:border-gray-400 focus:outline-none"
+                className="min-h-10 rounded border px-2 py-1"
               >
                 {providers.map((provider) => (
                   <option key={provider.id} value={provider.id}>{provider.label}</option>
@@ -247,8 +246,8 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
                   value={customPrompt}
                   onChange={(e) => setCustomPrompt(e.target.value)}
                   placeholder="What would you like to know about this post?"
-                  className="w-full rounded-xl border border-gray-200 bg-white p-3 text-sm focus:border-gray-400 focus:outline-none"
-                  rows={3}
+                  className="w-full rounded border p-2"
+                  rows={2}
                 />
               )}
               {activeMode === "factcheck" && postId && (
@@ -261,18 +260,18 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
                 type="button"
                 onClick={() => void startConversation()}
                 disabled={loading}
-                className={`min-h-11 self-start rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${MODE_CONFIG[activeMode].colorClass}`}
+                className={`min-h-10 self-start rounded px-3 py-1 text-white disabled:opacity-50 ${MODE_CONFIG[activeMode].colorClass}`}
               >
-                {loading ? "Starting..." : "Start"}
+                {loading ? "..." : "Start"}
               </button>
             </div>
           )}
 
           {conversation && (
-            <div className="flex flex-col gap-3">
-              <div className="flex max-h-96 flex-col gap-3 overflow-y-auto">
+            <div className="flex flex-col gap-2">
+              <div className="flex max-h-72 flex-col gap-2 overflow-y-auto">
                 {conversation.messages.filter((message, index) => !(index === 0 && message.role === "user" && message.content.startsWith("Post context:"))).map((message) => (
-                  <div key={message.id} className={`break-words rounded-2xl px-4 py-3 ${message.role === "user" ? "ml-8 self-end bg-gray-100" : "mr-8 self-start border border-gray-200 bg-gray-50"}`}>
+                  <div key={message.id} className={`max-w-[90%] break-words rounded px-3 py-2 ${message.role === "user" ? "self-end bg-gray-100" : "self-start border bg-gray-50"}`}>
                     {message.role === "user" ? (
                       <p className="whitespace-pre-wrap">{message.content}</p>
                     ) : (
@@ -286,15 +285,15 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
                   value={followUpText}
                   onChange={(e) => setFollowUpText(e.target.value)}
                   placeholder="Ask a follow-up..."
-                  className="min-h-11 min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-gray-400 focus:outline-none"
+                  className="min-h-10 min-w-0 flex-1 rounded border px-3 py-2"
                 />
                 <button
                   type="button"
                   onClick={() => void sendFollowUp()}
                   disabled={loading}
-                  className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold text-white disabled:opacity-50 ${MODE_CONFIG[activeMode].colorClass}`}
+                  className={`min-h-10 shrink-0 rounded px-3 text-white disabled:opacity-50 ${MODE_CONFIG[activeMode].colorClass}`}
                 >
-                  {loading ? "Sending..." : "Send"}
+                  {loading ? "..." : "Send"}
                 </button>
               </div>
             </div>

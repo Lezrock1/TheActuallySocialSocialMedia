@@ -199,9 +199,9 @@ function PostCard({
             <path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8" />
           </svg>
         </button>
-      </div>
-      <div className="mt-2">
-        <AiChatPanel postId={post.id} />
+        <div className="min-w-0 flex-1">
+          <AiChatPanel postId={post.id} />
+        </div>
       </div>
       {selfieOpen && (
         <SelfieReaction
