@@ -170,7 +170,7 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
   }
 
   return (
-    <div className="relative">
+    <div className="flex w-full flex-col items-end">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
@@ -184,11 +184,11 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
       <div
         id={`ai-modes-${panelKey}`}
         aria-hidden={!expanded}
-        className={`absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${
+        className={`w-full overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${
           expanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
         }`}
       >
-        <div className="flex flex-wrap justify-end gap-1">
+        <div className="mt-1 flex flex-wrap justify-end gap-1">
           {providers.length === 0 ? null :
             (Object.keys(MODE_CONFIG) as AiMode[]).map((mode) => (
               <button
@@ -224,7 +224,7 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
       )}
 
       {activeMode && providers.length > 0 && (
-        <div className="absolute left-0 right-0 top-full z-20 mt-1 rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg">
+        <div className="mt-2 w-full rounded-lg border border-gray-200 p-3 text-sm">
           {!conversation && (
             <div className="flex flex-col gap-2">
               <select
