@@ -73,6 +73,50 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
+test("repost comments work for reposter and followers, notify and disappear when blocked", async ({ page, context, browser }, info) => {
+  const leo = await database.user.findUniqueOrThrow({ where: { username: "leo" } });
+  const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+  const stamp = `comments-${Date.now()}-${info.project.name}`;
+  const originalFollow = await database.follow.findUnique({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } } });
+  await database.follow.upsert({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } }, create: { followerId: mia.id, followeeId: leo.id }, update: {} });
+  const source = await database.externalFollow.create({ data: {
+    userId: leo.id, platform: "bluesky", externalId: stamp, handle: stamp, displayName: "Source",
+    profileUrl: "https://example.com/profile", lastSyncedAt: new Date(),
+  } });
+  const post = await database.externalPost.create({ data: {
+    followId: source.id, platform: "bluesky", externalId: stamp, text: `Comment thread ${stamp}`,
+    url: `https://example.com/${stamp}`, publishedAt: new Date(),
+  } });
+  const repost = await database.externalRepost.create({ data: {
+    userId: leo.id, platform: "bluesky", externalId: stamp, authorHandle: stamp, profileUrl: "https://example.com/profile",
+    text: `Comment thread ${stamp}`, url: post.url, publishedAt: post.publishedAt,
+  } });
+  const recipient = await browser.newContext({ storageState: ".auth/mia.json", extraHTTPHeaders: { "x-forwarded-for": "198.51.100.63" } });
+  try {
+    await page.goto("/");
+    const card = page.locator("article").filter({ hasText: `Comment thread ${stamp}` }).first();
+    await expect(card).toBeVisible();
+    await expect(card.getByRole("textbox", { name: "Write a comment", exact: true })).toBeVisible();
+    await card.getByRole("textbox", { name: "Write a comment", exact: true }).fill("First comment by Mia");
+    await card.getByRole("button", { name: "Post", exact: true }).click();
+    await expect(card.getByText("First comment by Mia", { exact: true })).toBeVisible();
+    await expect.poll(async () => (await database.comment.findFirst({ where: { repostId: repost.id, text: "First comment by Mia" } }))).not.toBeNull();
+    const created = await database.comment.findFirst({ where: { repostId: repost.id, text: "First comment by Mia" } });
+    expect(created.repostId).toBe(repost.id);
+    const repostRow = await database.externalRepost.findUniqueOrThrow({ where: { id: repost.id } });
+    expect(repostRow.commentCount).toBe(1);
+  } finally {
+    await database.commentLike.deleteMany({ where: { comment: { repostId: repost.id } } });
+    await database.notification.deleteMany({ where: { comment: { repostId: repost.id } } });
+    await database.comment.deleteMany({ where: { repostId: repost.id } });
+    await database.externalRepost.deleteMany({ where: { id: repost.id } });
+    await database.externalPost.deleteMany({ where: { id: post.id } });
+    await database.externalFollow.deleteMany({ where: { id: source.id } });
+    if (!originalFollow) await database.follow.deleteMany({ where: { followerId: mia.id, followeeId: leo.id } });
+    await recipient.close();
+  }
+});
+
 test("post photos open full screen and close with Escape or the close button", async ({ page, context }) => {
   const media = await context.request.post(`${API}/media`, { multipart: { file: { name: "post-photo.png", mimeType: "image/png", buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)) } } });
   expect(media.status()).toBe(201);

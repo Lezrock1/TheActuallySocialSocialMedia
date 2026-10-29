@@ -192,8 +192,10 @@ export interface ExternalFollowSummary extends ExternalProfile {
 }
 
 export interface ExternalFeedPost {
+  repostId?: string;
   repostedBy?: PublicUser;
   repostedByMe?: boolean;
+  commentCount?: number;
   platform: ExternalPlatform;
   externalId: string;
   authorHandle: string;

@@ -8,6 +8,7 @@ import { card } from "../lib/ui.js";
 import { PLATFORM_META } from "../lib/platforms.js";
 import AiChatPanel from "./AiChatPanel.js";
 import PostTranslation from "./PostTranslation.js";
+import CommentsSection from "./CommentsSection.js";
 import LinkedMentions from "./LinkedMentions.js";
 
 /** Feed card for a post from a followed Bluesky/Mastodon/YouTube profile. */
@@ -98,6 +99,15 @@ export default function ExternalPostCard({ item, onRepostChanged }: { item: Exte
           Open on {meta.label} ↗
         </a>
       </div>
+      {item.repostId && (
+        <CommentsSection
+          repostId={item.repostId}
+          commentCount={item.commentCount ?? 0}
+          onCommentAdded={() => {
+            void queryClient.invalidateQueries({ queryKey: ["feed"] });
+          }}
+        />
+      )}
     </article>
   );
 }

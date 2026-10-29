@@ -348,14 +348,14 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         if (friendIds.length > 0) {
           const friendComments = await prisma.comment.findMany({
             where: {
-              postId: { in: items.map((item) => item.id) },
+              postId: { in: items.filter((item) => item.type === "post").map((item) => item.id) },
               authorId: { in: friendIds },
             },
             orderBy: { createdAt: "desc" },
             select: { postId: true, createdAt: true },
           });
           for (const comment of friendComments) {
-            if (!latestFriendCommentAt.has(comment.postId)) {
+            if (comment.postId !== null && !latestFriendCommentAt.has(comment.postId)) {
               latestFriendCommentAt.set(comment.postId, comment.createdAt);
             }
           }

@@ -13,8 +13,8 @@ import Avatar from "./Avatar.js";
 import LinkedMentions from "./LinkedMentions.js";
 import { InlineSkeletonText } from "./LoadingSkeleton.js";
 
-async function fetchComments(postId: string): Promise<Comment[]> {
-  const res = await apiFetch<{ comments: Comment[] }>(`/posts/${postId}/comments`);
+async function fetchComments(postId: string, path: string): Promise<Comment[]> {
+  const res = await apiFetch<{ comments: Comment[] }>(path);
   return res.comments;
 }
 
@@ -139,14 +139,18 @@ function CommentItem({
 
 export default function CommentsSection({
   postId,
+  repostId,
   commentCount,
   onCommentAdded,
 }: {
-  postId: string;
+  postId?: string;
+  repostId?: string;
   commentCount: number;
   onCommentAdded: () => void;
 }) {
   const queryClient = useQueryClient();
+  const targetId = repostId ?? postId;
+  const targetPath = repostId ? `/external/reposts/${repostId}/comments` : `/posts/${postId}/comments`;
   const [showAllComments, setShowAllComments] = useState(false);
   const [text, setText] = useState("");
   const [posting, setPosting] = useState(false);
@@ -159,9 +163,11 @@ export default function CommentsSection({
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: comments = [], isLoading } = useQuery({
-    queryKey: ["comments", postId],
-    queryFn: () => fetchComments(postId),
+    queryKey: ["comments", targetId],
+    queryFn: () => fetchComments(targetId!, targetPath),
+    enabled: !!targetId,
   });
+  const shownCount = comments.length > 0 ? comments.length : commentCount;
 
   useEffect(() => {
     if (replyTarget) inputRef.current?.focus();
@@ -220,11 +226,11 @@ export default function CommentsSection({
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if ((!text.trim() && !imageKey) || posting || uploading) return;
+    if ((!text.trim() && !imageKey) || posting || uploading || !targetId) return;
     setPosting(true);
     setError(null);
     try {
-      const res = await apiFetch<{ comment: Comment }>(`/posts/${postId}/comments`, {
+      const res = await apiFetch<{ comment: Comment }>(targetPath, {
         method: "POST",
         body: JSON.stringify({
           text: text.trim(),
@@ -232,10 +238,14 @@ export default function CommentsSection({
           parentCommentId: replyTarget?.id,
         }),
       });
-      queryClient.setQueryData<Comment[]>(["comments", postId], (current) => [
+      queryClient.setQueryData<Comment[]>(["comments", targetId], (current) => [
         ...(current ?? []),
         res.comment,
       ]);
+      if (repostId) {
+        void queryClient.invalidateQueries({ queryKey: ["feed", "first"] });
+        void queryClient.invalidateQueries({ queryKey: ["feed"] });
+      }
       onCommentAdded();
       setShowAllComments(true);
       setText("");
@@ -260,7 +270,7 @@ export default function CommentsSection({
           body: JSON.stringify({ emoji }),
         });
       }
-      await queryClient.invalidateQueries({ queryKey: ["comments", postId] });
+      await queryClient.invalidateQueries({ queryKey: ["comments", targetId] });
       await queryClient.invalidateQueries({ queryKey: ["notifications", "unread-count"] });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not update reaction");
@@ -273,10 +283,10 @@ export default function CommentsSection({
     <section className="mt-2 border-t border-gray-100 pt-2">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-xs font-semibold text-gray-600">Comments</h3>
-        <span className="text-[11px] text-gray-400">{commentCount}</span>
+        <span className="text-[11px] text-gray-400">{shownCount}</span>
       </div>
       <div className="flex flex-col gap-3">
-          <div id={`comments-${postId}`} className="flex max-h-72 flex-col gap-3 overflow-y-auto">
+          <div id={`comments-${targetId}`} className="flex max-h-72 flex-col gap-3 overflow-y-auto">
             {isLoading && (
               <div aria-hidden="true" className="space-y-2 py-1">
                 <InlineSkeletonText width="w-40" />

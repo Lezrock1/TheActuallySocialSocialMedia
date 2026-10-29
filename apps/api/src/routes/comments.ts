@@ -6,13 +6,14 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { createMentionNotifications, createUserNotification } from "../notifications.js";
-import { canViewContent, canViewPostById } from "../visibility.js";
+import { canViewContent, canViewPostById, getBlockedUserIds } from "../visibility.js";
 import { ownsMedia } from "../mediaAccess.js";
 import { deleteMediaIfUnreferenced } from "../storage.js";
 
 interface CommentRow {
   id: string;
-  postId: string;
+  postId: string | null;
+  repostId: string | null;
   authorId: string;
   parentCommentId: string | null;
   text: string;
@@ -56,7 +57,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "Post not found" });
       }
       const comments = await prisma.comment.findMany({
-        where: { postId: request.params.id },
+        where: { postId: request.params.id, repostId: null },
         include: {
           author: true,
           _count: { select: { likes: true, replies: true } },
@@ -65,6 +66,96 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
         orderBy: { createdAt: "asc" },
       });
       return reply.send({ comments: comments.map((comment) => toComment(comment, request.userId!)) });
+    }
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/external/reposts/:id/comments",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const [repost, following, blocked] = await Promise.all([
+        prisma.externalRepost.findUnique({ where: { id: request.params.id } }),
+        prisma.follow.findMany({ where: { followerId: request.userId! }, select: { followeeId: true } }),
+        getBlockedUserIds(request.userId!),
+      ]);
+      if (!repost || (repost.userId !== request.userId && (blocked.includes(repost.userId) || !following.some((f) => f.followeeId === repost.userId)))) {
+        return reply.code(404).send({ error: "Repost not found" });
+      }
+      const comments = await prisma.comment.findMany({
+        where: { repostId: repost.id },
+        include: {
+          author: true,
+          _count: { select: { likes: true, replies: true } },
+          likes: { select: { userId: true, emoji: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      });
+      return reply.send({ comments: comments.map((comment) => toComment(comment, request.userId!)) });
+    }
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/external/reposts/:id/comments",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const parsed = createCommentSchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+      const [repost, following, blocked] = await Promise.all([
+        prisma.externalRepost.findUnique({ where: { id: request.params.id } }),
+        prisma.follow.findMany({ where: { followerId: request.userId! }, select: { followeeId: true } }),
+        getBlockedUserIds(request.userId!),
+      ]);
+      if (!repost || (repost.userId !== request.userId && (blocked.includes(repost.userId) || !following.some((f) => f.followeeId === repost.userId)))) {
+        return reply.code(404).send({ error: "Repost not found" });
+      }
+      if (parsed.data.imageKey && !(await ownsMedia(request.userId!, parsed.data.imageKey))) {
+        return reply.code(403).send({ error: "You can only attach your own uploads" });
+      }
+      let parentComment: { id: string; repostId: string | null; authorId: string; parentCommentId: string | null } | null = null;
+      if (parsed.data.parentCommentId) {
+        parentComment = await prisma.comment.findUnique({
+          where: { id: parsed.data.parentCommentId },
+          select: { id: true, repostId: true, authorId: true, parentCommentId: true },
+        });
+        if (!parentComment || parentComment.repostId !== repost.id) {
+          return reply.code(404).send({ error: "Parent comment not found" });
+        }
+      }
+      const comment = await prisma.comment.create({
+        data: {
+          repostId: repost.id,
+          authorId: request.userId!,
+          parentCommentId: parentComment?.id,
+          text: parsed.data.text.trim(),
+          imageKey: parsed.data.imageKey,
+        },
+        include: {
+          author: true,
+          _count: { select: { likes: true, replies: true } },
+          likes: { select: { userId: true, emoji: true } },
+        },
+      });
+      await prisma.externalRepost.update({ where: { id: repost.id }, data: { commentCount: { increment: 1 } } });
+      const recipientId = parentComment?.authorId ?? repost.userId;
+      const notificationType = parentComment ? "comment_reply" : "comment";
+      try {
+        await createUserNotification({
+          recipientId,
+          actorId: request.userId!,
+          type: notificationType,
+          dedupeKey: `${notificationType}:external:${comment.id}:${recipientId}`,
+          commentId: comment.id,
+        });
+        await createMentionNotifications({
+          text: comment.text,
+          actorId: request.userId!,
+          commentId: comment.id,
+          excludedRecipientIds: [recipientId],
+        });
+      } catch (error) {
+        request.log.error(error, "Repost comment notification creation failed");
+      }
+      return reply.code(201).send({ comment: toComment(comment, request.userId!) });
     }
   );
 
@@ -85,7 +176,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
       if (parsed.data.imageKey && !(await ownsMedia(request.userId!, parsed.data.imageKey))) {
         return reply.code(403).send({ error: "You can only attach your own uploads" });
       }
-      let parentComment: { id: string; postId: string; authorId: string; parentCommentId: string | null } | null = null;
+      let parentComment: { id: string; postId: string | null; authorId: string; parentCommentId: string | null } | null = null;
       if (parsed.data.parentCommentId) {
         parentComment = await prisma.comment.findUnique({
           where: { id: parsed.data.parentCommentId },
@@ -99,6 +190,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
       const comment = await prisma.comment.create({
         data: {
           postId: post.id,
+          repostId: null,
           authorId: request.userId!,
           parentCommentId: parentComment?.id,
           text: parsed.data.text.trim(),
@@ -164,7 +256,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
         select: { id: true, authorId: true, postId: true },
       });
       if (!comment) return reply.code(404).send({ error: "Comment not found" });
-      if (!(await canViewPostById(request.userId!, comment.postId))) {
+      if (!comment.postId || !(await canViewPostById(request.userId!, comment.postId))) {
         return reply.code(404).send({ error: "Comment not found" });
       }
 
@@ -193,7 +285,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
           actorId: request.userId!,
           type: "comment_like",
           dedupeKey: `comment-like:${like.id}`,
-          postId: comment.postId,
+          postId: comment.postId ?? undefined,
           commentId: comment.id,
         });
       } catch (error) {

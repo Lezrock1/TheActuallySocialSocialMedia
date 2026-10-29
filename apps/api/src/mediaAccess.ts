@@ -107,6 +107,7 @@ export async function canReadMedia(
   const canReadAvatar = avatarOwners.some((avatar) => canSeeAuthor(avatar.id, "public"));
   const canReadComment = comments.some((comment) =>
     !blockedIds.includes(comment.authorId) &&
+    comment.post !== null &&
     canSeeAuthor(comment.post.authorId, comment.post.visibility, comment.post.circleId)
   );
   const followerMixOwners = musicMixes

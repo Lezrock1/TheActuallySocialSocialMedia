@@ -132,21 +132,24 @@ model Post {
 
 model Comment {
   id              String   @id @default(cuid())
-  postId          String
+  postId          String?
+  repostId        String?
   authorId        String
   parentCommentId String?
   text            String
   imageKey        String?
   createdAt       DateTime @default(now())
 
-  post          Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
-  author        User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post          Post?           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  repost        ExternalRepost? @relation(fields: [repostId], references: [id], onDelete: Cascade)
+  author        User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
   parentComment Comment?      @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
   replies       Comment[]     @relation("CommentReplies")
   likes         CommentLike[]
   notifications Notification[]
 
   @@index([postId, createdAt])
+  @@index([repostId, createdAt])
   @@index([parentCommentId, createdAt])
   @@index([imageKey])
 }
@@ -258,6 +261,8 @@ model ExternalRepost {
   url             String
   publishedAt     DateTime
   createdAt       DateTime @default(now())
+  commentCount    Int      @default(0)
+  comments        Comment[]
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, platform, externalId, url])
