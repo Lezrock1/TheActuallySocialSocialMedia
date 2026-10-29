@@ -556,9 +556,11 @@ export async function externalFeedItems(userId: string, options: {
   const decorate = (content: ExternalFeedPost) => ({
     ...content, repostedByMe: mine.has(JSON.stringify([content.platform, content.externalId, content.url])),
   });
+  // The viewer's own repost card (with comments) replaces the original card.
+  const unreposted = posts.filter((post) => !decorate(cachedExternalContent(post)).repostedByMe);
   return [
-    ...posts.map((post): FeedItem => ({ type: "external", id: `external:${post.id}`, createdAt: post.publishedAt.toISOString(), external: decorate(cachedExternalContent(post)) })),
-    ...reposts.map((post): FeedItem => ({ type: "external", id: `repost:${post.id}`, createdAt: post.createdAt.toISOString(), external: { ...decorate(repostContent(post)), repostedBy: toPublicUser(post.user) } })),
+    ...unreposted.map((post): FeedItem => ({ type: "external", id: `external:${post.id}`, createdAt: post.publishedAt.toISOString(), external: { ...decorate(cachedExternalContent(post)), commentCount: undefined } })),
+    ...reposts.map((post): FeedItem => ({ type: "external", id: `repost:${post.id}`, createdAt: post.createdAt.toISOString(), external: { ...decorate(repostContent(post)), repostedBy: toPublicUser(post.user), repostId: post.id, commentCount: post.commentCount } })),
   ];
 }
 
