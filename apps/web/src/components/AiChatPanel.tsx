@@ -170,43 +170,43 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
   }
 
   return (
-    <section className="w-full min-w-0">
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-          aria-controls={`ai-modes-${panelKey}`}
-          className="flex min-h-9 shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-        >
-          AI Tools
-          <span aria-hidden="true" className="text-gray-400">{expanded ? "−" : "+"}</span>
-        </button>
-      </div>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        aria-controls={`ai-modes-${panelKey}`}
+        className="flex min-h-9 shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+      >
+        AI Tools
+        <span aria-hidden="true" className="text-gray-400">{expanded ? "−" : "+"}</span>
+      </button>
       <div
         id={`ai-modes-${panelKey}`}
         aria-hidden={!expanded}
-        className={`mt-1 flex w-full flex-wrap justify-end gap-1 overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${
-          expanded ? "max-h-20 opacity-100" : "max-h-0 opacity-0"
+        className={`absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${
+          expanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
         }`}
       >
-        {providers.length === 0 ? null :
-          (Object.keys(MODE_CONFIG) as AiMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              tabIndex={expanded ? 0 : -1}
-              aria-label={MODE_CONFIG[mode].label}
-              onClick={() => openMode(mode)}
-              className={`min-h-8 shrink-0 rounded-full px-2 text-[11px] font-semibold text-white transition-colors ${
-                activeMode === mode
-                  ? MODE_CONFIG[mode].activeColorClass
-                  : MODE_CONFIG[mode].colorClass
-              }`}
-            >
-              {MODE_CONFIG[mode].label}
-            </button>
-          ))}
+        <div className="flex flex-wrap justify-end gap-1">
+          {providers.length === 0 ? null :
+            (Object.keys(MODE_CONFIG) as AiMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                tabIndex={expanded ? 0 : -1}
+                aria-label={MODE_CONFIG[mode].label}
+                onClick={() => openMode(mode)}
+                className={`min-h-8 shrink-0 rounded-full px-2 text-[11px] font-semibold text-white transition-colors ${
+                  activeMode === mode
+                    ? MODE_CONFIG[mode].activeColorClass
+                    : MODE_CONFIG[mode].colorClass
+                }`}
+              >
+                {MODE_CONFIG[mode].label}
+              </button>
+            ))}
+        </div>
       </div>
 
       {expanded && providersLoading && (
@@ -224,7 +224,7 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
       )}
 
       {activeMode && providers.length > 0 && (
-        <div className="mt-2 rounded-lg border border-gray-200 p-3 text-sm">
+        <div className="absolute left-0 right-0 top-full z-20 mt-1 rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg">
           {!conversation && (
             <div className="flex flex-col gap-2">
               <select
@@ -302,6 +302,6 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
           {error && <p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
         </div>
       )}
-    </section>
+    </div>
   );
 }
