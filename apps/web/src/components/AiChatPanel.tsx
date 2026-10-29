@@ -271,8 +271,8 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
           {conversation && (
             <div className="flex flex-col gap-3">
               <div className="flex max-h-96 flex-col gap-3 overflow-y-auto">
-                {conversation.messages.map((message) => (
-                  <div key={message.id} className={`max-w-[92%] break-words rounded-2xl px-4 py-3 ${message.role === "user" ? "self-end bg-gray-100" : "self-start border border-gray-200 bg-gray-50"}`}>
+                {conversation.messages.filter((message, index) => !(index === 0 && message.role === "user" && message.content.startsWith("Post context:"))).map((message) => (
+                  <div key={message.id} className={`break-words rounded-2xl px-4 py-3 ${message.role === "user" ? "ml-8 self-end bg-gray-100" : "mr-8 self-start border border-gray-200 bg-gray-50"}`}>
                     {message.role === "user" ? (
                       <p className="whitespace-pre-wrap">{message.content}</p>
                     ) : (

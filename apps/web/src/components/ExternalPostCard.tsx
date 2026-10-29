@@ -77,9 +77,9 @@ export default function ExternalPostCard({ item, onRepostChanged }: { item: Exte
             minute: "2-digit",
           })}
         </time>
-        <div className="min-w-0 flex-1">
-          <AiChatPanel externalPost={item} />
-        </div>
+      </div>
+      <div className="mt-2">
+        <AiChatPanel externalPost={item} />
       </div>
       {repost.isError && <p role="alert" className="mt-2 text-xs text-red-600">Could not update your repost. Try again.</p>}
       <div className="mt-2 flex items-center justify-between gap-2">
