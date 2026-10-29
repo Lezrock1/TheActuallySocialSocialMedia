@@ -384,10 +384,13 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
           model: config.model,
           apiKey: apiKeyForConfig(config),
         });
-        const reply1 = await adapter.chat([
-          { role: "system", content: systemPrompt },
-          { role: "user", content: initialUserMessage },
-        ]);
+        const reply1 = await adapter.chat(
+          [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: initialUserMessage },
+          ],
+          { webSearch: mode === "factcheck" }
+        );
 
         const conversation = await prisma.aiConversation.create({
           data: {
@@ -492,7 +495,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
           model: config.model,
           apiKey: apiKeyForConfig(config),
         });
-        const replyText = await adapter.chat(history);
+        const replyText = await adapter.chat(history, { webSearch: conversation.mode === "factcheck" });
 
         const [, assistantMessage] = await prisma.$transaction([
           prisma.aiConversationMessage.create({

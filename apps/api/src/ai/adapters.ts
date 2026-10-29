@@ -12,8 +12,12 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ChatOptions {
+  webSearch?: boolean;
+}
+
 export interface AiProvider {
-  chat(messages: ChatMessage[]): Promise<string>;
+  chat(messages: ChatMessage[], options?: ChatOptions): Promise<string>;
 }
 
 async function postToProvider(url: string, headers: Record<string, string>, payload: unknown): Promise<string> {
@@ -38,12 +42,18 @@ async function postToProvider(url: string, headers: Record<string, string>, payl
 export class OpenAICompatibleAdapter implements AiProvider {
   constructor(private creds: AiProviderCredentials) {}
 
-  async chat(messages: ChatMessage[]): Promise<string> {
+  async chat(messages: ChatMessage[], options?: ChatOptions): Promise<string> {
     const url = `${this.creds.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    // OpenRouter's web plugin grounds the answer in live search results.
+    const useWeb = options?.webSearch && /(^|\.)openrouter\.ai$/i.test(new URL(this.creds.baseUrl).hostname);
     const text = await postToProvider(
       url,
       this.creds.apiKey ? { Authorization: `Bearer ${this.creds.apiKey}` } : {},
-      { model: this.creds.model, messages }
+      {
+        model: this.creds.model,
+        messages,
+        ...(useWeb ? { plugins: [{ id: "web", max_results: 8 }] } : {}),
+      }
     );
     let body: { choices?: { message?: { content?: string } }[] };
     try {

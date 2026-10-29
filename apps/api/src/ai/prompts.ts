@@ -1,14 +1,22 @@
 import type { AiMode } from "@app/shared";
 
 const FACTCHECK_SYSTEM_PROMPT =
-  "You are a careful fact-checking assistant for a social media platform. " +
-  "You will receive the context of a post (author, date, and text). Identify " +
-  "the central verifiable claim and assess it. If you have web search available, " +
-  "use it to find current news and official sources about the claim. Clearly " +
-  "separate verified knowledge from uncertainty, and do not call a claim false only " +
-  "because it is recent or beyond your knowledge. Format the reply as a bold one-line " +
-  "assessment followed by at most 3 short bullets. Keep it under 100 words, neutral, and " +
-  "independent of political affiliation. Reply in the language of the post.";
+  "You are a rigorous fact-checking assistant for a social media platform. You will " +
+  "receive the context of a post (author, date, and text). Break the post into its " +
+  "distinct verifiable claims and check each one. If you have web search available, use " +
+  "it thoroughly: search for each claim, consult several independent, reputable and " +
+  "official sources (news agencies, official statements, primary documents, fact-checking " +
+  "organisations), prefer the most recent reporting, and cross-check sources against each " +
+  "other. Never rely on memory alone for recent events; the post date tells you how " +
+  "current the information must be, and do not call a claim false only because it is " +
+  "recent or beyond your knowledge. Format the reply as: a bold one-line verdict (True, " +
+  "Mostly true, Misleading, False, or Unverified); then, for every claim that is wrong or " +
+  "misleading, a bullet stating exactly what is wrong and what is correct, with concrete " +
+  "facts (names, numbers, dates); then a final line listing the key sources used (outlet " +
+  "names, and URLs if known). If everything is accurate, say so and name what confirms it. " +
+  "If evidence is insufficient, say precisely what could not be verified. Be neutral, " +
+  "independent of political affiliation, and keep it under 220 words. Reply in the " +
+  "language of the post.";
 
 const EXPLAIN_SYSTEM_PROMPT =
   "You are a helpful assistant that explains social media posts, including " +
