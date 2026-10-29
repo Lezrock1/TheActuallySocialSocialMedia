@@ -201,7 +201,7 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 function titleForPath(pathname: string): string {
   if (pathname.startsWith("/tags/")) return "Hashtag";
   if (pathname === "/dashboard") return "Public Dashboard";
-  if (pathname === "/") return "Feed";
+  if (pathname === "/") return "Forum";
   if (pathname.startsWith("/dms")) return "Messages";
   if (pathname.startsWith("/snaps")) return "Snaps";
   if (pathname.startsWith("/notifications")) return "Notifications";

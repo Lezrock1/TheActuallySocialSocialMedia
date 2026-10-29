@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { TRANSLATION_LANGUAGE_CODES, updateProfileSchema } from "@app/shared";
-import type { UserProfile } from "@app/shared";
+import type { FeedItem, UserProfile } from "@app/shared";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
+import { repostFeedItems } from "../external.js";
 import { postWithCountsInclude, toFeedPost } from "../postSerializer.js";
 import {
   getBlockedUserIds,
@@ -266,6 +267,105 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       const nextCursor = hasMore ? page[page.length - 1].id : null;
 
       return reply.send({ posts: page.map(toFeedPost), nextCursor });
+    }
+  );
+
+  // Posts and reposts of one profile, merged newest first. Cursor is `<ISO date>|<id>`.
+  app.get<{ Params: { username: string }; Querystring: { cursor?: string; filter?: string } }>(
+    "/users/:username/timeline",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const filter = request.query.filter ?? "all";
+      if (!["all", "intouch", "bluesky", "mastodon", "youtube"].includes(filter)) {
+        return reply.code(400).send({ error: "Unknown filter" });
+      }
+      let boundary: { date: Date; id: string } | null = null;
+      if (request.query.cursor) {
+        const [rawDate, ...rest] = request.query.cursor.split("|");
+        const date = new Date(rawDate);
+        if (Number.isNaN(date.getTime()) || rest.length === 0) {
+          return reply.code(400).send({ error: "Invalid cursor" });
+        }
+        boundary = { date, id: rest.join("|") };
+      }
+
+      const target = await prisma.user.findUnique({ where: { username: request.params.username } });
+      if (!target) return reply.code(404).send({ error: "User not found" });
+      if (await isBlocked(request.userId!, target.id)) {
+        return reply.code(403).send({ error: "Not available" });
+      }
+
+      const isOwnProfile = target.id === request.userId;
+      const [circleIds, closeFriendGrantedAuthorIds, followEdge] = isOwnProfile
+        ? [[], [], null]
+        : await Promise.all([
+            getViewerCircleIds(request.userId!),
+            getCloseFriendGrantedAuthorIds(request.userId!),
+            prisma.follow.findUnique({
+              where: { followerId_followeeId: { followerId: request.userId!, followeeId: target.id } },
+            }),
+          ]);
+      const createdBefore = (date: Date, id: string) => ({
+        OR: [{ createdAt: { lt: date } }, { createdAt: date, id: { lt: id } }],
+      });
+
+      const [posts, reposts] = await Promise.all([
+        filter === "all" || filter === "intouch"
+          ? prisma.post.findMany({
+              where: {
+                authorId: target.id,
+                parentPostId: null,
+                ...(isOwnProfile
+                  ? {}
+                  : {
+                      OR: [
+                        { visibility: "public" },
+                        { visibility: "close_friends", authorId: { in: closeFriendGrantedAuthorIds } },
+                        { visibility: "circle", circleId: { in: circleIds } },
+                      ],
+                    }),
+                ...(boundary ? { AND: [createdBefore(boundary.date, boundary.id)] } : {}),
+              },
+              include: postWithCountsInclude,
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              take: DEFAULT_LIMIT + 1,
+            })
+          : [],
+        // Reposts are visible to the reposter and their followers, like their comments.
+        filter !== "intouch" && (isOwnProfile || followEdge)
+          ? prisma.externalRepost.findMany({
+              where: {
+                userId: target.id,
+                ...(filter === "all" ? {} : { platform: filter }),
+                ...(boundary ? createdBefore(boundary.date, boundary.id) : {}),
+              },
+              include: { user: true },
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              take: DEFAULT_LIMIT + 1,
+            })
+          : [],
+      ]);
+
+      const entries = [
+        ...posts.map((post) => ({ createdAt: post.createdAt, id: post.id })),
+        ...reposts.map((repost) => ({ createdAt: repost.createdAt, id: repost.id })),
+      ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1));
+      const hasMore = entries.length > DEFAULT_LIMIT;
+      const pageEntries = entries.slice(0, DEFAULT_LIMIT);
+      const ids = new Set(pageEntries.map((entry) => entry.id));
+      const repostItems = await repostFeedItems(request.userId!, reposts.filter((repost) => ids.has(repost.id)));
+      const byId = new Map<string, FeedItem>([
+        ...posts.filter((post) => ids.has(post.id)).map((post): [string, FeedItem] => [
+          post.id,
+          { type: "post", id: post.id, createdAt: post.createdAt.toISOString(), post: toFeedPost(post) },
+        ]),
+        ...repostItems.map((item): [string, FeedItem] => [item.id.slice(7), item]),
+      ]);
+      const last = pageEntries[pageEntries.length - 1];
+      return reply.send({
+        items: pageEntries.map((entry) => byId.get(entry.id)!),
+        nextCursor: hasMore && last ? `${last.createdAt.toISOString()}|${last.id}` : null,
+      });
     }
   );
 }

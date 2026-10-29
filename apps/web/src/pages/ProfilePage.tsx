@@ -2,13 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FeedPost, PublicUser, UserProfile } from "@app/shared";
+import type { FeedItem, PublicUser, UserProfile } from "@app/shared";
 import { apiFetch, ApiError } from "../lib/api.js";
 import { mediaUrl, uploadMedia } from "../lib/upload.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
 import PostCard from "../components/PostCard.js";
+import ExternalPostCard from "../components/ExternalPostCard.js";
+import FilterChips from "../components/FilterChips.js";
+import type { FilterChip } from "../components/FilterChips.js";
+import { PLATFORM_CHIP } from "../lib/platforms.js";
 import Avatar from "../components/Avatar.js";
 import AppDialog from "../components/AppDialog.js";
 import Sheet from "../components/Sheet.js";
@@ -26,13 +30,24 @@ async function fetchProfile(username: string): Promise<UserProfile> {
   return res.profile;
 }
 
-async function fetchUserPosts(
+type ProfileFilter = "all" | "intouch" | "bluesky" | "mastodon" | "youtube";
+
+const PROFILE_FILTERS: FilterChip<ProfileFilter>[] = [
+  { value: "all", label: "All" },
+  { value: "intouch", label: "InTouch posts" },
+  { value: "bluesky", label: "Bluesky reposts", activeClass: PLATFORM_CHIP.bluesky.active, inactiveClass: PLATFORM_CHIP.bluesky.inactive },
+  { value: "mastodon", label: "Mastodon reposts", activeClass: PLATFORM_CHIP.mastodon.active, inactiveClass: PLATFORM_CHIP.mastodon.inactive },
+  { value: "youtube", label: "YouTube reposts", activeClass: PLATFORM_CHIP.youtube.active, inactiveClass: PLATFORM_CHIP.youtube.inactive },
+];
+
+async function fetchUserTimeline(
   username: string,
+  filter: ProfileFilter,
   cursor: string | null
-): Promise<{ posts: FeedPost[]; nextCursor: string | null }> {
-  const params = new URLSearchParams();
+): Promise<{ items: FeedItem[]; nextCursor: string | null }> {
+  const params = new URLSearchParams({ filter });
   if (cursor) params.set("cursor", cursor);
-  return apiFetch(`/users/${username}/posts?${params.toString()}`);
+  return apiFetch(`/users/${username}/timeline?${params.toString()}`);
 }
 
 const profileButton =
@@ -48,7 +63,9 @@ export default function ProfilePage() {
   const [bio, setBio] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [items, setItems] = useState<FeedItem[]>([]);
+  const [filter, setFilter] = useState<ProfileFilter>("all");
+  const [reloadKey, setReloadKey] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isBlocked, setIsBlocked] = useState(false);
   const [postsLoaded, setPostsLoaded] = useState(false);
@@ -113,24 +130,33 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    setPosts([]);
+    setItems([]);
     setNextCursor(null);
     setPostsLoaded(false);
+    setFilter("all");
   }, [username]);
 
+  const profileReady = !!profileQuery.data;
+  const followedByMe = profileQuery.data?.isFollowedByMe;
   useEffect(() => {
-    if (!profileQuery.data || postsLoaded) return;
-    setPostsLoaded(true);
-    fetchUserPosts(username, null).then((res) => {
-      setPosts(res.posts);
-      setNextCursor(res.nextCursor);
-    });
-  }, [profileQuery.data, postsLoaded, username]);
+    if (!profileReady) return;
+    let cancelled = false;
+    setPostsLoaded(false);
+    fetchUserTimeline(username, filter, null)
+      .then((res) => {
+        if (cancelled) return;
+        setItems(res.items);
+        setNextCursor(res.nextCursor);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setPostsLoaded(true); });
+    return () => { cancelled = true; };
+  }, [profileReady, followedByMe, username, filter, reloadKey]);
 
   async function loadMorePosts() {
     if (!nextCursor) return;
-    const res = await fetchUserPosts(username, nextCursor);
-    setPosts((p) => [...p, ...res.posts]);
+    const res = await fetchUserTimeline(username, filter, nextCursor);
+    setItems((current) => [...current, ...res.items]);
     setNextCursor(res.nextCursor);
   }
 
@@ -235,7 +261,7 @@ export default function ProfilePage() {
   }
 
   function onPostDeleted(postId: string) {
-    setPosts((p) => p.filter((post) => post.id !== postId));
+    setItems((current) => current.filter((item) => !(item.type === "post" && item.id === postId)));
   }
 
   const profile = profileQuery.data;
@@ -398,17 +424,27 @@ export default function ProfilePage() {
             </div>
           )}
 
+          <FilterChips
+            label="Show on this profile"
+            chips={PROFILE_FILTERS}
+            isActive={(value) => value === filter}
+            onSelect={setFilter}
+          />
           <div className="flex flex-col gap-3">
-            {posts.map((post) => (
+            {items.map((item) => item.type === "post" ? (
               <PostCard
-                key={post.id}
-                post={post}
+                key={item.id}
+                post={item.post}
                 currentUserId={currentUser?.id}
                 onDeleted={onPostDeleted}
               />
-            ))}
-            {posts.length === 0 && postsLoaded && (
-              <p className="text-sm text-gray-400">No posts yet.</p>
+            ) : item.type === "external" ? (
+              <ExternalPostCard key={item.id} item={item.external} onRepostChanged={() => setReloadKey((key) => key + 1)} />
+            ) : null)}
+            {items.length === 0 && postsLoaded && (
+              <p className="text-sm text-gray-400">
+                {filter === "all" ? "Nothing here yet." : filter === "intouch" ? "No posts yet." : "No reposts yet."}
+              </p>
             )}
           </div>
 

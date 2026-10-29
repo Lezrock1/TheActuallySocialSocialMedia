@@ -91,7 +91,7 @@ export default function NavBar() {
                 <MobileTabIcon name="feed" className="h-5 w-5" />
                 <CountBadge count={feedUnreadCount} tone="blue" />
               </span>
-              Feed
+              Forum
             </span>
           </NavLink>
           <NavLink to="/snaps" className={primaryLinkClass}>
@@ -170,7 +170,7 @@ export function MobileNav() {
             <MobileTabIcon name="feed" />
             <CountBadge count={feedUnreadCount} tone="blue" />
           </span>
-          <span>Feed</span>
+          <span>Forum</span>
         </NavLink>
         <NavLink to="/snaps" className={(state) => mobileLinkClass(state, "snap-nav-active")}>
           <span className="relative inline-flex">

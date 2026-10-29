@@ -403,7 +403,7 @@ test("Appearance keeps theme stable through color changes, navigation and repeat
       expect(contrast(colors.text, colors.surface)).toBeGreaterThanOrEqual(4.5);
     }
     await page.screenshot({ path: `screenshots/${info.project.name}/appearance-${theme}.png`, fullPage: true, animations: "disabled" });
-    await page.getByRole("link", { name: "Feed", exact: true }).click();
+    await page.getByRole("link", { name: "Forum", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await page.goto("/settings/appearance");
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);

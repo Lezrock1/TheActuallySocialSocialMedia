@@ -17,6 +17,7 @@ import { getTimeZone } from "../lib/theme.js";
 import StoriesBar from "../components/StoriesBar.js";
 import PostCard from "../components/PostCard.js";
 import ExternalPostCard from "../components/ExternalPostCard.js";
+import FeedSourceFilter from "../components/FeedSourceFilter.js";
 import Avatar from "../components/Avatar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
@@ -376,7 +377,7 @@ export default function FeedPage() {
           queryClient.invalidateQueries({ queryKey: ["stories"] }),
         ]);
       }} />
-      <PageHeader title="Feed" showSearch />
+      <PageHeader title="Forum" showSearch />
       <NavBar />
       <StoriesBar />
       <NowPlayingFeed />
@@ -538,10 +539,12 @@ export default function FeedPage() {
         </div>
       )}
 
+      <FeedSourceFilter onChanged={() => setPages([])} />
+
       {firstPageQuery.isLoading && <CardListSkeleton rows={3} />}
       {firstPageQuery.isError && (
         <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          Could not load the feed. Pull to refresh or try again.
+          Could not load the forum. Pull to refresh or try again.
         </p>
       )}
 

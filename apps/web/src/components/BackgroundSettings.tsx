@@ -19,7 +19,7 @@ import type {
 import { btnSecondary, card } from "../lib/ui.js";
 
 const pageLabels: Record<PageSurface, string> = {
-  feed: "Feed",
+  feed: "Forum",
   snaps: "Snaps",
   messages: "Messages",
   alerts: "Alerts",

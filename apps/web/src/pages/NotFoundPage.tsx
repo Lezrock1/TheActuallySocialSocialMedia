@@ -10,7 +10,7 @@ export default function NotFoundPage() {
           This link does not exist or has moved.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
-          <Link to="/" className="min-h-10 rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">Go to feed</Link>
+          <Link to="/" className="min-h-10 rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">Go to Forum</Link>
           <Link to="/dms" className="min-h-10 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Open messages</Link>
         </div>
       </section>

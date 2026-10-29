@@ -117,6 +117,43 @@ test("repost comments work for reposter and followers, notify and disappear when
   }
 });
 
+test("profiles list reposts for the reposter and followers and filter by source", async ({ page, browser }, info) => {
+  const leo = await database.user.findUniqueOrThrow({ where: { username: "leo" } });
+  const mia = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+  const stamp = `profile-${Date.now()}-${info.project.name}`;
+  const originalFollow = await database.follow.findUnique({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } } });
+  await database.follow.upsert({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } }, create: { followerId: mia.id, followeeId: leo.id }, update: {} });
+  const repost = await database.externalRepost.create({ data: {
+    userId: leo.id, platform: "mastodon", externalId: stamp, authorHandle: stamp, profileUrl: "https://example.com/profile",
+    text: `Profile repost ${stamp}`, url: `https://example.com/${stamp}`, publishedAt: new Date(),
+  } });
+  const recipient = await browser.newContext({ storageState: ".auth/mia.json", extraHTTPHeaders: { "x-forwarded-for": "198.51.100.64" } });
+  try {
+    await page.goto("/u/leo");
+    const card = page.locator("article").filter({ hasText: `Profile repost ${stamp}` });
+    await expect(card).toBeVisible();
+    await expect(card.getByRole("textbox", { name: "Write a comment", exact: true })).toBeVisible();
+    const filters = page.getByRole("group", { name: "Show on this profile", exact: true });
+    await filters.getByRole("button", { name: "InTouch posts", exact: true }).click();
+    await expect(card).toHaveCount(0);
+    await filters.getByRole("button", { name: "Bluesky reposts", exact: true }).click();
+    await expect(filters.getByRole("button", { name: "Bluesky reposts", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(card).toHaveCount(0);
+    await filters.getByRole("button", { name: "Mastodon reposts", exact: true }).click();
+    await expect(card).toBeVisible();
+    const timeline = async (client, filter = "all") => (await (await client.request.get(`${API}/users/leo/timeline?filter=${filter}`)).json()).items;
+    expect((await timeline(recipient)).some((item) => item.external?.repostId === repost.id)).toBe(true);
+    expect((await timeline(recipient, "intouch")).some((item) => item.external)).toBe(false);
+    await database.follow.deleteMany({ where: { followerId: mia.id, followeeId: leo.id } });
+    expect((await timeline(recipient)).some((item) => item.external)).toBe(false);
+  } finally {
+    await database.externalRepost.deleteMany({ where: { id: repost.id } });
+    if (originalFollow) await database.follow.upsert({ where: { followerId_followeeId: { followerId: mia.id, followeeId: leo.id } }, create: { followerId: mia.id, followeeId: leo.id }, update: {} });
+    else await database.follow.deleteMany({ where: { followerId: mia.id, followeeId: leo.id } });
+    await recipient.close();
+  }
+});
+
 test("post photos open full screen and close with Escape or the close button", async ({ page, context }) => {
   const media = await context.request.post(`${API}/media`, { multipart: { file: { name: "post-photo.png", mimeType: "image/png", buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)) } } });
   expect(media.status()).toBe(201);
@@ -235,7 +272,7 @@ for (const platform of ["bluesky", "mastodon", "youtube"]) {
       await expect(toggle).toHaveAttribute("aria-checked", "false");
       await page.reload();
       await expect(toggle).toHaveAttribute("aria-checked", "false");
-      await page.getByRole("region", { name: "Feed sources", exact: true }).scrollIntoViewIfNeeded();
+      await page.getByRole("region", { name: "Forum sources", exact: true }).scrollIntoViewIfNeeded();
       await page.screenshot({ path: `screenshots/${info.project.name}/feed-sources-${platform}.png`, animations: "disabled" });
     } finally {
       if (block) await database.blockedUser.deleteMany({ where: { id: block.id } });

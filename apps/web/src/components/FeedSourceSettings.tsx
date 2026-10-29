@@ -27,7 +27,7 @@ export default function FeedSourceSettings() {
   });
   return (
     <section aria-labelledby="feed-sources-heading" className="mb-4 border-y border-gray-200 py-3">
-      <h2 id="feed-sources-heading" className="mb-2 text-sm font-semibold text-gray-900">Feed sources</h2>
+      <h2 id="feed-sources-heading" className="mb-2 text-sm font-semibold text-gray-900">Forum sources</h2>
       <div className="flex min-h-11 items-center justify-between text-sm text-gray-700">
         <span>InTouch</span><span className="text-xs font-medium text-emerald-700">Always on</span>
       </div>
@@ -37,7 +37,7 @@ export default function FeedSourceSettings() {
           checked={!preferences.data.hiddenPlatforms.includes(platform)} disabled={save.isPending}
           onChange={(enabled) => save.mutate(enabled ? preferences.data.hiddenPlatforms.filter((value) => value !== platform)
             : [...preferences.data.hiddenPlatforms, platform])} />)}
-      {save.isError && <p role="alert" className="mt-2 text-xs text-red-600">Could not save feed sources. Try again.</p>}
+      {save.isError && <p role="alert" className="mt-2 text-xs text-red-600">Could not save forum sources. Try again.</p>}
     </section>
   );
 }

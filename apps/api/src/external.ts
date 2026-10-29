@@ -564,6 +564,24 @@ export async function externalFeedItems(userId: string, options: {
   ];
 }
 
+export async function repostFeedItems(
+  viewerId: string,
+  reposts: (ExternalRepost & { user: Parameters<typeof toPublicUser>[0] })[]
+): Promise<FeedItem[]> {
+  const ownReposts = await prisma.externalRepost.findMany({
+    where: { userId: viewerId }, select: { platform: true, externalId: true, url: true },
+  });
+  const mine = new Set(ownReposts.map((post) => JSON.stringify([post.platform, post.externalId, post.url])));
+  return reposts.map((post): FeedItem => ({
+    type: "external", id: `repost:${post.id}`, createdAt: post.createdAt.toISOString(),
+    external: {
+      ...repostContent(post),
+      repostedByMe: mine.has(JSON.stringify([post.platform, post.externalId, post.url])),
+      repostedBy: toPublicUser(post.user), repostId: post.id, commentCount: post.commentCount,
+    },
+  }));
+}
+
 export async function externalStoryItems(userId: string): Promise<ExternalStoryItem[]> {
   const { hiddenExternalPlatforms } = await prisma.user.findUniqueOrThrow({
     where: { id: userId }, select: { hiddenExternalPlatforms: true },
