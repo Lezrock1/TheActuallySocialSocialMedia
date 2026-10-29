@@ -1,4 +1,4 @@
-const SHELL_CACHE = "intouch-shell-v2";
+const SHELL_CACHE = "intouch-shell-v3";
 const MEDIA_CACHE = "intouch-media-v1";
 
 self.addEventListener("install", (event) => {
@@ -110,8 +110,8 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(self.registration.showNotification(payload.title || "InTouch", {
     body: payload.body || "You have a new notification.",
-    icon: "/icon.svg",
-    badge: "/icon.svg",
+    icon: "/icon-192.png",
+    badge: "/badge-96.png",
     tag: payload.tag,
     data: { url: payload.url || "/notifications" },
   }));

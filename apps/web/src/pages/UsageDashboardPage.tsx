@@ -45,7 +45,7 @@ export default function UsageDashboardPage() {
     <main className="mx-auto min-h-screen w-full max-w-4xl px-4 py-6 sm:px-8 sm:py-10">
       <header className="mb-8 flex items-center justify-between gap-4 border-b border-gray-200 pb-4">
         <Link to="/" className="flex items-center gap-2 text-sm font-bold text-gray-900 transition-colors hover:text-emerald-700">
-          <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-700 text-xs text-white">in</span>
+          <img src="/icon-192.png" alt="" aria-hidden="true" width={32} height={32} className="h-8 w-8 rounded-lg" />
           InTouch
         </Link>
         <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800">Public dashboard</span>

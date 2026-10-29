@@ -174,8 +174,8 @@ export async function deliverDueMeetupReminders(userId: string, now = Date.now()
     }
     await registration.showNotification("Meetup reminder", {
       body: "A meetup you saved is coming up.",
-      icon: "/icon.svg",
-      badge: "/icon.svg",
+      icon: "/icon-192.png",
+      badge: "/badge-96.png",
       tag: `local-meetup:${reminder.meetupId}`,
       data: { url: reminder.targetUrl },
     });
