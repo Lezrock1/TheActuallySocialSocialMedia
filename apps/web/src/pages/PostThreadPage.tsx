@@ -7,6 +7,7 @@ import { apiFetch } from "../lib/api.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
 import PageHeader from "../components/PageHeader.js";
+import MentionTextarea from "../components/MentionTextarea.js";
 import PullToRefresh from "../components/PullToRefresh.js";
 import PostCard from "../components/PostCard.js";
 import { ThreadSkeleton } from "../components/LoadingSkeleton.js";
@@ -69,7 +70,7 @@ export default function PostThreadPage() {
           </div>
 
           <form onSubmit={(e) => void onReply(e)} className={`${card} flex flex-col gap-2`}>
-            <textarea
+            <MentionTextarea
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
               placeholder="Write a reply..."

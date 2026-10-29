@@ -14,6 +14,7 @@ import {
   isBlocked,
 } from "../visibility.js";
 import { ownsMedia } from "../mediaAccess.js";
+import { rankMentionCandidates } from "../mentionSuggestions.js";
 
 const DEFAULT_LIMIT = 20;
 const USER_DIRECTORY_LIMIT = 20;
@@ -121,6 +122,44 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.send({ users: suggestions });
   });
+
+  // Fast, ranked suggestions for the @ picker while typing a post or comment.
+  app.get<{ Querystring: { q?: string } }>(
+    "/mentions/suggestions",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const query = (request.query.q ?? "").trim().replace(/^@/, "").slice(0, 30);
+      if (!/^[A-Za-z0-9_]*$/.test(query)) return reply.send({ users: [] });
+      const [following, blockedUserIds] = await Promise.all([
+        prisma.follow.findMany({ where: { followerId: request.userId! }, select: { followeeId: true } }),
+        getBlockedUserIds(request.userId!),
+      ]);
+      const blocked = new Set(blockedUserIds);
+      const followedIds = new Set(following.map((follow) => follow.followeeId).filter((id) => !blocked.has(id)));
+      const candidates = await prisma.user.findMany({
+        where: query
+          ? {
+              id: { not: request.userId!, notIn: blockedUserIds },
+              OR: [
+                { username: { startsWith: query, mode: "insensitive" as const } },
+                { displayName: { startsWith: query, mode: "insensitive" as const } },
+                {
+                  id: { in: [...followedIds] },
+                  OR: [
+                    { username: { contains: query, mode: "insensitive" as const } },
+                    { displayName: { contains: query, mode: "insensitive" as const } },
+                  ],
+                },
+              ],
+            }
+          : { id: { in: [...followedIds] } },
+        take: 60,
+      });
+      return reply.send({
+        users: rankMentionCandidates(candidates, query, followedIds).map(toPublicUser),
+      });
+    }
+  );
 
   app.get<{ Querystring: { q?: string; cursor?: string } }>(
     "/users",

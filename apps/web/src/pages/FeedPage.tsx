@@ -22,6 +22,7 @@ import FeedSourceFilter from "../components/FeedSourceFilter.js";
 import Avatar from "../components/Avatar.js";
 import PullToRefresh from "../components/PullToRefresh.js";
 import { CardListSkeleton } from "../components/LoadingSkeleton.js";
+import MentionTextarea from "../components/MentionTextarea.js";
 import { NowPlayingFeed } from "../components/music/MusicProfile.js";
 import { MusicMixFeed } from "../components/music/Mixes.js";
 import MusicControls, { MusicIcon } from "../components/music/MusicControls.js";
@@ -430,7 +431,7 @@ export default function FeedPage() {
       <form ref={formRef} onSubmit={onPost} className={`${card} mb-4 flex flex-col gap-2.5 border-gray-200/90 bg-white/95 shadow-[0_10px_28px_rgba(15,23,42,0.06)] !p-3`}>
         <div className="flex items-start gap-2.5">
           {user && <span className="mt-0.5 shrink-0"><Avatar avatarKey={user.avatarKey} username={user.username} size={36} /></span>}
-          <textarea
+          <MentionTextarea
             ref={textareaRef}
             value={text}
             onChange={(e) => {

@@ -389,7 +389,7 @@ export default function SnapsPage() {
                   aria-busy={!!snap && openingSnapId === snap.id}
                   className="flex min-h-16 min-w-0 flex-1 items-center gap-3 rounded-xl px-1 text-left transition-[background-color,transform] duration-150 active:scale-[0.985] active:bg-gray-50"
                 >
-                  <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white p-0.5 transition-shadow duration-300 ${snap ? "ring-2 ring-red-500 ring-offset-1" : ""}`}>
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white p-0.5">
                     <Avatar avatarKey={friend.avatarKey} username={friend.username} size={44} />
                   </span>
                   <span className="min-w-0 flex-1">

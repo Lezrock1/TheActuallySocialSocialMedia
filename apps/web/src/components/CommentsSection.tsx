@@ -12,6 +12,7 @@ import ProgressiveImage from "./ProgressiveImage.js";
 import ImageLightbox from "./ImageLightbox.js";
 import Avatar from "./Avatar.js";
 import LinkedMentions from "./LinkedMentions.js";
+import MentionTextarea from "./MentionTextarea.js";
 
 async function fetchComments(postId: string, path: string): Promise<Comment[]> {
   const res = await apiFetch<{ comments: Comment[] }>(path);
@@ -372,7 +373,7 @@ export default function CommentsSection({
                 )}
               </button>
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onSelectImage(e)} />
-              <textarea
+              <MentionTextarea
                 ref={inputRef}
               value={text}
               onChange={(e) => setText(e.target.value)}

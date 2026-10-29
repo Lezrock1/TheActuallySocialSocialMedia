@@ -262,6 +262,38 @@ test("a new Snap appears in the list live without reloading", async ({ page, bro
   }
 });
 
+test("typing @ in a post or comment suggests people and inserts the choice", async ({ page, context }) => {
+  const list = page.getByRole("listbox", { name: "Mention suggestions" });
+  await page.goto("/");
+  const composer = page.locator("form textarea").first();
+  await composer.click();
+  await composer.pressSequentially("Hi @mi");
+  await expect(list.getByRole("option", { name: /@mia/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(composer).toHaveValue("Hi @mia ");
+  await expect(list).toHaveCount(0);
+  await composer.pressSequentially("mail@mi");
+  await expect(list).toHaveCount(0);
+  await composer.fill("");
+  await composer.pressSequentially("@m");
+  await expect(list).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+
+  const response = await context.request.post(`${API}/posts`, { data: { text: "Mention target post" } });
+  expect(response.status()).toBe(201);
+  const { post } = await response.json();
+  try {
+    await page.goto(`/post/${post.id}`);
+    const comment = page.getByRole("textbox", { name: "Write a comment" }).first();
+    await comment.click();
+    await comment.pressSequentially("Thanks @mi");
+    await list.getByRole("option", { name: /@mia/ }).click();
+    await expect(comment).toHaveValue("Thanks @mia ");
+    await expect(comment).toBeFocused();
+  } finally { await context.request.delete(`${API}/posts/${post.id}`); }
+});
+
 test("post photos open full screen and close with Escape or the close button", async ({ page, context }) => {
   const media = await context.request.post(`${API}/media`, { multipart: { file: { name: "post-photo.png", mimeType: "image/png", buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)) } } });
   expect(media.status()).toBe(201);
