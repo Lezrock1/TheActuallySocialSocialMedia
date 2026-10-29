@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -39,7 +39,17 @@ const MODE_CONFIG: Record<
   },
 };
 
-export default function AiChatPanel({ postId, externalPost }: { postId?: string; externalPost?: ExternalFeedPost }) {
+export default function AiChatPanel({
+  postId,
+  externalPost,
+  date,
+  actions,
+}: {
+  postId?: string;
+  externalPost?: ExternalFeedPost;
+  date: ReactNode;
+  actions?: ReactNode;
+}) {
   const queryClient = useQueryClient();
   const panelKey = postId ?? `external-${externalPost?.url ?? "post"}`;
   const [expanded, setExpanded] = useState(false);
@@ -170,17 +180,23 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
   }
 
   return (
-    <div className="flex w-full flex-col items-end">
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-        aria-controls={`ai-modes-${panelKey}`}
-        className="flex min-h-9 shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-      >
-        AI Tools
-        <span aria-hidden="true" className="text-gray-400">{expanded ? "−" : "+"}</span>
-      </button>
+    <div className="mt-3 w-full">
+      <div className="flex h-9 min-w-0 items-center justify-between gap-2">
+        {date}
+        <div className="flex shrink-0 items-center gap-2">
+          {actions}
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            aria-controls={`ai-modes-${panelKey}`}
+            className="flex h-9 shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            AI Tools
+            <span aria-hidden="true" className="text-gray-400">{expanded ? "−" : "+"}</span>
+          </button>
+        </div>
+      </div>
       <div
         id={`ai-modes-${panelKey}`}
         aria-hidden={!expanded}
@@ -188,7 +204,7 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
           expanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
         }`}
       >
-        <div className="mt-1 flex flex-wrap justify-end gap-1">
+        <div className="mt-1 flex flex-wrap justify-start gap-1">
           {providers.length === 0 ? null :
             (Object.keys(MODE_CONFIG) as AiMode[]).map((mode) => (
               <button
@@ -210,15 +226,15 @@ export default function AiChatPanel({ postId, externalPost }: { postId?: string;
       </div>
 
       {expanded && providersLoading && (
-        <div className="mt-2 flex justify-end" aria-hidden="true">
+        <div className="mt-2 flex" aria-hidden="true">
           <InlineSkeletonText width="w-24" />
         </div>
       )}
       {expanded && providersError && (
-        <p className="mt-2 text-right text-xs text-red-600">Could not load AI providers.</p>
+        <p className="mt-2 text-xs text-red-600">Could not load AI providers.</p>
       )}
       {expanded && !providersLoading && !providersError && providers.length === 0 && (
-        <p className="mt-2 text-right text-xs text-gray-600">
+        <p className="mt-2 text-xs text-gray-600">
           No providers configured. <Link to="/settings/ai" className="underline">Set up AI Tools</Link>.
         </p>
       )}

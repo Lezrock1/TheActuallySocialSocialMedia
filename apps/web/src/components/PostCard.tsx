@@ -175,8 +175,9 @@ function PostCard({
         </button>
       )}
       {photoOpen && post.imageKey && <ImageLightbox mediaKey={post.imageKey} onClose={() => setPhotoOpen(false)} />}
-      <div className="relative mt-3">
-        <div className="flex min-w-0 items-center justify-between gap-2">
+      <AiChatPanel
+        postId={post.id}
+        date={
           <time dateTime={post.createdAt} className="shrink-0 text-[11px] text-gray-400">
             {new Date(post.createdAt).toLocaleString("en-US", {
               timeZone: getTimeZone(),
@@ -186,25 +187,24 @@ function PostCard({
               minute: "2-digit",
             })}
           </time>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setSelfieOpen(true)}
-              aria-label="React with a selfie"
-              title="React with a selfie"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-[background-color,transform] hover:bg-gray-50 active:scale-90"
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="8.5" />
-                <circle cx="9" cy="10" r="0.4" fill="currentColor" />
-                <circle cx="15" cy="10" r="0.4" fill="currentColor" />
-                <path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8" />
-              </svg>
-            </button>
-            <AiChatPanel postId={post.id} />
-          </div>
-        </div>
-      </div>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => setSelfieOpen(true)}
+            aria-label="React with a selfie"
+            title="React with a selfie"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-[background-color,transform] hover:bg-gray-50 active:scale-90"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="8.5" />
+              <circle cx="9" cy="10" r="0.4" fill="currentColor" />
+              <circle cx="15" cy="10" r="0.4" fill="currentColor" />
+              <path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8" />
+            </svg>
+          </button>
+        }
+      />
       {selfieOpen && (
         <SelfieReaction
           postId={post.id}
