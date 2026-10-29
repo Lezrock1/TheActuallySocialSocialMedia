@@ -14,6 +14,8 @@ import { requireAuth } from "../auth/middleware.js";
 import { env } from "../env.js";
 import { encryptSecret, decryptSecret } from "../ai/crypto.js";
 import { createAdapter } from "../ai/adapters.js";
+import { buildWebSearchContext } from "../ai/webSearch.js";
+import type { AiProvider } from "../ai/adapters.js";
 import { assertProviderUrlAllowed, UnsafeUrlError } from "../ai/safeHttp.js";
 import { byUser, createRateLimiter, rateLimitBy } from "../rateLimit.js";
 import { canViewContent } from "../visibility.js";
@@ -132,6 +134,27 @@ async function regenerateFactCheckSummary(
     where: { id: postId },
     data: { factCheckSummary: summary, factCheckCount: results.length },
   });
+}
+
+// System prompt in the user's translation language; models without built-in search get server-side web results.
+async function promptWithLanguageAndWeb(
+  adapter: AiProvider,
+  userId: string,
+  mode: AiMode,
+  context: string,
+  task: string
+): Promise<string> {
+  const preferences = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { translationLanguage: true },
+  });
+  const language =
+    TRANSLATION_LANGUAGES.find((option) => option.code === preferences?.translationLanguage) ??
+    TRANSLATION_LANGUAGES[0];
+  const webContext = adapter.nativeWebSearch
+    ? undefined
+    : await buildWebSearchContext(adapter, context, task, language.code);
+  return systemPromptForMode(mode, language.label, webContext);
 }
 
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
@@ -363,7 +386,6 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "Provider not found" });
       }
 
-      const systemPrompt = systemPromptForMode(mode);
       const initialUserMessage = post
         ? buildInitialUserMessage(
             mode,
@@ -384,12 +406,19 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
           model: config.model,
           apiKey: apiKeyForConfig(config),
         });
+        const systemPrompt = await promptWithLanguageAndWeb(
+          adapter,
+          request.userId!,
+          mode,
+          initialUserMessage,
+          mode === "custom" ? customPrompt! : mode === "factcheck" ? "Fact-check this post." : "Explain this post."
+        );
         const reply1 = await adapter.chat(
           [
             { role: "system", content: systemPrompt },
             { role: "user", content: initialUserMessage },
           ],
-          { webSearch: mode === "factcheck" }
+          { webSearch: true }
         );
 
         const conversation = await prisma.aiConversation.create({
@@ -481,7 +510,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const history: ChatMessage[] = [
-        { role: "system", content: systemPromptForMode(conversation.mode as AiMode) },
+        { role: "system", content: "" },
         ...conversation.messages.map((m) => ({
           role: m.role as "user" | "assistant",
           content: m.content,
@@ -495,7 +524,14 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
           model: config.model,
           apiKey: apiKeyForConfig(config),
         });
-        const replyText = await adapter.chat(history, { webSearch: conversation.mode === "factcheck" });
+        history[0].content = await promptWithLanguageAndWeb(
+          adapter,
+          request.userId!,
+          conversation.mode as AiMode,
+          conversation.messages[0]?.content ?? "",
+          parsed.data.text
+        );
+        const replyText = await adapter.chat(history, { webSearch: true });
 
         const [, assistantMessage] = await prisma.$transaction([
           prisma.aiConversationMessage.create({

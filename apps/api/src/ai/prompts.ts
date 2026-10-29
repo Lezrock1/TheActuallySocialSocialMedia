@@ -15,15 +15,14 @@ const FACTCHECK_SYSTEM_PROMPT =
   "facts (names, numbers, dates); then a final line listing the key sources used (outlet " +
   "names, and URLs if known). If everything is accurate, say so and name what confirms it. " +
   "If evidence is insufficient, say precisely what could not be verified. Be neutral, " +
-  "independent of political affiliation, and keep it under 220 words. Reply in the " +
-  "language of the post.";
+  "independent of political affiliation, and keep it under 220 words.";
 
 const EXPLAIN_SYSTEM_PROMPT =
   "You are a helpful assistant that explains social media posts, including " +
   "the main point and any essential technical terms or context. Start with a direct " +
   "one- or two-sentence explanation, then use at most 3 short bullets if useful. " +
   "Avoid repeating the post, long numbered sections, and unrelated background. Keep " +
-  "the answer under 100 words, neutral, and reply in the language of the post.";
+  "the answer under 120 words, neutral.";
 
 const CUSTOM_BASE_SYSTEM_PROMPT =
   "You are an assistant within a social media platform, helping a user understand " +
@@ -41,9 +40,18 @@ export const FACTCHECK_SUMMARY_SYSTEM_PROMPT =
   "when the claim is materially misleading or only partly correct; and UNCERTAIN when " +
   "evidence is insufficient or the fact-checks disagree. After that line, summarize the " +
   "results in 1-3 concise, neutral sentences: where they agree and where they differ. " +
-  "Do not repeat each result; capture only the essence. Reply in the language of the results.";
+  "Do not repeat each result; capture only the essence. Reply in english.";
 
-export function systemPromptForMode(mode: AiMode): string {
+export function systemPromptForMode(mode: AiMode, language?: string, webContext?: string): string {
+  const base = modePrompt(mode);
+  return [
+    base,
+    language ? `Always write your entire reply in ${language}, regardless of the language of the post or of the sources.` : "",
+    webContext ?? "",
+  ].filter(Boolean).join("\n\n");
+}
+
+function modePrompt(mode: AiMode): string {
   switch (mode) {
     case "factcheck":
       return FACTCHECK_SYSTEM_PROMPT;

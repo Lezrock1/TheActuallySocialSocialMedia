@@ -17,6 +17,7 @@ export interface ChatOptions {
 }
 
 export interface AiProvider {
+  readonly nativeWebSearch?: boolean;
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<string>;
 }
 
@@ -40,12 +41,20 @@ async function postToProvider(url: string, headers: Record<string, string>, payl
 // Covers OpenAI itself, and anything exposing an OpenAI-compatible
 // /chat/completions endpoint: Ollama (local), OpenRouter, Groq, etc.
 export class OpenAICompatibleAdapter implements AiProvider {
-  constructor(private creds: AiProviderCredentials) {}
+  readonly nativeWebSearch: boolean;
+
+  constructor(private creds: AiProviderCredentials) {
+    try {
+      this.nativeWebSearch = /(^|\.)openrouter\.ai$/i.test(new URL(creds.baseUrl).hostname);
+    } catch {
+      this.nativeWebSearch = false;
+    }
+  }
 
   async chat(messages: ChatMessage[], options?: ChatOptions): Promise<string> {
     const url = `${this.creds.baseUrl.replace(/\/$/, "")}/chat/completions`;
     // OpenRouter's web plugin grounds the answer in live search results.
-    const useWeb = options?.webSearch && /(^|\.)openrouter\.ai$/i.test(new URL(this.creds.baseUrl).hostname);
+    const useWeb = options?.webSearch && this.nativeWebSearch;
     const text = await postToProvider(
       url,
       this.creds.apiKey ? { Authorization: `Bearer ${this.creds.apiKey}` } : {},
