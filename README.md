@@ -96,6 +96,7 @@ For non-local deployments, generate independent secrets (for example, run `opens
 | `AI_KEY_ENCRYPTION_SECRET` | Key used to encrypt stored AI API keys (AES-256-GCM) | **Must be replaced before any real deployment** |
 | `BOOTSTRAP_INVITE_CODE` | One-time invite used only to register the first account in a fresh database | **Set a random value of at least 32 characters; remove it after the first account is created** |
 | `OPENROUTER_API_KEY` | Optional shared key for the default OpenRouter Free provider; users can also add personal keys in AI Tools | Leave empty to require each user to provide a key |
+| `OPENAI_API_KEY` and `OPENAI_MODEL` | Optional shared OpenAI provider ("InTouch AI") for every member; it becomes the default for members who were still on the shared free default. `OPENAI_MODEL` is the model ID (default `gpt-6-luna` in `compose.production.yaml`) | Set the key to enable it |
 | `PORT` | API port | `4000` |
 | `CORS_ORIGIN` | Allowed frontend origin | `http://localhost:5173` |
 | `NODE_ENV` | Environment | `development` |
@@ -167,7 +168,7 @@ There are currently **no automated tests** (`pnpm --filter @app/api test` invoke
 ## External Services & Costs
 
 - **No required third-party services.** Postgres and SeaweedFS run locally via Docker, free of charge.
-- **AI tools:** OpenRouter Free is configured by default for each user. It needs a shared `OPENROUTER_API_KEY` from the operator or a personal API key from the user. OpenRouter controls free-model availability and limits; provider policies apply to submitted content. Users may instead configure a local Ollama model or another provider. Personal API keys are stored encrypted server-side.
+- **AI tools:** When the operator sets `OPENAI_API_KEY` and `OPENAI_MODEL`, every member gets **InTouch AI** (OpenAI, shared key) as the default provider; otherwise OpenRouter Free is configured by default and needs a shared `OPENROUTER_API_KEY` or a personal API key. Provider policies apply to submitted content. Users may instead configure a local Ollama model or another provider. Personal API keys are stored encrypted server-side.
 
 ## Data Handling
 
@@ -178,9 +179,9 @@ There are currently **no automated tests** (`pnpm --filter @app/api test` invoke
 - New direct/group message content is encrypted in the sender's browser; older messages remain plaintext. Message metadata and device public keys are server-readable. Device private keys stay in browser IndexedDB (see [Open Items](#open-items))
 - Uploaded images (in the configured S3-compatible storage)
 - Invitation token hashes and inviter/expiry/redemption metadata; raw invite codes are only returned once to the inviter and are not stored
-- User-configured AI provider settings; personal API keys are stored AES-256-GCM encrypted and never returned to the client in plaintext. A shared OpenRouter key, if configured, remains in the server environment.
+- User-configured AI provider settings; personal API keys are stored AES-256-GCM encrypted and never returned to the client in plaintext. A shared OpenAI or OpenRouter key, if configured, remains in the server environment.
 
-**What is sent to third parties:** when a user actively triggers Fact-check/Explain/Ask on a post, the post text (plus author and timestamp) is sent to the selected AI provider. The default provider is OpenRouter Free unless the user selects another provider. When "share anonymously" (fact-check transparency log) is used, a generated summary is additionally stored server-side and shown to other users.
+**What is sent to third parties:** when a user actively triggers Fact-check/Explain/Ask on a post, the post text (plus author and timestamp) is sent to the selected AI provider. The default provider is InTouch AI (OpenAI) when the operator configured it, otherwise OpenRouter Free, unless the user selects another provider. When "share anonymously" (fact-check transparency log) is used, a generated summary is additionally stored server-side and shown to other users.
 
 Running this software (self-hosting) carries its own data-protection obligations toward your users depending on your jurisdiction (e.g. GDPR) — this is not covered by this repository and is the responsibility of whoever operates it.
 

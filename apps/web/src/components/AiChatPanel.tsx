@@ -273,7 +273,7 @@ export default function AiChatPanel({
               </select>
               {providers.find((provider) => provider.id === providerId)?.apiKeySource === "missing" && (
                 <p className="text-xs text-amber-700">
-                  Add an API key in <Link to="/settings/ai" className="underline">AI Tools</Link> or ask the server admin to configure a shared OpenRouter key.
+                  Add an API key in <Link to="/settings/ai" className="underline">AI Tools</Link> or ask the server admin to configure a shared key.
                 </p>
               )}
               {activeMode === "custom" && (

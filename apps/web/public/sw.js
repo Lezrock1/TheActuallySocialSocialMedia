@@ -1,10 +1,10 @@
-const SHELL_CACHE = "intouch-shell-v3";
+const SHELL_CACHE = "intouch-shell-v4";
 const MEDIA_CACHE = "intouch-media-v1";
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(SHELL_CACHE);
-    await cache.addAll(["/", "/index.html", "/manifest.webmanifest", "/icon.svg", "/apple-touch-icon.png"]);
+    await cache.addAll(["/", "/index.html", "/manifest.webmanifest", "/icon.svg?v=2", "/apple-touch-icon.png?v=2"]);
     await self.skipWaiting();
   })());
 });
@@ -110,8 +110,8 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(self.registration.showNotification(payload.title || "InTouch", {
     body: payload.body || "You have a new notification.",
-    icon: "/icon-192.png",
-    badge: "/badge-96.png",
+    icon: "/icon-192.png?v=2",
+    badge: "/badge-96.png?v=2",
     tag: payload.tag,
     data: { url: payload.url || "/notifications" },
   }));

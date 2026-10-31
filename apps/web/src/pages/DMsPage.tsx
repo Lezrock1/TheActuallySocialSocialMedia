@@ -1555,7 +1555,7 @@ export default function DMsPage() {
         </div>
 
         {!activeId && <section aria-label="No chat selected" className="chat-empty hidden min-h-[34rem] flex-col items-center justify-center border-l border-gray-200 lg:flex">
-          <img src="/icon-192.png" alt="" aria-hidden="true" width={80} height={80} className="mb-4 h-20 w-20 rounded-[22%] shadow-lg" />
+          <img src="/icon-192.png?v=2" alt="" aria-hidden="true" width={80} height={80} className="mb-4 h-20 w-20 rounded-[22%] shadow-lg" />
           <h2 className="text-xl font-semibold text-gray-900">InTouch</h2>
           <p className="mt-2 text-sm text-gray-500">Chats</p>
         </section>}

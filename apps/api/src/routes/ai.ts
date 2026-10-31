@@ -14,6 +14,13 @@ import { requireAuth } from "../auth/middleware.js";
 import { env } from "../env.js";
 import { encryptSecret, decryptSecret } from "../ai/crypto.js";
 import { createAdapter } from "../ai/adapters.js";
+import {
+  OPENAI_BASE_URL,
+  PLATFORM_AI_LABEL,
+  isPlatformOpenAiConfig,
+  mayBorrowPlatformKey,
+  platformOpenAiEnabled,
+} from "../ai/platformProvider.js";
 import { buildWebSearchContext } from "../ai/webSearch.js";
 import type { AiProvider } from "../ai/adapters.js";
 import { assertProviderUrlAllowed, UnsafeUrlError } from "../ai/safeHttp.js";
@@ -67,6 +74,43 @@ function isSharedFreeModelConfig(config: {
   );
 }
 
+const platformOpenAi = () => ({ apiKey: env.openAiApiKey, model: env.openAiModel });
+
+// Gives the user the shared OpenAI provider; people still on the shared free default switch to it once.
+async function ensurePlatformProvider(userId: string): Promise<void> {
+  if (!platformOpenAiEnabled(platformOpenAi())) return;
+  const configs = await prisma.aiProviderConfig.findMany({
+    where: { userId },
+    orderBy: { createdAt: "asc" },
+  });
+  const existing = configs.find((config) =>
+    config.label === PLATFORM_AI_LABEL &&
+    !config.encryptedApiKey &&
+    config.baseUrl.replace(/\/$/, "") === OPENAI_BASE_URL
+  );
+  if (existing) {
+    if (existing.model !== env.openAiModel) {
+      await prisma.aiProviderConfig.update({ where: { id: existing.id }, data: { model: env.openAiModel! } });
+    }
+    return;
+  }
+  const currentDefault = configs.find((config) => config.isDefault);
+  const onSharedDefault = !currentDefault || (!currentDefault.encryptedApiKey && isSharedFreeModelConfig(currentDefault));
+  if (onSharedDefault) {
+    await prisma.aiProviderConfig.updateMany({ where: { userId }, data: { isDefault: false } });
+  }
+  await prisma.aiProviderConfig.create({
+    data: {
+      userId,
+      label: PLATFORM_AI_LABEL,
+      type: "openai_compatible",
+      baseUrl: OPENAI_BASE_URL,
+      model: env.openAiModel!,
+      isDefault: onSharedDefault,
+    },
+  });
+}
+
 function toPublicConfig(config: {
   id: string;
   label: string;
@@ -85,7 +129,7 @@ function toPublicConfig(config: {
     isDefault: config.isDefault,
     apiKeySource: config.encryptedApiKey
       ? "personal"
-      : isSharedFreeModelConfig(config) && env.openRouterApiKey
+      : (isSharedFreeModelConfig(config) && env.openRouterApiKey) || isPlatformOpenAiConfig(config, platformOpenAi())
         ? "platform"
         : "missing",
   };
@@ -98,6 +142,7 @@ function apiKeyForConfig(config: {
   encryptedApiKey: string | null;
 }): string | undefined {
   if (config.encryptedApiKey) return decryptSecret(config.encryptedApiKey);
+  if (isPlatformOpenAiConfig(config, platformOpenAi())) return env.openAiApiKey;
   if (isSharedFreeModelConfig(config)) {
     return env.openRouterApiKey;
   }
@@ -194,6 +239,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
+      await ensurePlatformProvider(request.userId!);
       const config = await prisma.aiProviderConfig.findFirst({
         where: { userId: request.userId!, isDefault: true },
       }) ?? await prisma.aiProviderConfig.findFirst({
@@ -233,6 +279,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     "/ai/providers",
     { preHandler: requireAuth },
     async (request, reply) => {
+      await ensurePlatformProvider(request.userId!);
       const configs = await prisma.aiProviderConfig.findMany({
         where: { userId: request.userId! },
         orderBy: { createdAt: "asc" },
@@ -277,6 +324,9 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       const { apiKey, isDefault, ...rest } = parsed.data;
 
       const urlError = await checkProviderUrl(rest.baseUrl);
+      if (!mayBorrowPlatformKey(rest, Boolean(apiKey), null, platformOpenAi())) {
+        return reply.code(400).send({ error: "Add your own API key to use OpenAI with this model." });
+      }
       if (urlError) return reply.code(400).send({ error: urlError });
 
       if (isDefault) {
@@ -332,6 +382,19 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       if (rest.baseUrl !== undefined) {
         const urlError = await checkProviderUrl(rest.baseUrl);
         if (urlError) return reply.code(400).send({ error: urlError });
+      }
+      const hasOwnKey = apiKey !== undefined ? Boolean(apiKey) : Boolean(existing.encryptedApiKey);
+      if (!mayBorrowPlatformKey(
+        {
+          type: rest.type ?? existing.type,
+          baseUrl: rest.baseUrl ?? existing.baseUrl,
+          model: rest.model ?? existing.model,
+        },
+        hasOwnKey,
+        { type: existing.type, baseUrl: existing.baseUrl, model: existing.model, hasOwnKey: Boolean(existing.encryptedApiKey) },
+        platformOpenAi()
+      )) {
+        return reply.code(400).send({ error: "Add your own API key to use OpenAI with this model." });
       }
 
       if (isDefault) {

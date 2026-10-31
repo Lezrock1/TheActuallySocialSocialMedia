@@ -745,6 +745,20 @@ test("media permission sharing reuses compatible tracks across differing constra
   });
 });
 
+test("shared OpenAI provider is everyone's default and cannot be copied without an own key", async ({ context }) => {
+  test.skip(!process.env.OPENAI_API_KEY || !process.env.OPENAI_MODEL, "needs OPENAI_API_KEY and OPENAI_MODEL on the API");
+  const model = process.env.OPENAI_MODEL;
+  const providers = (await (await context.request.get(`${API}/ai/providers`)).json()).providers;
+  expect(providers.find((provider) => provider.label === "InTouch AI")).toMatchObject({ isDefault: true, model, apiKeySource: "platform" });
+  expect(providers.filter((provider) => provider.isDefault)).toHaveLength(1);
+  const copy = { label: "My OpenAI", type: "openai_compatible", baseUrl: "https://api.openai.com/v1", model };
+  expect((await context.request.post(`${API}/ai/providers`, { data: copy })).status()).toBe(400);
+  const own = await context.request.post(`${API}/ai/providers`, { data: { ...copy, apiKey: "sk-own-test-key" } });
+  expect(own.status()).toBe(201);
+  expect((await own.json()).provider.apiKeySource).toBe("personal");
+  await context.request.delete(`${API}/ai/providers/${(await own.json()).provider.id}`);
+});
+
 test("loading placeholders mirror the page that is loading", async ({ page }) => {
   const cases = [
     { route: "/notifications", selector: ".skeleton-card > div", count: 6 },

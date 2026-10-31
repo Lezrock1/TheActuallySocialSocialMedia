@@ -37,6 +37,9 @@ export const env = {
   jwtSecret,
   bootstrapInviteCode,
   openRouterApiKey: process.env.OPENROUTER_API_KEY,
+  // Shared default provider for everyone; needs both values.
+  openAiApiKey: process.env.OPENAI_API_KEY || undefined,
+  openAiModel: process.env.OPENAI_MODEL || undefined,
   webPushPublicKey,
   webPushPrivateKey,
   webPushSubject: process.env.WEB_PUSH_SUBJECT ?? "mailto:admin@intouchsocial.com",

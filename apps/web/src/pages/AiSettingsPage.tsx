@@ -99,10 +99,10 @@ export default function AiSettingsPage() {
       <PageHeader title="AI Tools" />
       <NavBar />
       <p className="mb-3 text-sm text-gray-600">
-        OpenRouter Free is your default. OpenRouter selects an available free model; availability and limits are set by OpenRouter. You can add your own provider or API key below. Personal keys are encrypted at rest on this server.
+        Your default provider answers AI requests. InTouch AI (shared key from the server) is your default when it is available; otherwise OpenRouter Free is. You can add your own provider or API key below. Personal keys are encrypted at rest on this server.
       </p>
       <p className="mb-4 text-xs text-gray-500">
-        Post content and prompts are sent to the provider you select. Add <code>OPENROUTER_API_KEY</code> on the server to provide a shared default key, or enter your own key here.
+        Post content and prompts are sent to the provider you select. The server admin can provide a shared key, or you can enter your own here.
       </p>
 
       <div className="mb-6 flex flex-col gap-2">
