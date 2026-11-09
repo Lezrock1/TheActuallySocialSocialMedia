@@ -39,6 +39,7 @@ export default function RefreshIndicatorGlyph({
       viewBox="0 0 180 120"
       width={size}
       height={size * 2 / 3}
+      className={`refresh-bird-glyph refresh-bird-glyph-${bird}`}
       style={{ color }}
     >
       {bird === "swallow" && (
@@ -149,6 +150,16 @@ export default function RefreshIndicatorGlyph({
           <path d="M123 39c19-14 43-13 49-2-4 13-17 28-38 33l-20-8Z" fill="#e6b849" />
           <path d="M145 35c10-4 20-3 27 2-9 2-16 6-23 11Z" fill="#db6349" />
           <circle cx="119" cy="42" r="1.6" fill="#f4f0e2" />
+        </g>
+      )}
+      {bird === "flappy" && (
+        <g shapeRendering="crispEdges">
+          <path d="M50 40h10V30h40v10h20v10h10v10h20v10h-20v10h-10v10H70V80H50V70H40V50h10Z" fill="currentColor" />
+          <path className={wingClassName} d="M90 70H80V60H70V50H60V40H50V30h30v10h10v10h10v10H90Z" fill="#f2cb68" />
+          <path d="M120 50h20v10h10v10h-20v-10h-10Z" fill="#db7658" />
+          <path d="M100 40h10v10h-10Z" fill="#f5f3ed" />
+          <path d="M110 40h5v5h-5Z" fill="#263a43" />
+          <path d="M70 70h10v5H70Z" fill="#d5eee3" />
         </g>
       )}
     </svg>

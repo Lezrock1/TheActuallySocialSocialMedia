@@ -11,6 +11,7 @@ export const REFRESH_BIRDS = [
   { id: "woodpecker", label: "Woodpecker" },
   { id: "puffin", label: "Puffin" },
   { id: "toucan", label: "Toucan" },
+  { id: "flappy", label: "Flappy Bird" },
   { id: "classic", label: "Classic arrows" },
 ] as const;
 
@@ -46,6 +47,7 @@ const BIRD_COLORS: Record<RefreshBird, string> = {
   woodpecker: "#303938",
   puffin: "#252f38",
   toucan: "#263536",
+  flappy: "#168f9a",
   classic: "#c026d3",
 };
 

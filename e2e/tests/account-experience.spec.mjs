@@ -469,6 +469,54 @@ test("refresh indicator bird and color preferences persist and apply to the feed
   await expect(page.getByRole("radiogroup", { name: "Refresh indicator", exact: true }).getByRole("radio", { name: "Classic arrows", exact: true })).toHaveAttribute("aria-checked", "true");
 });
 
+test("every refresh bird visibly animates its wing while pulled", async ({ page }) => {
+  await page.goto("/");
+  const indicator = page.locator(".refresh-bird-indicator").first();
+  const birds = ["swallow", "swift", "hummingbird", "kingfisher", "robin", "crane", "falcon", "woodpecker", "puffin", "toucan", "flappy"];
+  for (const bird of birds) {
+    await page.evaluate((selectedBird) => {
+      localStorage.setItem("intouch:refresh-appearance", JSON.stringify({ bird: selectedBird, color: null }));
+      window.dispatchEvent(new Event("intouch:refresh-appearance-change"));
+    }, bird);
+    await expect(indicator).toHaveAttribute("data-refresh-bird", bird);
+    await page.evaluate(() => {
+      const target = document.body;
+      const dispatchTouch = (type, touches, changedTouches) => {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperties(event, {
+          touches: { value: touches },
+          targetTouches: { value: touches },
+          changedTouches: { value: changedTouches },
+        });
+        target.dispatchEvent(event);
+      };
+      const start = { clientX: 120, clientY: 100 };
+      const armed = { clientX: 120, clientY: 220 };
+      dispatchTouch("touchstart", [start], [start]);
+      dispatchTouch("touchmove", [armed], [armed]);
+    });
+    await expect(indicator).toHaveAttribute("aria-label", "Release to refresh");
+    const wing = indicator.locator(".refresh-bird-wing");
+    await expect(wing).toHaveClass(/refresh-bird-wing-fast/);
+    await expect(wing).toHaveCSS("animation-name", "refresh-bird-flap");
+    await page.evaluate(() => {
+      const target = document.body;
+      const dispatchTouch = (type, touches, changedTouches) => {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperties(event, {
+          touches: { value: touches },
+          targetTouches: { value: touches },
+          changedTouches: { value: changedTouches },
+        });
+        target.dispatchEvent(event);
+      };
+      const reset = { clientX: 120, clientY: 100 };
+      dispatchTouch("touchmove", [reset], [reset]);
+      dispatchTouch("touchend", [], [reset]);
+    });
+  }
+});
+
 test("mobile list preferences persist and chat ordering lives in Settings", async ({ page }, info) => {
   await page.goto("/notifications");
   const unread = page.getByRole("switch", { name: "Unread only", exact: true });
