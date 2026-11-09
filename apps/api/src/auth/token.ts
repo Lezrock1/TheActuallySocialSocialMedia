@@ -4,6 +4,7 @@ import { env } from "../env.js";
 
 export interface AuthTokenPayload {
   userId: string;
+  authVersion?: number;
 }
 
 export function signAuthToken(payload: AuthTokenPayload): string {

@@ -43,6 +43,8 @@ export const env = {
   webPushPublicKey,
   webPushPrivateKey,
   webPushSubject: process.env.WEB_PUSH_SUBJECT ?? "mailto:admin@intouchsocial.com",
+  resendApiKey: process.env.RESEND_API_KEY || undefined,
+  authEmailFrom: process.env.AUTH_EMAIL_FROM || undefined,
   // used to encrypt user-supplied AI provider API keys at rest
   aiKeyEncryptionSecret,
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",

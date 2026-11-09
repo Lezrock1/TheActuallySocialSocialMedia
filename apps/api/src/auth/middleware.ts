@@ -18,11 +18,16 @@ export async function requireAuth(
     const payload = verifyAuthToken(token);
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
-      select: { id: true },
+      select: { id: true, authVersion: true },
     });
     if (!user) {
       reply.clearCookie(COOKIE_NAME, { path: "/" });
       reply.code(401).send({ error: "Account no longer exists" });
+      return;
+    }
+    if ((payload.authVersion ?? 0) !== user.authVersion) {
+      reply.clearCookie(COOKIE_NAME, { path: "/" });
+      reply.code(401).send({ error: "Session expired. Please sign in again." });
       return;
     }
     request.userId = payload.userId;

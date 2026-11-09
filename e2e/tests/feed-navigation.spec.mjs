@@ -103,8 +103,18 @@ test("repost comments work for reposter and followers, notify and disappear when
     await expect.poll(async () => (await database.comment.findFirst({ where: { repostId: repost.id, text: "First comment by Mia" } }))).not.toBeNull();
     const created = await database.comment.findFirst({ where: { repostId: repost.id, text: "First comment by Mia" } });
     expect(created.repostId).toBe(repost.id);
+    const reply = await recipient.request.post(`${API}/external/reposts/${repost.id}/comments`, {
+      data: { text: "Reply by Mia", parentCommentId: created.id },
+    });
+    expect(reply.status()).toBe(201);
+    await page.reload();
+    const replyRow = card.locator(".comment-enter").filter({ hasText: "Reply by Mia" }).last();
+    await expect(replyRow).toBeVisible();
+    await replyRow.getByRole("button", { name: "React with an emoji", exact: true }).click();
+    await replyRow.getByRole("button", { name: "React with ❤️", exact: true }).click();
+    await expect(replyRow.getByRole("button", { name: "1 reacted with ❤️", exact: true })).toBeVisible();
     const repostRow = await database.externalRepost.findUniqueOrThrow({ where: { id: repost.id } });
-    expect(repostRow.commentCount).toBe(1);
+    expect(repostRow.commentCount).toBe(2);
   } finally {
     await database.commentLike.deleteMany({ where: { comment: { repostId: repost.id } } });
     await database.notification.deleteMany({ where: { comment: { repostId: repost.id } } });

@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 const LoginPage = lazy(() => import("./pages/LoginPage.js"));
 const RegisterPage = lazy(() => import("./pages/RegisterPage.js"));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage.js"));
 const FeedPage = lazy(() => import("./pages/FeedPage.js"));
 const SnapsPage = lazy(() => import("./pages/SnapsPage.js"));
 const DMsPage = lazy(() => import("./pages/DMsPage.js"));
@@ -311,6 +312,7 @@ function AppRoutes() {
         <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/dashboard" element={<UsageDashboardPage />} />
         <Route path="/tags/:tag" element={<RequireAuth><HashtagPage /></RequireAuth>} />
         <Route

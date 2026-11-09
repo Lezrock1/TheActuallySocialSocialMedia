@@ -9,7 +9,7 @@ interface AuthContextValue {
   user: PublicUser | null;
   loading: boolean;
   bootError: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
   register: (
     email: string,
     username: string,
@@ -55,10 +55,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (identifier: string, password: string) => {
     const res = await apiFetch<{ user: PublicUser }>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, password }),
     });
     setUser(res.user);
   }, []);

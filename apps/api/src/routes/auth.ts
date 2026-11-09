@@ -1,11 +1,14 @@
 import type { FastifyInstance } from "fastify";
+import { createHash, randomBytes } from "node:crypto";
 import argon2, { verifyAgainstDummy } from "../auth/passwords.js";
 import {
   changePasswordSchema,
   checkUsernameSchema,
+  confirmPasswordResetSchema,
   deleteAccountSchema,
   loginSchema,
   registerSchema,
+  requestPasswordResetSchema,
   updateAccountSchema,
 } from "@app/shared";
 import { prisma } from "../db.js";
@@ -13,6 +16,7 @@ import { signAuthToken } from "../auth/token.js";
 import { AUTH_COOKIE_NAME, requireAuth } from "../auth/middleware.js";
 import { env } from "../env.js";
 import { toPublicUser } from "../serializers.js";
+import { sendPasswordResetEmail } from "../email.js";
 import { hashInvitationCode, invitationProblem } from "../invitations.js";
 import { purgeQueuedMediaDeletions } from "../storage.js";
 import { byIp, byUser, createRateLimiter, rateLimitBy, sendRateLimited } from "../rateLimit.js";
@@ -22,6 +26,8 @@ const loginIpLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
 const loginAccountLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
 const accountActionLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 10 });
 const usernameCheckLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 60 });
+const passwordResetRequestLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 8 });
+const passwordResetConfirmLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
 const accountActionGuard = rateLimitBy(accountActionLimiter, byUser);
 
 const COOKIE_OPTIONS = {
@@ -95,7 +101,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       throw error;
     }
 
-    const token = signAuthToken({ userId: user.id });
+    const token = signAuthToken({ userId: user.id, authVersion: user.authVersion });
     reply.setCookie(AUTH_COOKIE_NAME, token, COOKIE_OPTIONS);
     return reply.code(201).send({ user: toPublicUser(user) });
   });
@@ -105,8 +111,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
-    const { email, password } = parsed.data;
-    const accountKey = email.toLowerCase();
+    const { password } = parsed.data;
+    const identifier = (parsed.data.identifier ?? parsed.data.email!).trim();
+    const isEmail = identifier.includes("@");
+    const accountKey = identifier.toLowerCase();
 
     const ipResult = loginIpLimiter.hit(request.ip);
     if (!ipResult.allowed) return sendRateLimited(reply, ipResult.retryAfterSeconds);
@@ -114,20 +122,84 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!accountResult.allowed) return sendRateLimited(reply, accountResult.retryAfterSeconds);
 
     const user = await prisma.user.findFirst({
-      where: { email: { equals: accountKey, mode: "insensitive" } },
+      where: isEmail
+        ? { email: { equals: accountKey, mode: "insensitive" } }
+        : { usernameCanonical: accountKey },
     });
     if (!user) {
       await verifyAgainstDummy(password);
-      return reply.code(401).send({ error: "Invalid email or password" });
+      return reply.code(401).send({ error: "Invalid email, username or password" });
     }
     if (!(await argon2.verify(user.passwordHash, password))) {
-      return reply.code(401).send({ error: "Invalid email or password" });
+      return reply.code(401).send({ error: "Invalid email, username or password" });
     }
     loginAccountLimiter.reset(accountKey);
 
-    const token = signAuthToken({ userId: user.id });
+    const token = signAuthToken({ userId: user.id, authVersion: user.authVersion });
     reply.setCookie(AUTH_COOKIE_NAME, token, COOKIE_OPTIONS);
     return reply.send({ user: toPublicUser(user) });
+  });
+
+  app.post("/auth/password-reset/request", async (request, reply) => {
+    const parsed = requestPasswordResetSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const rate = passwordResetRequestLimiter.hit(request.ip);
+    if (!rate.allowed) return sendRateLimited(reply, rate.retryAfterSeconds);
+    if (!env.resendApiKey || !env.authEmailFrom) {
+      return reply.code(503).send({ error: "Password reset email is not configured yet." });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: parsed.data.email, mode: "insensitive" } },
+      select: { id: true, email: true },
+    });
+    if (user) {
+      const token = randomBytes(32).toString("base64url");
+      const tokenHash = createHash("sha256").update(token).digest("hex");
+      await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
+      await prisma.passwordResetToken.create({
+        data: { tokenHash, userId: user.id, expiresAt: new Date(Date.now() + 30 * 60_000) },
+      });
+      const resetUrl = new URL("/reset-password", env.corsOrigin);
+      resetUrl.searchParams.set("token", token);
+      void sendPasswordResetEmail(user.email, resetUrl.toString()).catch(async (error) => {
+        await prisma.passwordResetToken.deleteMany({ where: { tokenHash } }).catch(() => undefined);
+        request.log.error(error, "Password reset email delivery failed");
+      });
+    }
+    return reply.code(202).send({ message: "If an account exists for this email, a reset link has been sent." });
+  });
+
+  app.post("/auth/password-reset/confirm", async (request, reply) => {
+    const parsed = confirmPasswordResetSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const rate = passwordResetConfirmLimiter.hit(request.ip);
+    if (!rate.allowed) return sendRateLimited(reply, rate.retryAfterSeconds);
+    const tokenHash = createHash("sha256").update(parsed.data.token).digest("hex");
+    const reset = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      select: { id: true, userId: true, expiresAt: true, usedAt: true },
+    });
+    if (!reset || reset.usedAt || reset.expiresAt <= new Date()) {
+      return reply.code(400).send({ error: "This reset link is invalid or expired. Request a new one." });
+    }
+    const passwordHash = await argon2.hash(parsed.data.newPassword);
+    const now = new Date();
+    const changed = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: { id: reset.id, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now },
+      });
+      if (claimed.count !== 1) return false;
+      await tx.user.update({
+        where: { id: reset.userId },
+        data: { passwordHash, authVersion: { increment: 1 } },
+      });
+      await tx.passwordResetToken.deleteMany({ where: { userId: reset.userId, id: { not: reset.id } } });
+      return true;
+    });
+    if (!changed) return reply.code(400).send({ error: "This reset link is invalid or expired. Request a new one." });
+    return reply.send({ message: "Password updated. Please sign in with your new password." });
   });
 
   app.post("/auth/logout", async (_request, reply) => {
@@ -225,10 +297,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (parsed.data.currentPassword === parsed.data.newPassword) {
       return reply.code(400).send({ error: "New password must be different" });
     }
-    await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash: await argon2.hash(parsed.data.newPassword) },
+      data: { passwordHash: await argon2.hash(parsed.data.newPassword), authVersion: { increment: 1 } },
     });
+    await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
+    reply.setCookie(AUTH_COOKIE_NAME, signAuthToken({ userId: updated.id, authVersion: updated.authVersion }), COOKIE_OPTIONS);
     return reply.code(204).send();
   });
 

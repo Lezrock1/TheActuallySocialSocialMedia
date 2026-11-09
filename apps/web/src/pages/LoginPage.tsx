@@ -12,7 +12,7 @@ export default function LoginPage() {
     accountDeleted?: boolean;
     localCleanupWarning?: boolean;
   } | null;
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -21,18 +21,14 @@ export default function LoginPage() {
     e.preventDefault();
     if (submitting) return;
     setError(null);
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail || !password) {
-      setError("Enter your email and password.");
-      return;
-    }
-    if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) {
-      setError("Enter the email address you registered with (not your username).");
+    const trimmedIdentifier = identifier.trim();
+    if (!trimmedIdentifier || !password) {
+      setError("Enter your email or username and password.");
       return;
     }
     setSubmitting(true);
     try {
-      await login(trimmedEmail, password);
+      await login(trimmedIdentifier, password);
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError
@@ -62,16 +58,15 @@ export default function LoginPage() {
         )}
         <form onSubmit={onSubmit} noValidate className="flex flex-col gap-3">
           <input
-            type="email"
-            name="email"
-            autoComplete="email"
+            type="text"
+            name="identifier"
+            autoComplete="username"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            inputMode="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email or username"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
             className={input}
           />
           <input
@@ -83,6 +78,9 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             className={input}
           />
+          <Link to="/reset-password" className="-mt-1 self-end text-xs font-medium text-gray-600 hover:underline">
+            Forgot password?
+          </Link>
           {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
           <button type="submit" disabled={submitting} className={`${btnPrimary} disabled:opacity-60`}>
             {submitting ? "Logging in…" : "Log in"}

@@ -82,6 +82,45 @@ test("Chat messages stay encrypted with delivery ticks across light and dark con
   } finally { await mia.close(); }
 });
 
+test("Chat sends encrypted photos and selfie replies to a message", async ({ browser, context }) => {
+  const mia = await friend(browser);
+  try {
+    const recipient = await prepare(mia, "mia");
+    const sender = await prepare(context, "leo");
+    const conversationId = (await (await context.request.post(`${API}/conversations`, { data: { username: "mia" } })).json()).conversationId;
+    await sender.goto(`/dms?conversation=${conversationId}`);
+    await recipient.goto(`/dms?conversation=${conversationId}`);
+
+    const photo = sender.locator('input[type="file"][accept="image/*"]');
+    await photo.setInputFiles({
+      name: "chat-photo.png",
+      mimeType: "image/png",
+      buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)),
+    });
+    await sender.getByRole("button", { name: "Send message", exact: true }).click();
+    const received = recipient.getByRole("button", { name: "Open photo", exact: true }).first();
+    await expect(received).toBeVisible();
+    await expect.poll(() => received.locator("img").evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+    await expect.poll(async () => {
+      const { messages } = await (await context.request.get(`${API}/conversations/${conversationId}/messages`)).json();
+      return messages.some((message) => message.isEncrypted && message.mediaKey);
+    }).toBe(true);
+
+    const photoBubble = recipient.locator(".chat-bubble", { has: received });
+    const box = await photoBubble.boundingBox();
+    await recipient.mouse.move(box.x + 30, box.y + box.height / 2);
+    await recipient.mouse.down();
+    await recipient.waitForTimeout(500);
+    await recipient.mouse.up();
+    await recipient.getByRole("button", { name: "React with selfie", exact: true }).click();
+    await recipient.getByRole("button", { name: "Take and send selfie", exact: true }).click();
+    await expect(sender.getByText("Selfie reply to @leo", { exact: true })).toBeVisible();
+    const images = sender.locator('button[aria-label="Open photo"]');
+    await expect(images).toHaveCount(2);
+    await expect.poll(() => images.last().locator("img").evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+  } finally { await mia.close(); }
+});
+
 test("Chat shows typing live, sends one bubble per message and swipes to reply", async ({ browser, context }) => {
   const mia = await friend(browser);
   try {

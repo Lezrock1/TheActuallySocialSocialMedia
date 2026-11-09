@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { PrismaClient } from "../../apps/api/node_modules/@prisma/client/default.js";
-import { API } from "../seed.mjs";
+import { API, PASSWORD, email } from "../seed.mjs";
 import { runInNewContext } from "node:vm";
 
 const database = new PrismaClient({ datasourceUrl: "postgresql://app:app@localhost:5432/e2e" });
@@ -757,6 +757,30 @@ test("shared OpenAI provider is everyone's default and cannot be copied without 
   expect(own.status()).toBe(201);
   expect((await own.json()).provider.apiKeySource).toBe("personal");
   await context.request.delete(`${API}/ai/providers/${(await own.json()).provider.id}`);
+});
+
+test("login accepts either a username or an email address", async ({ context }) => {
+  for (const identifier of ["leo", email("leo")]) {
+    const response = await context.request.post(`${API}/auth/login`, {
+      data: { identifier, password: PASSWORD },
+    });
+    expect(response.status()).toBe(200);
+    expect((await response.json()).user.username).toBe("leo");
+  }
+});
+
+test("password reset request confirms generically without revealing whether the email exists", async ({ page }) => {
+  await page.route(`${API}/auth/password-reset/request`, (route) => route.fulfill({
+    status: 202,
+    contentType: "application/json",
+    body: JSON.stringify({ message: "If an account exists for this email, a reset link has been sent." }),
+  }));
+  await page.goto("/login");
+  await page.getByRole("link", { name: "Forgot password?", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Reset your password", exact: true })).toBeVisible();
+  await page.getByPlaceholder("Email address", { exact: true }).fill("marlene@example.com");
+  await page.getByRole("button", { name: "Send reset link", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("If an account exists");
 });
 
 test("loading placeholders mirror the page that is loading", async ({ page }) => {

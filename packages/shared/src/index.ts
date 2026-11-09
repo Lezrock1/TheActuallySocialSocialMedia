@@ -30,6 +30,14 @@ export const changePasswordSchema = z.object({
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
+export const requestPasswordResetSchema = z.object({
+  email: z.string().trim().email().max(320).transform((value) => value.toLowerCase()),
+});
+export const confirmPasswordResetSchema = z.object({
+  token: z.string().min(32).max(128),
+  newPassword: z.string().min(8),
+});
+
 export const deleteAccountSchema = z.object({
   currentPassword: z.string().min(1),
   confirmation: z.literal("DELETE"),
@@ -37,8 +45,11 @@ export const deleteAccountSchema = z.object({
 export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;
 
 export const loginSchema = z.object({
-  email: z.string().trim().email(),
+  identifier: z.string().trim().min(1).max(320).optional(),
+  email: z.string().trim().email().optional(),
   password: z.string().min(1),
+}).refine((value) => Boolean(value.identifier || value.email), {
+  message: "Enter your email or username",
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 

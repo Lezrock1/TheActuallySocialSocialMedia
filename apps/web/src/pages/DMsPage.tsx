@@ -21,7 +21,7 @@ import type { PublicEncryptionKey } from "../lib/encryption.js";
 import { registerDeviceEncryptionKey } from "../lib/encryptionRegistration.js";
 import { useCalls } from "../components/CallProvider.js";
 import { getSocket } from "../lib/socket.js";
-import { downloadMediaBlob, mediaUrl, uploadMedia } from "../lib/upload.js";
+import { downloadMediaBlob, mediaUrl, resizeImageForUpload, uploadMedia } from "../lib/upload.js";
 import { useConversationBackground } from "../lib/pageBackground.js";
 import { useAuth } from "../auth/AuthContext.js";
 import NavBar from "../components/NavBar.js";
@@ -43,6 +43,8 @@ import {
 import { ConversationRowsSkeleton, InlineSkeletonText } from "../components/LoadingSkeleton.js";
 import MeetupCard from "../components/chat/MeetupCard.js";
 import VoiceMessage from "../components/chat/VoiceMessage.js";
+import MessageImage from "../components/chat/MessageImage.js";
+import ChatSelfieCapture from "../components/chat/ChatSelfieCapture.js";
 import MeetupSheet, { meetupToDraft } from "../components/MeetupFields.js";
 import type { MeetupDraft } from "../components/MeetupFields.js";
 import AppDialog from "../components/AppDialog.js";
@@ -52,13 +54,14 @@ import {
   buildMeetupCancelContent,
   buildMeetupContent,
   buildMeetupUpdateContent,
+  buildImageContent,
   buildRsvpContent,
   buildVoiceContent,
   computeMeetupAttendance,
   computeMeetupStates,
   parseMessageContent,
 } from "../lib/messageContent.js";
-import type { MeetupContent, SnapReplyContext, StoryReplyContext } from "../lib/messageContent.js";
+import type { ImageContent, MeetupContent, SnapReplyContext, StoryReplyContext } from "../lib/messageContent.js";
 import { clearLocalMeetupReminder, getLocalMeetupReminderMinutes, setLocalMeetupReminder, syncLocalChatMeetupReminders } from "../lib/localMeetupReminders.js";
 import { computePeaks, decryptMediaBlob, encryptAudioBlob, encryptMediaBlob } from "../lib/voice.js";
 import { captureVideoPoster } from "../lib/video.js";
@@ -121,6 +124,11 @@ interface SnapReplyDraftContext {
   authorUsername: string;
   createdAt: string;
   image: Blob;
+}
+
+interface ChatImageDraft {
+  blob: Blob;
+  filename: string;
 }
 
 function LocalBlobImage({ blob, alt, className }: { blob: Blob | null; alt: string; className: string }) {
@@ -280,6 +288,7 @@ export default function DMsPage() {
   const friendSearchInputRef = useRef<HTMLInputElement>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const scrolledConversationRef = useRef<string | null>(null);
   const wasAtBottomRef = useRef(true);
@@ -308,6 +317,9 @@ export default function DMsPage() {
   const [selectedGroupUsernames, setSelectedGroupUsernames] = useState<string[]>([]);
   const [startingConversation, setStartingConversation] = useState(false);
   const [messageText, setMessageText] = useState("");
+  const [imageDraft, setImageDraft] = useState<ChatImageDraft | null>(null);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [selfieReplyTarget, setSelfieReplyTarget] = useState<ReplyTarget | null>(null);
   const [storyReplyContext, setStoryReplyContext] = useState<StoryReplyContext | null>(null);
   const [snapReplyContext, setSnapReplyContext] = useState<SnapReplyDraftContext | null>(null);
   const [messageView, setMessageView] = useState<"chats" | "create_group" | "live_rooms">(() =>
@@ -1026,6 +1038,10 @@ export default function DMsPage() {
 
   async function sendMessage(e: FormEvent) {
     e.preventDefault();
+    if (imageDraft) {
+      await sendImage(imageDraft.blob, messageText, replyTarget);
+      return;
+    }
     if (!messageText.trim() || !activeId || !deviceKeyReady) return;
     setMessageError(null);
     stopTyping();
@@ -1093,6 +1109,74 @@ export default function DMsPage() {
       setReplyTarget(activeReplyTarget);
       setMessageError(error instanceof Error ? error.message : "Could not encrypt this message");
     }
+  }
+
+  async function sendImage(blob: Blob, caption = "", target: ReplyTarget | null = null) {
+    if (!activeId || !deviceKeyReady || imageBusy) return;
+    if (!allMembersHaveKeys) {
+      setMessageError("Every participant must open Messages once before you can send an encrypted photo.");
+      return;
+    }
+    if (!blob.type.startsWith("image/") || blob.size > 12 * 1024 * 1024) {
+      setMessageError("Choose an image smaller than 12 MB.");
+      return;
+    }
+    setMessageError(null);
+    stopTyping();
+    setImageBusy(true);
+    const conversationId = activeId;
+    const pendingId = `pending-${crypto.randomUUID()}`;
+    const draft: ChatImageDraft = { blob, filename: blob instanceof File ? blob.name : "selfie.jpg" };
+    setPendingMessages((current) => [...current, {
+      id: pendingId,
+      conversationId,
+      senderId: user?.id ?? "",
+      text: "Photo",
+      createdAt: new Date().toISOString(),
+    }]);
+    setImageDraft(null);
+    setMessageText("");
+    setReplyTarget(null);
+    try {
+      const sourceFile = new File([blob], draft.filename, { type: blob.type || "image/jpeg" });
+      const prepared = await resizeImageForUpload(sourceFile, 1600);
+      const encrypted = await encryptMediaBlob(prepared, "chat-image.bin", prepared.type || "image/jpeg");
+      const mediaKey = await uploadMedia(encrypted.file, { resize: false });
+      const content = buildImageContent({
+        mediaKey,
+        key: encrypted.key,
+        iv: encrypted.iv,
+        mimeType: prepared.type || "image/jpeg",
+        caption: caption.trim(),
+        ...(target ? { replyTo: { senderUsername: target.senderUsername, text: target.text.slice(0, 120) } } : {}),
+      });
+      await sendEncrypted(content, mediaKey);
+      setPendingMessages((current) => current.filter((message) => message.id !== pendingId));
+    } catch (error) {
+      setPendingMessages((current) => current.filter((message) => message.id !== pendingId));
+      setImageDraft(draft);
+      setMessageText(caption);
+      setReplyTarget(target);
+      setMessageError(error instanceof Error ? error.message : "Could not encrypt this photo.");
+    } finally {
+      setImageBusy(false);
+    }
+  }
+
+  function onSelectChatImage(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.type === "image/svg+xml") {
+      setMessageError("Choose an image file.");
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setMessageError("Choose an image smaller than 12 MB.");
+      return;
+    }
+    setMessageError(null);
+    setImageDraft({ blob: file, filename: file.name });
   }
 
   async function sendVoice(recording: AudioRecording) {
@@ -1555,7 +1639,7 @@ export default function DMsPage() {
         </div>
 
         {!activeId && <section aria-label="No chat selected" className="chat-empty hidden min-h-[34rem] flex-col items-center justify-center border-l border-gray-200 lg:flex">
-          <img src="/icon-192.png?v=2" alt="" aria-hidden="true" width={80} height={80} className="mb-4 h-20 w-20 rounded-[22%] shadow-lg" />
+          <img src="/icon-192.png?v=3" alt="" aria-hidden="true" width={80} height={80} className="mb-4 h-20 w-20 rounded-[22%] shadow-lg" />
           <h2 className="text-xl font-semibold text-gray-900">InTouch</h2>
           <p className="mt-2 text-sm text-gray-500">Chats</p>
         </section>}
@@ -1774,6 +1858,8 @@ export default function DMsPage() {
 
                 const replyPreview = parsed.kind === "text"
                   ? parsed.text.slice(0, 180)
+                  : parsed.kind === "image"
+                    ? parsed.image.caption || "Photo"
                   : parsed.kind === "voice"
                     ? "Voice message"
                     : "Message";
@@ -1837,7 +1923,9 @@ export default function DMsPage() {
                         </span>
                       </div>
                     )}
-                    {parsed.kind === "voice" ? (
+                    {parsed.kind === "image" ? (
+                      <MessageImage image={parsed.image} suppressOpen={actionMessageId === message.id} />
+                    ) : parsed.kind === "voice" ? (
                       <VoiceMessage voice={parsed.voice} tone="light" />
                     ) : parsed.kind === "text" ? (
                       <p className="whitespace-pre-wrap">{decrypting ? "Decrypting message..." : parsed.text}</p>
@@ -1904,6 +1992,16 @@ export default function DMsPage() {
                           className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
                         >
                           Reply
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelfieReplyTarget({ id: message.id, senderUsername: sender?.username ?? "someone", text: replyPreview.slice(0, 120) });
+                            setActionMessageId(null);
+                          }}
+                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
+                        >
+                          React with selfie
                         </button>
                         <button
                           type="button"
@@ -1998,6 +2096,13 @@ export default function DMsPage() {
                 </button>
               </div>
             )}
+            {imageDraft && (
+              <div className="mx-auto flex w-full max-w-2xl shrink-0 items-center gap-3 border-t border-gray-200 bg-white p-2 lg:max-w-none lg:px-4">
+                <LocalBlobImage blob={imageDraft.blob} alt="Photo to send" className="h-14 w-14 shrink-0 rounded-lg object-cover" />
+                <span className="min-w-0 flex-1 truncate text-xs text-gray-600">{imageDraft.filename}</span>
+                <button type="button" onClick={() => setImageDraft(null)} aria-label="Remove photo" className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-gray-500 hover:bg-gray-100">×</button>
+              </div>
+            )}
             <div
               className="shrink-0 border-t border-gray-200 bg-white/95 px-2 pt-2 backdrop-blur-xl"
               style={{ paddingBottom: keyboardOffset > 0 ? "0.5rem" : "max(0.5rem, env(safe-area-inset-bottom))" }}
@@ -2061,6 +2166,17 @@ export default function DMsPage() {
                 </div>
               ) : (
                 <form onSubmit={(e) => void sendMessage(e)} className="flex items-end gap-2">
+                  <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={onSelectChatImage} />
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                      disabled={!deviceKeyReady || !allMembersHaveKeys || !!imageDraft || imageBusy}
+                    aria-label="Attach photo"
+                    title="Attach photo"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setMeetupOpen(true)}
@@ -2104,12 +2220,12 @@ export default function DMsPage() {
                     aria-label="Message"
                     className="max-h-32 min-h-10 min-w-0 flex-1 resize-none rounded-3xl border border-gray-200 bg-white px-4 py-2 text-[15px] leading-6 text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none"
                   />
-                  {messageText.trim() || voiceBusy ? (
+                  {messageText.trim() || imageDraft || voiceBusy ? (
                     <button
                       key="send"
                       type="submit"
                       aria-label="Send message"
-                      disabled={!deviceKeyReady || !allMembersHaveKeys || voiceBusy}
+                      disabled={!deviceKeyReady || !allMembersHaveKeys || voiceBusy || imageBusy}
                       onPointerDown={() => { sendKeepFocusRef.current = document.activeElement === composerInputRef.current; }}
                       onMouseDown={(event) => event.preventDefault()}
                       className="composer-btn-pop flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-700 text-white transition-transform hover:bg-green-800 active:scale-90 disabled:opacity-50"
@@ -2150,6 +2266,12 @@ export default function DMsPage() {
           </section>
         )}
       </div>
+      {selfieReplyTarget && (
+        <ChatSelfieCapture
+          onClose={() => setSelfieReplyTarget(null)}
+          onCapture={(blob) => sendImage(blob, "", selfieReplyTarget)}
+        />
+      )}
       <MeetupSheet open={meetupOpen} onClose={() => setMeetupOpen(false)} onSubmit={sendMeetup} />
       <MeetupSheet
         open={!!editingMeetup}

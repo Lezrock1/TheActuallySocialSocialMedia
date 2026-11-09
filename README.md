@@ -97,6 +97,7 @@ For non-local deployments, generate independent secrets (for example, run `opens
 | `BOOTSTRAP_INVITE_CODE` | One-time invite used only to register the first account in a fresh database | **Set a random value of at least 32 characters; remove it after the first account is created** |
 | `OPENROUTER_API_KEY` | Optional shared key for the default OpenRouter Free provider; users can also add personal keys in AI Tools | Leave empty to require each user to provide a key |
 | `OPENAI_API_KEY` and `OPENAI_MODEL` | Optional shared OpenAI provider ("InTouch AI") for every member; it becomes the default for members who were still on the shared free default. `OPENAI_MODEL` is the model ID (default `gpt-6-luna` in `compose.production.yaml`) | Set the key to enable it |
+| `RESEND_API_KEY` and `AUTH_EMAIL_FROM` | Sends one-time password-reset links through Resend; the sender domain must be verified with Resend | Configure both to enable password reset |
 | `PORT` | API port | `4000` |
 | `CORS_ORIGIN` | Allowed frontend origin | `http://localhost:5173` |
 | `NODE_ENV` | Environment | `development` |
@@ -122,7 +123,7 @@ The repository includes a single-server Docker Compose deployment for a small in
 	openssl rand -hex 32
 	```
 
-	Run `openssl rand -hex 32` separately for each value. Paste the outputs directly into `.env.production`; never commit or share that file. Set `ACME_EMAIL` to an address you control. The default `S3_ENDPOINT` uses the private, single-server SeaweedFS service. `OPENROUTER_API_KEY` is optional.
+	Run `openssl rand -hex 32` separately for each value. Paste the outputs directly into `.env.production`; never commit or share that file. Set `ACME_EMAIL` to an address you control. The default `S3_ENDPOINT` uses the private, single-server SeaweedFS service. `OPENROUTER_API_KEY` is optional. Configure `RESEND_API_KEY` and a verified `AUTH_EMAIL_FROM` to enable password-reset email.
 4. Build and start the stack:
 
 	```bash

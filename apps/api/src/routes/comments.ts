@@ -7,6 +7,7 @@ import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
 import { createMentionNotifications, createUserNotification } from "../notifications.js";
 import { canViewContent, canViewPostById, getBlockedUserIds } from "../visibility.js";
+import { visibleExternalRepost } from "../external.js";
 import { ownsMedia } from "../mediaAccess.js";
 import { deleteMediaIfUnreferenced } from "../storage.js";
 
@@ -253,10 +254,19 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
       }
       const comment = await prisma.comment.findUnique({
         where: { id: request.params.id },
-        select: { id: true, authorId: true, postId: true },
+        select: { id: true, authorId: true, postId: true, repostId: true },
       });
       if (!comment) return reply.code(404).send({ error: "Comment not found" });
-      if (!comment.postId || !(await canViewPostById(request.userId!, comment.postId))) {
+      const canViewComment = comment.postId
+        ? await canViewPostById(request.userId!, comment.postId)
+        : comment.repostId
+          ? await prisma.externalRepost.findUnique({
+              where: { id: comment.repostId },
+              select: { platform: true, externalId: true, url: true },
+            }).then((repost) => repost ? visibleExternalRepost(request.userId!, repost) : null)
+              .then(Boolean)
+          : false;
+      if (!canViewComment) {
         return reply.code(404).send({ error: "Comment not found" });
       }
 

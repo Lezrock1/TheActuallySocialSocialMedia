@@ -23,6 +23,15 @@ export interface VoiceContent {
   peaks: number[];
 }
 
+export interface ImageContent {
+  mediaKey: string;
+  key: string;
+  iv: string;
+  mimeType: string;
+  caption: string;
+  replyTo?: { senderUsername: string; text: string };
+}
+
 export interface MeetupContent {
   id: string;
   title: string;
@@ -35,6 +44,7 @@ export type ParsedMessage =
   | { kind: "call"; callType: "audio" | "video"; status: string; durationSeconds: number }
   | { kind: "text"; text: string; storyReply?: StoryReplyContext; snapReply?: SnapReplyContext }
   | { kind: "voice"; voice: VoiceContent }
+  | { kind: "image"; image: ImageContent }
   | { kind: "meetup"; meetup: MeetupContent; event: "created" | "updated" }
   | { kind: "meetup_cancel"; meetupId: string }
   | { kind: "rsvp"; meetupId: string; going: boolean };
@@ -100,6 +110,26 @@ export function parseMessageContent(content: string): ParsedMessage {
         };
       }
     }
+    if (value.type === "image") {
+      const image = value.image as Partial<ImageContent> | undefined;
+      const replyTo = image?.replyTo as Partial<NonNullable<ImageContent["replyTo"]>> | undefined;
+      if (isString(image?.mediaKey) && isString(image.key) && isString(image.iv) &&
+        isString(image.mimeType) && image.mimeType.startsWith("image/")) {
+        return {
+          kind: "image",
+          image: {
+            mediaKey: image.mediaKey,
+            key: image.key,
+            iv: image.iv,
+            mimeType: image.mimeType,
+            caption: isString(image.caption) ? image.caption : "",
+            ...(isString(replyTo?.senderUsername) && isString(replyTo.text)
+              ? { replyTo: { senderUsername: replyTo.senderUsername, text: replyTo.text } }
+              : {}),
+          },
+        };
+      }
+    }
     if (value.type === "meetup" || value.type === "meetup_update") {
       const meetup = value.meetup as Partial<MeetupContent> | undefined;
       if (isString(meetup?.id) && isString(meetup.startsAt) && isString(meetup.place)) {
@@ -129,6 +159,7 @@ export function parseMessageContent(content: string): ParsedMessage {
 }
 
 export const buildVoiceContent = (voice: VoiceContent) => JSON.stringify({ type: "voice", voice });
+export const buildImageContent = (image: ImageContent) => JSON.stringify({ type: "image", image });
 export const buildMeetupContent = (meetup: MeetupContent) => JSON.stringify({ type: "meetup", meetup });
 export const buildMeetupUpdateContent = (meetup: MeetupContent) => JSON.stringify({ type: "meetup_update", meetup });
 export const buildMeetupCancelContent = (meetupId: string) => JSON.stringify({ type: "meetup_cancel", meetupId });
