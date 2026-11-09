@@ -380,7 +380,9 @@ export default function SnapsPage() {
             {(inboxLoading || followingLoading) && <><p role="status" className="sr-only">Loading Snaps...</p><SnapRowsSkeleton /></>}
             {(inboxFailed || followingFailed) && <div role="alert" className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-red-600"><span>Could not load all Snap friends.</span><button type="button" onClick={() => { void retryInbox(); void retryFollowing(); }} className="min-h-11 shrink-0 px-2 font-semibold">Retry</button></div>}
             <div>
-              {snapFriends.map(({ friend, snap, seen, streak }, rowIndex) => (
+              {snapFriends.map(({ friend, snap, seen, streak }, rowIndex) => {
+                const status = snap ? "new" : seen ? "opened" : streak?.waitingForThem ? "delivered" : "chat";
+                return (
                 <div key={friend.id} style={{ animationDelay: `${Math.min(rowIndex, 8) * 30}ms` }} className="snap-row-enter flex items-center gap-1 border-b border-gray-100 py-2">
                 <button
                   onClick={() => snap ? void openSnap(snap) : void openFriendChat(friend.username)}
@@ -394,7 +396,15 @@ export default function SnapsPage() {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className={`block truncate text-sm text-gray-900 ${snap ? "font-bold" : "font-medium"}`}>{friend.displayName || `@${friend.username}`}</span>
-                    <span className={`mt-1 flex items-center gap-1.5 text-xs ${snap ? "font-semibold text-red-600" : "text-gray-500"}`}><span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-sm border ${snap ? "border-red-500 bg-red-500" : streak?.waitingForThem ? "rotate-45 border-sky-500" : "border-gray-400"}`} /><span className="truncate">{snap ? `New Snap · ${snaps.filter((item) => item.sender.id === friend.id).length}` : seen ? "Opened" : streak?.waitingForThem ? "Delivered" : "Tap to chat"}</span></span>
+                    <span className={`mt-1 flex items-center gap-1.5 text-xs ${snap ? "font-semibold text-red-600" : "text-gray-500"}`}>
+                      <svg aria-hidden="true" viewBox="0 0 16 16" className={`h-3.5 w-3.5 shrink-0 ${status === "chat" ? "text-sky-600" : "text-red-500"}`} fill={status === "new" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        {status === "new" && <rect x="3" y="3" width="10" height="10" rx="2" />}
+                        {status === "opened" && <rect x="3" y="3" width="10" height="10" rx="2" />}
+                        {status === "delivered" && <path d="M2.5 8h10m-3.5-3.5L12.5 8 9 11.5" />}
+                        {status === "chat" && <rect x="3" y="3" width="10" height="10" rx="2" />}
+                      </svg>
+                      <span className="truncate">{snap ? `New Snap · ${snaps.filter((item) => item.sender.id === friend.id).length}` : seen ? "Opened" : streak?.waitingForThem ? "Delivered" : "Tap to chat"}</span>
+                    </span>
                     {snap?.isEncrypted && <span className="sr-only">End-to-end encrypted</span>}
                   </span>
                   <span className="flex w-14 shrink-0 flex-col items-end gap-1 whitespace-nowrap text-[11px] text-gray-500">
@@ -418,7 +428,8 @@ export default function SnapsPage() {
                 <button type="button" aria-label={`Chat with @${friend.username}`} title={`Chat with @${friend.username}`} disabled={!!openingChat} onClick={() => void openFriendChat(friend.username)} className="list-icon-action"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-3 3V11.5A8.5 8.5 0 0 1 9.5 3h3A8.5 8.5 0 0 1 21 11.5Z" /></svg></button>
                 <button type="button" aria-label={`Send a Snap to @${friend.username}`} title={`Send a Snap to @${friend.username}`} onClick={() => navigate(`/snaps?camera=1&snapTo=${encodeURIComponent(friend.username)}`)} className="list-icon-action"><CameraIcon /></button>
                 </div>
-              ))}
+                );
+              })}
               {!snapFriends.length && !followingLoading && !inboxLoading && !inboxFailed && !followingFailed && (
                 <div className="snap-row-enter flex flex-col items-center gap-2 px-4 py-10 text-center">
                   <span aria-hidden="true" className="text-4xl">👻</span>

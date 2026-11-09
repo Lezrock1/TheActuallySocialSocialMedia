@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InTouch · Zehn Vogelideen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17231f;
+      --muted: #6b7973;
+      --line: #dfe7e2;
+      --paper: #fff;
+      --canvas: #f0f5f2;
+      font-family: "DM Sans", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at 4% 0%, rgb(183 221 202 / 42%), transparent 32rem),
+        radial-gradient(ellipse at 100% 10%, rgb(216 226 198 / 48%), transparent 28rem),
+        var(--canvas);
+    }
+    .board { width: min(1320px, 100%); margin: 0 auto; padding: 38px 30px 54px; }
+    .masthead { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; margin-bottom: 28px; }
+    .eyebrow { display: flex; align-items: center; gap: 9px; color: #267156; font-size: 11px; font-weight: 700; letter-spacing: 1.1px; }
+    .eyebrow i { width: 9px; height: 9px; border-radius: 50% 50% 50% 0; background: #e48a50; transform: rotate(-35deg); }
+    h1 { margin: 9px 0 0; font: 800 30px/1.1 Manrope, sans-serif; letter-spacing: 0; }
+    .masthead p { max-width: 380px; margin: 0 0 2px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; }
+    .concept { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); box-shadow: 0 5px 16px rgb(26 47 36 / 5%); }
+    .art { position: relative; display: grid; min-height: 194px; place-items: center; overflow: hidden; background: var(--sky); }
+    .art:before { position: absolute; inset: 0; background-image: radial-gradient(rgb(38 57 46 / 8%) .7px, transparent .7px); background-size: 13px 13px; content: ""; opacity: .35; }
+    .concept:nth-child(3n + 2) .art:before { background-image: linear-gradient(115deg, transparent 49.7%, rgb(255 255 255 / 28%) 50%, transparent 50.3%); background-size: 30px 30px; }
+    .art svg { position: relative; z-index: 1; width: min(88%, 270px); height: 152px; overflow: visible; }
+    .index { position: absolute; z-index: 2; top: 12px; left: 13px; color: rgb(25 42 34 / 58%); font: 700 11px Manrope, sans-serif; }
+    .motion { position: absolute; z-index: 2; right: 12px; bottom: 11px; display: flex; align-items: center; gap: 6px; color: rgb(25 42 34 / 72%); font-size: 9px; font-weight: 700; letter-spacing: .55px; text-transform: uppercase; }
+    .motion:before { width: 16px; height: 1px; background: currentColor; content: ""; }
+    .copy { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; min-height: 81px; padding: 13px 15px 15px; }
+    h2 { margin: 0; font: 700 15px/1.3 Manrope, sans-serif; letter-spacing: 0; }
+    .copy p { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .pick { display: grid; flex: 0 0 auto; width: 24px; height: 24px; place-items: center; border: 1px solid #dfe7e2; border-radius: 50%; color: #718078; font: 700 10px Manrope, sans-serif; }
+    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 580px) {
+      .board { padding: 26px 15px 36px; }
+      .masthead { display: block; margin-bottom: 20px; }
+      h1 { font-size: 25px; }
+      .masthead p { margin-top: 9px; font-size: 12px; }
+      .grid { gap: 11px; }
+      .art { min-height: 148px; }
+      .art svg { height: 120px; }
+      .copy { min-height: 78px; padding: 11px; }
+      h2 { font-size: 13px; }
+      .copy p { font-size: 10px; }
+      .motion { font-size: 8px; }
+    }
+    @media (max-width: 370px) {
+      .grid { grid-template-columns: 1fr; }
+      .art { min-height: 176px; }
+      .art svg { height: 140px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <header class="masthead">
+      <div>
+        <div class="eyebrow"><i></i> Refresh · Vogelskizzen</div>
+        <h1>Zehn Vögel, zehn Charaktere.</h1>
+      </div>
+      <p>Unterschiedliche Silhouetten, Schnäbel und Flügel. Welche Richtung soll zum kleinen Refresh-Maskottchen werden?</p>
+    </header>
+    <section class="grid" aria-label="Zehn Vogelentwürfe">
+      <article class="concept" style="--sky:#dceee4">
+        <div class="art">
+          <span class="index">01</span>
+          <svg viewBox="0 0 180 120" role="img" aria-label="Schwalbe mit gegabeltem Schwanz und spitzen Flügeln">
+            <path d="m63 68-43-23 23 25-18 25 43-15Z" fill="#193e42"/>
+            <path d="M59 72c20-22 43-33 67-28 11 2 17 8 19 16l17 8-18 6c-8 12-22 17-40 14L67 82Z" fill="#193e42"/>
+            <path d="M111 62C97 39 77 19 53 11c11 25 24 44 45 58Z" fill="#d96d4d"/>
+            <path d="m145 57 14 4-13 4Z" fill="#f2bd52"/>
+            <circle cx="137" cy="54" r="1.7" fill="#fff"/><circle cx="137.5" cy="54" r=".8" fill="#17363b"/>
+          </svg>
+          <span class="motion">Gabelschwanz</span>
+        </div>
+        <div class="copy"><div><h2>Schwalbe</h2><p>Schlanker Körper, tiefer V-Ausschnitt im Schwanz.</p></div><span class="pick">01</span></div>
+      </article>
+
+      <article class="concept" style="--sky:#e5e9f2">
+        <div class="art">
+          <span class="index">02</span>
+          <svg viewBox="0 0 180 120" role="img" aria-label="Mauersegler mit sichelförmigen Flügeln">
+            <path d="M75 66C58 47 42 31 17 23c10 23 22 40 42 54-17-7-31-9-47-6 20 17 39 23 67 21l26-18Z" fill="#334357"/>
+            <path d="M88 64c19-20 39-35 67-42-9 24-23 43-46 57 16-6 31-7 48-3-19 18-40 25-70 22l-24-17Z" fill="#334357"/>
+            <path d="M53 68c17-8 37-11 60-7 13 3 21 8 25 14-9 9-22 13-38 12-22-1-37-7-47-19Z" fill="#526479"/>
+            <path d="m132 68 14 4-14 4Z" fill="#263547"/>
+            <path d="m72 85-12 17 22-13m16 0 17 13-6-17" fill="#334357"/>
+            <circle cx="128" cy="68" r="1.4" fill="#fff"/>
+          </svg>
+          <span class="motion">Sichelflügel</span>
+        </div>
+        <div class="copy"><div><h2>Mauersegler</h2><p>Extreme Flügelspannweite, pfeilschnelle Mitte.</p></div><span class="pick">02</span></div>
+      </article>
+
+      <article class="concept" style="--sky:#e7f0dc">
+        <div class="art">
+          <span class="index">03</span>
+          <svg viewBox="0 0 180 120" role="img" aria-label="Kolibri im Schwebeflug mit langem Schnabel">
+            <path d="m111 57 58-11-57 17Z" fill="#384238"/>
+            <path d="M87 52c11-12 24-13 34-4 7 7 8 18 2 29-8 13-23 16-37 7-10-7-10-22 1-32Z" fill="#188777"/>
+            <path d="M95 72c12-6 23-5 34 2-9 8-20 12-31 10Z" fill="#d45d52"/>
+            <path d="M99 48C82 28 68 17 49 9c6 19 15 34 32 47Z" fill="#65b59b"/>
+            <path d="M99 53c-18 6-33 17-45 33 21-1 39-7 54-20Z" fill="#b9d765"/>
+            <path d="m87 82-13 16 24-9Z" fill="#188777"/>
+            <circle cx="117" cy="54" r="1.7" fill="#20372f"/>
+            <path d="M43 40c-8 7-11 17-9 28m17-35c-6 9-7 18-4 26" fill="none" stroke="#d7aa4a" stroke-width="2" stroke-linecap="round" opacity=".8"/>
+          </svg>
+          <span class="motion">Schwebeflug</span>
+        </div>
+        <div class="copy"><div><h2>Kolibri</h2><p>Langer Schnabel und schmale, schnelle Flügel.</p></div><span class="pick">03</span></div>
+      </article>
+
+      <article class="concept" style="--sky:#d9eef0">
+        <div class="art">
+          <span class="index">04</span>
+          <svg viewBox="0 0 180 120" role="img" aria-label="Eisvogel mit langem geradem Schnabel und orangefarbener Brust">
+            <path d="M29 70c17-22 39-34 67-32 19 1 32 11 35 26-4 18-18 28-39 28-23 0-44-8-63-22Z" fill="#127f8a"/>
+            <path d="M57 69c13-12 28-19 46-19 13 0 22 5 27 14-6 18-18 26-35 27-16-5-29-12-38-22Z" fill="#e28a46"/>
+            <path d="M91 43c7-21 25-29 40-20 9 5 12 16 8 28l-18 13-27-5Z" fill="#138b95"/>
+            <path d="m135 41 39 4-40 7Z" fill="#303839"/>
+            <path d="M50 54c20-12 42-17 63-14-17 7-29 15-38 26Z" fill="#61c6bd"/>
+            <circle cx="126" cy="34" r="2" fill="#f8e9bd"/><circle cx="126" cy="34" r=".8" fill="#24343a"/>
+          </svg>
+          <span class="motion">Speerschnabel</span>
+        </div>
+        <div class="copy"><div><h2>Eisvogel</h2><p>Türkiser Rücken, Rostbrust, langer Dolchschnabel.</p></div><span class="pick">04</span></div>
+      </article>
+
+      <article class="concept" style="--sky:#f1e6d9">
+        <div class="art">
+          <span class="index">05</span>
+          <svg viewBox="0 0 180 120" role="img" aria-label="Rotkehlchen mit rostfarbener Brust">
+            <path d="m45 78-22 12 14-21-9-15 24 8Z" fill="#51473e"/>
+            <path d="M39 68c11-20 31-31 53-28 18 2 29 13 30 28-2 17-17 28-38 28-18 0-34-9-45-28Z" fill="#65584b"/>
+            <path d="M78 53c17-11 34-8 43 4 7 10 5 22-3 31-13 5-27 4-41-3-8-10-8-22 1-32Z" fill="#d66d4e"/>
+            <path d="M86 46c8-16 24-21 36-11 6 6 7 15 3 24l-13 8-26-8Z" fill="#65584b"/>
+            <path d="m121 49 17 4-17 4Z" fill="#c4934f"/>
+            <circle cx="116" cy="43" r="1.6" fill="#f7f1e6"/><circle cx="116.3" cy="43" r=".7" fill="#282d29"/>
+            <path d="m65 89-11 12 19-8m18 4 10 8-2-12" fill="#51473e"/>
+          </svg>
+          <span class="motion">Brustfleck</span>
+        </div>
+        <div class="copy"><div><h2>Rotkehlchen</h2><p>Kompakte Form mit markantem rostrotem Brustfeld.</p></div><span class="pick">05</span></div>
+      </article>
+
+      <article class="concept" style="--sky:#e8e8df">
+        <div class="art">
+          <span class="index">06</span>
+          <svg viewBox="0 0 180 120" role="img" aria-label="Kranich mit langem gebogenem Hals und grauen Flügeln">
+            <path d="M28 75c19-15 42-21 68-17 19 3 31 12 35 23-13 13-32 18-53 15-20-2-37-9-50-21Z" fill="#f7f5ed"/>
+            <path d="M60 69c22-14 43-17 62-7-12 11-27 17-46 17Z" fill="#87928e"/>
+            <path d="M117 78c2-13-3-22-15-29-7-4-10-10-8-16 2-5 7-8 14-8 11 0 16 8 13 17l-7 9c12 7 18 18 16 31Z" fill="#f7f5ed"/>
+            <path d="M107 26c6-11 17-15 26-9 5 4 6 10 3 16l-12 8-13-5Z" fill="#f7f5ed"/>
+            <path d="m135 31 27 2-27 4Z" fill="#303a39"/>
+            <path d="M115 20c4-8 11-10 18-8l-1 7Z" fill="#c44d49"/>
+            <circle cx="128" cy="26" r="1.4" fill="#293636"/>
+          </svg>
+          <span class="motion">Bogenhals</span>
+        </div>
+        <div class="copy"><div><h2>Kranich</h2><p>Eleganter Halsbogen und ruhige, breite Schwingen.</p></div><span class="pick">06</span></div>
+      </article>
+
+      <article class="concept" style="--sky:#dce4ec">
+        <div class="art">
+          <span class="index">07</span>
+          <svg viewBox="0 0 180 120" role="img" aria-label="Falke mit spitzen Flügeln und dunklem Augenstreif">
+            <path d="m72 63-51-34 29 42L19 93l58-13Z" fill="#485966"/>
+            <path d="m90 62 37-40-17 46 37 18-54 2Z" fill="#62717b"/>
+            <path d="M52 73c19-15 42-21 65-15 14 4 21 12 22 22-12 12-31 16-52 12-14-3-26-9-35-19Z" fill="#78858b"/>
+            <path d="M112 60c8-17 22-22 34-14 7 5 8 14 4 23l-15 11-25-6Z" fill="#596771"/>
+            <path d="m145 66 23 3-23 5Z" fill="#2a343a"/>
+            <path d="m131 61 19 5-16 4Z" fill="#333c42"/>
+            <circle cx="141" cy="61" r="1.4" fill="#e8d8a6"/>
+          </svg>
+          <span class="motion">Sturzflug</span>
+        </div>
+        <div class="copy"><div><h2>Falke</h2><p>Keilförmiger Kopf, kompakte Kraft, scharfer Blick.</p></div><span class="pick">07</span></div>
+      </article>
+
+      <article class="concept" style="--sky:#ede5dc">
+        <div class="art">
+          <span class="index">08</span>
+          <svg viewBox="0 0 180 120" role="img" aria-label="Specht mit roter Kappe und kräftigem Stützschwanz">
+            <path d="m65 68-37-14 23 21-15 20 35-12Z" fill="#343d3b"/>
+            <path d="M53 69c12-18 30-27 49-24 15 3 23 13 22 27-2 16-16 25-34 24-16-1-28-10-37-27Z" fill="#303938"/>
+            <path d="M68 57c13-9 24-10 38-5l-8 8c-13-3-22 0-30 7Z" fill="#f1eee5"/>
+            <path d="M87 46c8-17 22-21 34-12 7 6 7 16 1 25l-16 8-23-8Z" fill="#303938"/>
+            <path d="M94 41c3-12 15-16 25-11l4 9-14-2-8 9Z" fill="#cf4d43"/>
+            <path d="m119 55 42 4-42 4Z" fill="#b87545"/>
+            <circle cx="116" cy="48" r="1.4" fill="#efe4c8"/>
+            <path d="M42 83 23 101l31-10m23 3 12 14-3-17" fill="#303938"/>
+          </svg>
+          <span class="motion">Stützschwanz</span>
+        </div>
+        <div class="copy"><div><h2>Specht</h2><p>Gerader Meißelschnabel und kantige Kontrastzeichnung.</p></div><span class="pick">08</span></div>
+      </article>
+
+      <article class="concept" style="--sky:#e4e6ed">
+        <div class="art">
+          <span class="index">09</span>
+          <svg viewBox="0 0 180 120" role="img" aria-label="Papageitaucher mit orangefarbenem Schnabel und weißer Brust">
+            <path d="m52 71-28 12 18-22-4-15 24 12Z" fill="#242e37"/>
+            <path d="M42 65c12-21 33-31 54-27 20 3 31 17 28 34-3 18-19 28-41 27-18-1-33-12-41-34Z" fill="#252f38"/>
+            <path d="M72 52c18-12 39-8 48 7 6 11 3 24-7 32-16 7-32 3-44-8-7-10-6-22 3-31Z" fill="#f5f3ed"/>
+            <path d="M88 44c8-16 23-20 36-11 8 6 9 17 3 27l-17 9-25-10Z" fill="#252f38"/>
+            <path d="M122 47c15-7 31-2 36 11-2 10-10 17-22 18l-17-10Z" fill="#ee8749"/>
+            <path d="m156 53 12 6-13 5Z" fill="#e5b94c"/>
+            <path d="M119 47c9-7 20-7 28-2l-4 7-19 4Z" fill="#f3c856"/>
+            <circle cx="117" cy="43" r="1.6" fill="#f3eee1"/><circle cx="117.3" cy="43" r=".65" fill="#252f38"/>
+          </svg>
+          <span class="motion">Kontrast</span>
+        </div>
+        <div class="copy"><div><h2>Papageitaucher</h2><p>Schwarz-weiße Fläche mit markantem Farbschnabel.</p></div><span class="pick">09</span></div>
+      </article>
+
+      <article class="concept" style="--sky:#e8e9d8">
+        <div class="art">
+          <span class="index">10</span>
+          <svg viewBox="0 0 180 120" role="img" aria-label="Tukan mit großem gebogenem Schnabel">
+            <path d="m63 73-36 18 22-29-8-17 32 11Z" fill="#263536"/>
+            <path d="M52 69c12-20 31-29 52-24 17 4 25 16 22 31-4 17-18 25-38 23-18-2-29-12-36-30Z" fill="#263536"/>
+            <path d="M69 56c15-11 32-8 42 5 5 7 6 15 2 22-14 6-28 4-40-5-8-7-9-15-4-22Z" fill="#e3bd4d"/>
+            <path d="M89 48c7-18 21-23 34-14 8 6 9 16 4 27l-16 9-26-11Z" fill="#263536"/>
+            <path d="M123 39c19-14 43-13 49-2-4 13-17 28-38 33l-20-8Z" fill="#e6b849"/>
+            <path d="M145 35c10-4 20-3 27 2-9 2-16 6-23 11Z" fill="#db6349"/>
+            <circle cx="119" cy="42" r="1.5" fill="#f4f0e2"/><circle cx="119.3" cy="42" r=".6" fill="#263536"/>
+          </svg>
+          <span class="motion">Riesenschnabel</span>
+        </div>
+        <div class="copy"><div><h2>Tukan</h2><p>Großer Bogenschnabel als unverwechselbares Zeichen.</p></div><span class="pick">10</span></div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

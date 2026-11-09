@@ -414,6 +414,61 @@ test("Appearance keeps theme stable through color changes, navigation and repeat
   }
 });
 
+test("refresh indicator bird and color preferences persist and apply to the feed", async ({ page }) => {
+  await page.goto("/settings/appearance");
+  const indicators = page.getByRole("radiogroup", { name: "Refresh indicator", exact: true });
+  await indicators.getByRole("radio", { name: "Kingfisher", exact: true }).click();
+  await page.getByRole("button", { name: "Teal refresh color", exact: true }).click();
+  await page.reload();
+  await expect(indicators.getByRole("radio", { name: "Kingfisher", exact: true })).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem("intouch:refresh-appearance")))).toEqual({ bird: "kingfisher", color: "#167d7f" });
+
+  await page.goto("/");
+  const indicator = page.locator(".refresh-bird-indicator").first();
+  await expect(indicator).toHaveAttribute("data-refresh-bird", "kingfisher");
+  await expect(indicator).toHaveCSS("color", "rgb(22, 125, 127)");
+  await expect(indicator).toHaveCSS("opacity", "0");
+  await page.evaluate(() => {
+    const target = document.body;
+    const dispatchTouch = (type, touches, changedTouches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        touches: { value: touches },
+        targetTouches: { value: touches },
+        changedTouches: { value: changedTouches },
+      });
+      target.dispatchEvent(event);
+    };
+    const start = { clientX: 120, clientY: 100 };
+    const move = { clientX: 120, clientY: 220 };
+    dispatchTouch("touchstart", [start], [start]);
+    dispatchTouch("touchmove", [move], [move]);
+  });
+  await expect(indicator).toHaveCSS("opacity", "1");
+  await page.evaluate(() => {
+    const event = new Event("touchend", { bubbles: true, cancelable: true });
+    Object.defineProperties(event, {
+      touches: { value: [] },
+      targetTouches: { value: [] },
+      changedTouches: { value: [{ clientX: 120, clientY: 220 }] },
+    });
+    document.body.dispatchEvent(event);
+  });
+
+  await page.goto("/settings/appearance");
+  await page.getByRole("button", { name: "Reset to bird colors", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Reset to bird colors", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem("intouch:refresh-appearance")))).toEqual({ bird: "kingfisher", color: null });
+  await page.goto("/");
+  await expect(page.locator(".refresh-bird-indicator").first()).toHaveCSS("color", "rgb(18, 127, 138)");
+
+  await page.goto("/settings/appearance");
+  await page.getByRole("radiogroup", { name: "Refresh indicator", exact: true }).getByRole("radio", { name: "Classic arrows", exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole("radiogroup", { name: "Refresh indicator", exact: true }).getByRole("radio", { name: "Classic arrows", exact: true })).toHaveAttribute("aria-checked", "true");
+});
+
 test("mobile list preferences persist and chat ordering lives in Settings", async ({ page }, info) => {
   await page.goto("/notifications");
   const unread = page.getByRole("switch", { name: "Unread only", exact: true });

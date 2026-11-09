@@ -7,6 +7,7 @@ import { card } from "../lib/ui.js";
 import PreferenceSwitch from "../components/PreferenceSwitch.js";
 import FeedSourceSettings from "../components/FeedSourceSettings.js";
 import { UNREAD_FIRST_KEY, useListPreference } from "../lib/listPreferences.js";
+import RefreshAppearanceSettings from "../components/RefreshAppearanceSettings.js";
 
 function ThemePreview({ dark, selected, auto = false }: { dark: boolean; selected: boolean; auto?: boolean }) {
   const split = (light: string, night: string) => `linear-gradient(90deg, ${light} 50%, ${night} 50%)`;
@@ -103,6 +104,8 @@ export default function AppearanceSettingsPage() {
           Auto switches to dark mode from sunset to sunrise and to light mode during the day.
         </p>
       </section>
+
+      <RefreshAppearanceSettings />
 
       <section aria-labelledby="messages-settings-heading" className="mb-4 border-y border-gray-200 py-3">
         <h2 id="messages-settings-heading" className="mb-1 text-sm font-semibold text-gray-900">Messages</h2>

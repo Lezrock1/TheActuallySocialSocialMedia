@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e662f5"/>
+      <stop offset="0.5" stop-color="#c026d3"/>
+      <stop offset="1" stop-color="#9333ea"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde4ff"/>
+      <stop offset="1" stop-color="#f08af0"/>
+    </linearGradient>
+    <g id="scene">
+      <rect width="400" height="400" fill="url(#sky)"/>
+      <circle cx="280" cy="190" r="52" fill="#fff" opacity="0.35"/>
+      <circle cx="280" cy="190" r="34" fill="#fff"/>
+      <path d="M0 330L130 200L215 285L285 225L400 340V400H0Z" fill="#c026d3" opacity="0.9"/>
+      <path d="M0 400V350L100 290L190 370L260 320L400 400Z" fill="#86198f"/>
+    </g>
+    <clipPath id="photo"><rect x="112" y="120" width="288" height="160" rx="44"/></clipPath>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#4a044e" flood-opacity="0.3"/></filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="256" rx="112" fill="url(#gloss)"/>
+  <g filter="url(#shadow)">
+    <rect x="84" y="92" width="344" height="272" rx="72" fill="#fff"/>
+    <path d="M150 356L116 440L240 362Z" fill="#fff"/>
+  </g>
+  <g clip-path="url(#photo)"><use xlink:href="#scene" transform="translate(256 200) scale(0.9) translate(-200 -250)"/></g>
+  <g fill="#c026d3" opacity="0.4">
+    <rect x="118" y="304" width="214" height="18" rx="9"/>
+    <rect x="118" y="332" width="140" height="18" rx="9"/>
+  </g>
+</svg>

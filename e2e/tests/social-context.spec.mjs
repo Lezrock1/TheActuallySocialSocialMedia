@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { PrismaClient } from "../../apps/api/node_modules/@prisma/client/default.js";
-import { API } from "../seed.mjs";
+import { API, email, PASSWORD } from "../seed.mjs";
 
 const database = new PrismaClient({ datasourceUrl: "postgresql://app:app@localhost:5432/e2e" });
 test.afterAll(async () => database.$disconnect());
@@ -119,6 +119,116 @@ test("Chat sends encrypted photos and selfie replies to a message", async ({ bro
     await expect(images).toHaveCount(2);
     await expect.poll(() => images.last().locator("img").evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
   } finally { await mia.close(); }
+});
+
+test("Chat forwards an encrypted photo to a selected conversation", async ({ browser, context }) => {
+  const mia = await friend(browser, "mia");
+  const noah = await browser.newContext({
+    baseURL: "http://localhost:5173",
+    permissions: ["camera", "microphone"],
+    extraHTTPHeaders: { "x-forwarded-for": "198.51.100.91" },
+  });
+  try {
+    const sender = await prepare(context, "leo");
+    const miaPage = await prepare(mia, "mia");
+    const noahLogin = await noah.request.post(`${API}/auth/login`, { data: { email: email("noah"), password: PASSWORD } });
+    expect(noahLogin.ok()).toBe(true);
+    const noahPage = await prepare(noah, "noah");
+    const sourceId = (await (await context.request.post(`${API}/conversations`, { data: { username: "mia" } })).json()).conversationId;
+    const targetId = (await (await context.request.post(`${API}/conversations`, { data: { username: "noah" } })).json()).conversationId;
+    await sender.goto(`/dms?conversation=${sourceId}`);
+    await miaPage.goto(`/dms?conversation=${sourceId}`);
+    await noahPage.goto(`/dms?conversation=${targetId}`);
+
+    await sender.locator('input[type="file"][accept="image/*"]').setInputFiles({
+      name: "forward-source.png",
+      mimeType: "image/png",
+      buffer: await readFile(new URL("../../apps/web/public/apple-touch-icon.png", import.meta.url)),
+    });
+    await sender.getByRole("button", { name: "Send message", exact: true }).click();
+    const sourcePhoto = sender.getByRole("button", { name: "Open photo", exact: true }).last();
+    await expect(sourcePhoto).toBeVisible();
+    const sourceBubble = sender.locator(".chat-bubble", { has: sourcePhoto }).last();
+    const box = await sourceBubble.boundingBox();
+    await sender.mouse.move(box.x + 30, box.y + box.height / 2);
+    await sender.mouse.down();
+    await sender.waitForTimeout(500);
+    await sender.mouse.up();
+    const actions = sender.locator("[data-message-actions]");
+    await expect(actions).toBeVisible();
+    await actions.getByRole("button", { name: "Forward", exact: true }).click();
+
+    const forwardDialog = sender.getByRole("dialog", { name: "Forward message", exact: true });
+    await forwardDialog.getByRole("radio", { name: /noah/i }).click();
+    await forwardDialog.getByRole("button", { name: "Forward", exact: true }).click();
+    const forwardedPhoto = noahPage.getByRole("button", { name: "Open photo", exact: true });
+    await expect(forwardedPhoto).toBeVisible();
+    await expect.poll(() => forwardedPhoto.locator("img").evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+    await expect(noahPage.getByText("Forwarded from @leo", { exact: true })).toBeVisible();
+  } finally {
+    await mia.close();
+    await noah.close();
+  }
+});
+
+test("Meetups invite contacts, share attendee names, and export a calendar file", async ({ browser, context }) => {
+  const mia = await friend(browser, "mia");
+  const noah = await browser.newContext({
+    baseURL: "http://localhost:5173",
+    permissions: ["camera", "microphone"],
+    extraHTTPHeaders: { "x-forwarded-for": "198.51.100.92" },
+  });
+  try {
+    const sender = await prepare(context, "leo");
+    const miaPage = await prepare(mia, "mia");
+    const noahLogin = await noah.request.post(`${API}/auth/login`, { data: { email: email("noah"), password: PASSWORD } });
+    expect(noahLogin.ok()).toBe(true);
+    const noahPage = await prepare(noah, "noah");
+    const conversationId = (await (await context.request.post(`${API}/conversations`, { data: { username: "mia" } })).json()).conversationId;
+    const meetupTitle = `Coffee ${Date.now()}`;
+    await sender.addInitScript(() => {
+      try { Object.defineProperty(navigator, "share", { configurable: true, value: undefined }); } catch {}
+      try { Object.defineProperty(navigator, "canShare", { configurable: true, value: undefined }); } catch {}
+    });
+    await sender.goto(`/dms?conversation=${conversationId}`);
+    await miaPage.goto(`/dms?conversation=${conversationId}`);
+    await sender.getByRole("button", { name: "Propose a meetup", exact: true }).click();
+    await sender.getByLabel("What", { exact: true }).fill(meetupTitle);
+    await sender.getByLabel("Where", { exact: true }).fill("Harbor Cafe");
+    await sender.getByRole("checkbox", { name: "Invite @noah", exact: true }).check();
+    await sender.getByRole("button", { name: "Send proposal", exact: true }).click();
+
+    const goingButton = sender.getByRole("button", { name: "I'm in", exact: true });
+    await expect(goingButton).toBeVisible();
+    const downloadPromise = sender.waitForEvent("download");
+    await sender.getByRole("button", { name: "Add to calendar", exact: true }).click();
+    const calendarDownload = await downloadPromise;
+    const calendarPath = await calendarDownload.path();
+    expect(calendarPath).toBeTruthy();
+    const calendar = await readFile(calendarPath, "utf8");
+    expect(calendar).toContain("BEGIN:VCALENDAR");
+    expect(calendar).toContain("SUMMARY:Coffee");
+    expect(calendar).toContain("LOCATION:Harbor Cafe");
+    expect(calendar).toMatch(/DTSTART:\d{8}T\d{6}Z/);
+    expect(calendar).toContain("END:VCALENDAR");
+
+    await noahPage.goto("/dms");
+    await noahPage.getByRole("button", { name: new RegExp(`Meetup: ${meetupTitle}`) }).click();
+    await noahPage.getByRole("button", { name: "I'm in", exact: true }).click();
+    const senderAttendees = sender.getByText("Going:", { exact: false });
+    await expect(senderAttendees).toContainText("@noah");
+
+    await miaPage.goto("/dms");
+    await miaPage.getByRole("button", { name: new RegExp(`Meetup: ${meetupTitle}`) }).click();
+    await miaPage.getByRole("button", { name: "I'm in", exact: true }).click();
+    await expect(senderAttendees).toContainText("@mia");
+    const noahAttendees = noahPage.getByText("Going:", { exact: false });
+    await expect(noahAttendees).toContainText("@mia");
+    await expect(noahAttendees).toContainText("@noah");
+  } finally {
+    await mia.close();
+    await noah.close();
+  }
 });
 
 test("Chat shows typing live, sends one bubble per message and swipes to reply", async ({ browser, context }) => {

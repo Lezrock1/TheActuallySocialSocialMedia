@@ -61,9 +61,9 @@ import {
   computeMeetupStates,
   parseMessageContent,
 } from "../lib/messageContent.js";
-import type { ImageContent, MeetupContent, SnapReplyContext, StoryReplyContext } from "../lib/messageContent.js";
+import type { ImageContent, MeetupContent, ParsedMessage, SnapReplyContext, StoryReplyContext } from "../lib/messageContent.js";
 import { clearLocalMeetupReminder, getLocalMeetupReminderMinutes, setLocalMeetupReminder, syncLocalChatMeetupReminders } from "../lib/localMeetupReminders.js";
-import { computePeaks, decryptMediaBlob, encryptAudioBlob, encryptMediaBlob } from "../lib/voice.js";
+import { computePeaks, decryptAudioBlob, decryptMediaBlob, encryptAudioBlob, encryptMediaBlob } from "../lib/voice.js";
 import { captureVideoPoster } from "../lib/video.js";
 import { formatDuration, isAudioRecordingSupported, useAudioRecorder } from "../lib/useAudioRecorder.js";
 import type { AudioRecording } from "../lib/useAudioRecorder.js";
@@ -117,6 +117,11 @@ interface ReplyTarget {
   id: string;
   senderUsername: string;
   text: string;
+}
+
+interface ForwardDraft {
+  senderUsername: string;
+  parsed: ParsedMessage;
 }
 
 interface SnapReplyDraftContext {
@@ -263,6 +268,12 @@ async function fetchEncryptionKeys(id: string): Promise<PublicEncryptionKey[]> {
   return res.keys;
 }
 
+function conversationDisplayName(conversation: ConversationSummary, userId?: string): string {
+  if (conversation.name) return conversation.name;
+  if (conversation.otherMember) return conversation.otherMember.displayName || `@${conversation.otherMember.username}`;
+  return conversation.members.filter((member) => member.id !== userId).map((member) => `@${member.username}`).join(", ") || "Group chat";
+}
+
 export default function DMsPage() {
   const { user } = useAuth();
   const conversationBackgroundStyle = useConversationBackground();
@@ -343,6 +354,11 @@ export default function DMsPage() {
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [initialUnreadCount, setInitialUnreadCount] = useState(0);
   const [actionMessageId, setActionMessageId] = useState<string | null>(null);
+  const [forwardDraft, setForwardDraft] = useState<ForwardDraft | null>(null);
+  const [forwardTargetId, setForwardTargetId] = useState<string | null>(null);
+  const [forwardSearch, setForwardSearch] = useState("");
+  const [forwardBusy, setForwardBusy] = useState(false);
+  const [forwardError, setForwardError] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string>>({});
   const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
   const [unreadAnchorMessageId, setUnreadAnchorMessageId] = useState<string | null>(null);
@@ -1036,6 +1052,77 @@ export default function DMsPage() {
     }
   }
 
+  async function forwardToConversation(conversationId: string) {
+    if (!forwardDraft || forwardBusy || !user) return;
+    const target = conversations.find((conversation) => conversation.id === conversationId);
+    if (!target) return;
+    setForwardBusy(true);
+    setForwardError(null);
+    try {
+      const targetKeys = await fetchEncryptionKeys(conversationId);
+      const keyedUsers = new Set(targetKeys.map((key) => key.userId));
+      if (target.members.length === 0 || !target.members.every((member) => keyedUsers.has(member.id))) {
+        throw new Error("Everyone in that chat needs to open Messages once before you can forward an encrypted message.");
+      }
+
+      const attribution = `Forwarded from @${forwardDraft.senderUsername}`;
+      let content: string;
+      let mediaKey: string | undefined;
+      const parsed = forwardDraft.parsed;
+
+      if (parsed.kind === "image") {
+        const ciphertext = await downloadMediaBlob(parsed.image.mediaKey);
+        const original = await decryptMediaBlob(ciphertext, parsed.image.key, parsed.image.iv, parsed.image.mimeType);
+        if (original.size > 12 * 1024 * 1024) throw new Error("This photo is too large to forward.");
+        const source = new File([original], "forwarded-photo", { type: parsed.image.mimeType });
+        const prepared = await resizeImageForUpload(source, 1600);
+        const encrypted = await encryptMediaBlob(prepared, "chat-image.bin", prepared.type || parsed.image.mimeType);
+        mediaKey = await uploadMedia(encrypted.file, { resize: false });
+        content = buildImageContent({
+          mediaKey,
+          key: encrypted.key,
+          iv: encrypted.iv,
+          mimeType: prepared.type || parsed.image.mimeType,
+          caption: [attribution, parsed.image.caption].filter(Boolean).join("\n"),
+        });
+      } else if (parsed.kind === "voice") {
+        const ciphertext = await downloadMediaBlob(parsed.voice.mediaKey);
+        const original = await decryptAudioBlob(ciphertext, parsed.voice.key, parsed.voice.iv, ciphertext.type || "audio/webm");
+        const encrypted = await encryptAudioBlob(original);
+        mediaKey = await uploadMedia(encrypted.file, { resize: false });
+        content = buildVoiceContent({ ...parsed.voice, mediaKey, key: encrypted.key, iv: encrypted.iv });
+      } else if (parsed.kind === "text") {
+        content = `${attribution}:\n${parsed.text}`;
+      } else if (parsed.kind === "meetup") {
+        content = `${attribution}:\n${parsed.event === "updated" ? "Updated meetup" : "Meetup"}: ${parsed.meetup.title}\n${parsed.meetup.place}\n${new Date(parsed.meetup.startsAt).toLocaleString()}${parsed.meetup.note ? `\n${parsed.meetup.note}` : ""}`;
+      } else if (parsed.kind === "meetup_cancel") {
+        content = `${attribution}: Meetup cancelled`;
+      } else if (parsed.kind === "rsvp") {
+        content = `${attribution}: RSVP ${parsed.going ? "Going" : "Not going"}`;
+      } else {
+        content = `${attribution}: ${parsed.callType} call · ${parsed.status} · ${formatDuration(parsed.durationSeconds * 1000)}`;
+      }
+
+      const encryptedPayload = await encryptMessage(content, targetKeys);
+      const result = await apiFetch<{ message: ConversationMessage }>(`/conversations/${conversationId}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ encryptedPayload, ...(mediaKey ? { mediaKey } : {}) }),
+      });
+      if (conversationId === activeId && result.message && !knownMessageIdsRef.current.has(result.message.id)) {
+        knownMessageIdsRef.current.add(result.message.id);
+        insertMessageIntoCache(queryClient, conversationId, result.message);
+      }
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      setForwardDraft(null);
+      setForwardTargetId(null);
+      setForwardSearch("");
+    } catch (error) {
+      setForwardError(error instanceof Error ? error.message : "Could not forward this message.");
+    } finally {
+      setForwardBusy(false);
+    }
+  }
+
   async function sendMessage(e: FormEvent) {
     e.preventDefault();
     if (imageDraft) {
@@ -1200,14 +1287,59 @@ export default function DMsPage() {
     }
   }
 
-  async function sendMeetup(draft: MeetupDraft) {
-    await sendEncrypted(buildMeetupContent({
+  async function sendMeetup(draft: MeetupDraft, inviteeUserIds: string[] = []) {
+    const meetup = {
       id: crypto.randomUUID(),
       title: draft.title.trim(),
       startsAt: new Date(draft.when).toISOString(),
       place: draft.place.trim(),
       note: draft.note.trim(),
+    };
+    const invitees = followedUsers.filter((contact) => inviteeUserIds.includes(contact.id) &&
+      !activeConversation?.members.some((member) => member.id === contact.id));
+    if (invitees.length === 0) {
+      await sendEncrypted(buildMeetupContent(meetup));
+      return;
+    }
+    if (!activeConversation || !user || !allMembersHaveKeys) {
+      throw new Error("Everyone in this chat needs to open Messages before you can invite more contacts.");
+    }
+
+    const inviteeKeys = await Promise.all(invitees.map(async (contact) => {
+      const result = await apiFetch<{ keys: PublicEncryptionKey[] }>(`/users/${encodeURIComponent(contact.username)}/encryption-keys`);
+      return { contact, hasKey: result.keys.length > 0 };
     }));
+    const contactWithoutKey = inviteeKeys.find(({ hasKey }) => !hasKey)?.contact;
+    if (contactWithoutKey) {
+      throw new Error(`@${contactWithoutKey.username} needs to open Messages once before joining a meetup group.`);
+    }
+
+    const usernames = [...new Set([
+      ...activeConversation.members.filter((member) => member.id !== user.id).map((member) => member.username),
+      ...invitees.map((contact) => contact.username),
+    ])];
+    const groupName = `Meetup: ${draft.title.trim() || draft.place.trim()}`.slice(0, 60);
+    const created = await apiFetch<{ conversationId: string }>("/conversations/group", {
+      method: "POST",
+      body: JSON.stringify({ name: groupName, usernames }),
+    });
+    const targetKeys = await fetchEncryptionKeys(created.conversationId);
+    const targetMemberIds = new Set([
+      user.id,
+      ...activeConversation.members.map((member) => member.id),
+      ...invitees.map((contact) => contact.id),
+    ]);
+    if ([...targetMemberIds].some((id) => !targetKeys.some((key) => key.userId === id))) {
+      throw new Error("Everyone in the new meetup chat needs to open Messages before the invitation can be sent.");
+    }
+    const encryptedPayload = await encryptMessage(buildMeetupContent(meetup), targetKeys);
+    await apiFetch(`/conversations/${created.conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ encryptedPayload }),
+    });
+    await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    setActiveId(created.conversationId);
+    setSearchParams({ conversation: created.conversationId });
   }
 
   async function updateMeetup(draft: MeetupDraft) {
@@ -1343,6 +1475,12 @@ export default function DMsPage() {
   const typingLabel = typingIds.length === 0 ? null : activeConversation?.isGroup
     ? `${typingIds.slice(0, 2).map((id) => `@${activeConversation.members.find((member) => member.id === id)?.username ?? "someone"}`).join(", ")} ${typingIds.length > 1 ? "are" : "is"} typing`
     : "typing";
+  const normalizedForwardSearch = forwardSearch.trim().replace(/^@/, "").toLocaleLowerCase();
+  const forwardableConversations = conversations.filter((conversation) => {
+    if (!normalizedForwardSearch) return true;
+    const searchText = `${conversationDisplayName(conversation, user?.id)} ${conversation.members.map((member) => `${member.username} ${member.displayName ?? ""}`).join(" ")}`.toLocaleLowerCase();
+    return searchText.includes(normalizedForwardSearch);
+  });
 
   const renderedMessages = [
     ...visibleParsedMessages.map((entry) => ({ ...entry, pending: false })),
@@ -1834,6 +1972,7 @@ export default function DMsPage() {
                             : `${mine ? "You" : `@${sender?.username ?? "someone"}`} proposed a meetup`}
                       </span>
                       <MeetupCard
+                        eventId={meetup.id}
                         title={meetup.title}
                         startsAt={meetup.startsAt}
                         place={meetup.place}
@@ -1949,7 +2088,7 @@ export default function DMsPage() {
                       <time dateTime={message.createdAt}>{formatClock(message.createdAt)}</time>
                     </div>
                     {actionMessageId === message.id && (
-                      <div data-message-actions className="chat-menu-pop mt-2 flex flex-wrap gap-1.5 rounded-xl border border-black/10 bg-white/95 p-1.5 text-xs text-gray-700 shadow-sm">
+                      <div data-message-actions className="chat-menu-pop mt-2 flex flex-col gap-1 rounded-xl border border-black/10 bg-white/95 p-1.5 text-xs text-gray-700 shadow-sm">
                         <div className="flex w-full justify-between gap-0.5 pb-0.5">
                           {REACTION_CHOICES.map((emoji) => (
                             <button
@@ -1972,62 +2111,78 @@ export default function DMsPage() {
                             </button>
                           ))}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(replyPreview).catch(() => undefined);
-                            setActionMessageId(null);
-                          }}
-                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
-                        >
-                          Copy
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setReplyTarget({ id: message.id, senderUsername: sender?.username ?? "someone", text: replyPreview.slice(0, 120) });
-                            setActionMessageId(null);
-                            composerInputRef.current?.focus();
-                          }}
-                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
-                        >
-                          Reply
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelfieReplyTarget({ id: message.id, senderUsername: sender?.username ?? "someone", text: replyPreview.slice(0, 120) });
-                            setActionMessageId(null);
-                          }}
-                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
-                        >
-                          React with selfie
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMessageText((current) => `${current ? `${current}\n` : ""}Fwd: ${replyPreview}`);
-                            setActionMessageId(null);
-                            composerInputRef.current?.focus();
-                          }}
-                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
-                        >
-                          Forward
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setHiddenMessageIds((current) => {
-                              const next = new Set(current);
-                              next.add(message.id);
-                              return next;
-                            });
-                            setActionMessageId(null);
-                          }}
-                          className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
-                        >
-                          Delete for me
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            aria-label="Copy"
+                            title="Copy"
+                            onClick={() => {
+                              navigator.clipboard.writeText(replyPreview).catch(() => undefined);
+                              setActionMessageId(null);
+                            }}
+                            className="grid h-10 w-10 place-items-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 active:scale-95"
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2"/></svg>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Reply"
+                            title="Reply"
+                            onClick={() => {
+                              setReplyTarget({ id: message.id, senderUsername: sender?.username ?? "someone", text: replyPreview.slice(0, 120) });
+                              setActionMessageId(null);
+                              composerInputRef.current?.focus();
+                            }}
+                            className="grid h-10 w-10 place-items-center rounded-lg text-[#075e54] transition-colors hover:bg-[#e7f5f2] active:scale-95"
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m9 10-5 5 5 5"/><path d="M4 15h9a6 6 0 0 1 6 6"/></svg>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="React with selfie"
+                            title="React with selfie"
+                            onClick={() => {
+                              setSelfieReplyTarget({ id: message.id, senderUsername: sender?.username ?? "someone", text: replyPreview.slice(0, 120) });
+                              setActionMessageId(null);
+                            }}
+                            className="grid h-10 w-10 place-items-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 active:scale-95"
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8a2 2 0 0 1 2-2h3l1.5-2h3L15 6h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><circle cx="12" cy="12.5" r="3"/></svg>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Forward"
+                            title="Forward"
+                            disabled={"isEncrypted" in message && message.isEncrypted && decrypting}
+                            onClick={() => {
+                              setForwardDraft({ senderUsername: sender?.username ?? "someone", parsed });
+                              setForwardTargetId(null);
+                              setForwardSearch("");
+                              setForwardError(null);
+                              setActionMessageId(null);
+                            }}
+                            className="grid h-10 w-10 place-items-center rounded-lg text-[#1d9bf0] transition-colors hover:bg-[#e8f5fd] active:scale-95 disabled:opacity-40"
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m14 5 7 7-7 7"/><path d="M21 12H9a5 5 0 0 0-5 5v2"/></svg>
+                          </button>
+                          <span aria-hidden="true" className="mx-1 h-5 w-px bg-gray-200" />
+                          <button
+                            type="button"
+                            aria-label="Delete for me"
+                            title="Delete for me"
+                            onClick={() => {
+                              setHiddenMessageIds((current) => {
+                                const next = new Set(current);
+                                next.add(message.id);
+                                return next;
+                              });
+                              setActionMessageId(null);
+                            }}
+                            className="ml-auto grid h-10 w-10 place-items-center rounded-lg text-red-600 transition-colors hover:bg-red-50 active:scale-95"
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16"/><path d="M10 11v6m4-6v6"/><path d="m6 7 1 13h10l1-13M9 7V4h6v3"/></svg>
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2272,7 +2427,12 @@ export default function DMsPage() {
           onCapture={(blob) => sendImage(blob, "", selfieReplyTarget)}
         />
       )}
-      <MeetupSheet open={meetupOpen} onClose={() => setMeetupOpen(false)} onSubmit={sendMeetup} />
+      <MeetupSheet
+        open={meetupOpen}
+        onClose={() => setMeetupOpen(false)}
+        onSubmit={sendMeetup}
+        contacts={followedUsers.filter((contact) => !activeConversation?.members.some((member) => member.id === contact.id))}
+      />
       <MeetupSheet
         open={!!editingMeetup}
         onClose={() => setEditingMeetup(null)}
@@ -2282,6 +2442,67 @@ export default function DMsPage() {
         } : undefined}
         mode="edit"
       />
+      <AppDialog
+        open={!!forwardDraft}
+        title="Forward message"
+        description={forwardDraft ? `Choose a chat for this message from @${forwardDraft.senderUsername}. It will be encrypted for everyone in the selected chat.` : undefined}
+        confirmLabel={forwardTargetId ? "Forward" : "Choose a chat"}
+        cancelLabel="Cancel"
+        pending={forwardBusy}
+        onClose={() => {
+          if (forwardBusy) return;
+          setForwardDraft(null);
+          setForwardTargetId(null);
+          setForwardSearch("");
+          setForwardError(null);
+        }}
+        onConfirm={() => {
+          if (forwardTargetId) void forwardToConversation(forwardTargetId);
+        }}
+      >
+        <input
+          type="search"
+          aria-label="Search chats to forward to"
+          placeholder="Search chats"
+          value={forwardSearch}
+          onChange={(event) => setForwardSearch(event.target.value)}
+          disabled={forwardBusy}
+          className="app-search w-full"
+        />
+        <div role="radiogroup" aria-label="Forward recipient" className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-gray-200">
+          {forwardableConversations.map((conversation) => {
+            const title = conversationDisplayName(conversation, user?.id);
+            const selected = forwardTargetId === conversation.id;
+            const otherMembers = conversation.members.filter((member) => member.id !== user?.id);
+            return (
+              <button
+                key={conversation.id}
+                type="button"
+                role="radio"
+                aria-label={title}
+                aria-checked={selected}
+                disabled={forwardBusy}
+                onClick={() => {
+                  setForwardTargetId(conversation.id);
+                  setForwardError(null);
+                }}
+                className={`flex min-h-14 w-full items-center gap-3 border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50 disabled:opacity-60 ${selected ? "bg-emerald-50" : "bg-white"}`}
+              >
+                <span aria-hidden="true" className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${selected ? "bg-emerald-700 text-white" : "bg-gray-100 text-gray-600"}`}>
+                  {conversation.isGroup ? otherMembers.length : (otherMembers[0]?.username.slice(0, 2).toUpperCase() ?? "DM")}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-gray-900">{title}</span>
+                  <span className="block text-[11px] text-gray-500">{conversation.isGroup ? `${conversation.members.length} members` : "End-to-end encrypted chat"}</span>
+                </span>
+                <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs ${selected ? "border-emerald-700 bg-emerald-700 text-white" : "border-gray-300 text-transparent"}`}>✓</span>
+              </button>
+            );
+          })}
+          {forwardableConversations.length === 0 && <p role="status" className="px-3 py-4 text-center text-sm text-gray-500">No matching chats.</p>}
+        </div>
+        {forwardError && <p role="alert" className="mt-2 text-sm text-red-600">{forwardError}</p>}
+      </AppDialog>
       <AppDialog
         open={!!cancelMeetupId}
         title="Cancel this meetup?"

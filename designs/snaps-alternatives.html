@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InTouch · Snaps Designrichtungen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #15241e;
+      --muted: #78857f;
+      --line: #e5ebe7;
+      --green: #14845f;
+      --green-soft: #e8f5ee;
+      --yellow: #ffdf35;
+      --paper: #ffffff;
+      --canvas: #f3f7f4;
+      font-family: "DM Sans", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at 10% 0%, rgba(122, 202, 163, .16), transparent 34rem),
+        radial-gradient(ellipse at 100% 12%, rgba(255, 223, 53, .12), transparent 30rem),
+        linear-gradient(145deg, #f5f8f5, #eef4f0 56%, #f8faf7);
+    }
+
+    .board { width: min(1240px, 100%); margin: 0 auto; padding: 34px 28px 48px; }
+    .masthead { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 25px; }
+    .eyebrow { display: flex; align-items: center; gap: 8px; color: var(--green); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .eyebrow-mark { width: 9px; height: 9px; border-radius: 3px; background: var(--yellow); transform: rotate(12deg); }
+    h1 { margin: 8px 0 0; font: 800 28px/1.12 Manrope, sans-serif; letter-spacing: 0; }
+    .masthead p { max-width: 390px; margin: 0 0 2px; color: #627169; font-size: 13px; line-height: 1.55; }
+    .concepts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: start; }
+    .concept { min-width: 0; }
+    .concept-head { display: flex; align-items: flex-start; gap: 11px; min-height: 66px; margin: 0 3px 11px; }
+    .number { display: grid; place-items: center; width: 29px; height: 29px; flex: 0 0 auto; border: 1px solid #d7e4dc; border-radius: 10px; background: rgba(255,255,255,.68); color: var(--green); font: 800 12px Manrope, sans-serif; }
+    .concept h2 { margin: 0; font: 700 15px/1.35 Manrope, sans-serif; }
+    .concept-head p { margin: 3px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .device {
+      overflow: hidden;
+      border: 1px solid #d9e2dc;
+      border-radius: 25px;
+      background: var(--paper);
+      box-shadow: 0 15px 38px rgba(30, 61, 44, .10), 0 2px 7px rgba(30, 61, 44, .05);
+    }
+    .statusbar { height: 31px; display: flex; justify-content: space-between; align-items: center; padding: 0 18px; font-size: 9px; font-weight: 700; }
+    .status-icons { display: flex; align-items: center; gap: 4px; }
+    .signal { display: flex; align-items: flex-end; gap: 1px; height: 10px; }
+    .signal i { width: 2px; border-radius: 2px; background: currentColor; }
+    .signal i:nth-child(1) { height: 3px; }.signal i:nth-child(2) { height: 5px; }.signal i:nth-child(3) { height: 7px; }.signal i:nth-child(4) { height: 9px; }
+    .battery { width: 14px; height: 7px; border: 1px solid currentColor; border-radius: 2px; position: relative; }
+    .battery:before { content: ""; position: absolute; inset: 1px 3px 1px 1px; border-radius: 1px; background: currentColor; }
+    .battery:after { content: ""; position: absolute; right: -3px; top: 1px; width: 2px; height: 3px; background: currentColor; border-radius: 0 2px 2px 0; }
+    .screen { min-height: 608px; display: flex; flex-direction: column; }
+    .screen-content { flex: 1; padding: 8px 16px 14px; }
+    .topline { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 15px; }
+    .topline h3 { margin: 0; font: 800 23px/1.1 Manrope, sans-serif; letter-spacing: 0; }
+    .top-actions { display: flex; align-items: center; gap: 7px; }
+    .icon-btn { display: grid; place-items: center; width: 31px; height: 31px; border: 1px solid var(--line); border-radius: 50%; color: #52635a; font-size: 14px; }
+    .mini-avatar { width: 31px; height: 31px; border: 2px solid white; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 1px var(--line); }
+    .segmented { display: flex; gap: 3px; padding: 3px; margin-bottom: 15px; border-radius: 11px; background: #f0f4f1; }
+    .segmented span { flex: 1; padding: 7px 5px; border-radius: 8px; color: #738078; font-size: 10px; font-weight: 600; text-align: center; }
+    .segmented .selected { background: white; color: #18382b; box-shadow: 0 1px 4px rgba(20, 46, 31, .10); }
+    .section-title { display: flex; justify-content: space-between; align-items: center; margin: 14px 0 6px; color: #76837b; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+    .section-title b { color: #a1aaa4; font-size: 9px; font-weight: 600; text-transform: none; }
+    .snap-row { display: flex; align-items: center; gap: 10px; min-height: 61px; border-bottom: 1px solid #eff2ef; }
+    .avatar-wrap { width: 39px; height: 39px; flex: 0 0 auto; padding: 2px; border-radius: 50%; background: var(--yellow); }
+    .avatar-wrap img { display: block; width: 100%; height: 100%; border: 2px solid white; border-radius: 50%; object-fit: cover; }
+    .row-copy { min-width: 0; flex: 1; }
+    .row-name { display: flex; justify-content: space-between; gap: 8px; color: #24352c; font-size: 11px; font-weight: 700; }
+    .row-time { color: #8a9690; font-size: 9px; font-weight: 500; white-space: nowrap; }
+    .row-sub { display: flex; align-items: center; gap: 5px; margin-top: 3px; color: #86918b; font-size: 9px; }
+    .unopened-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+    .seen-row { opacity: .78; }
+    .seen-row .avatar-wrap { background: #dfe7e2; }
+    .seen-tag { padding: 3px 6px; border-radius: 5px; background: #f2f5f3; color: #87938c; font-size: 8px; }
+    .tabbar { height: 58px; display: flex; justify-content: space-around; align-items: center; border-top: 1px solid #edf1ee; background: white; }
+    .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 43px; color: #a2aca6; font-size: 8px; }
+    .tab-symbol { font-size: 15px; line-height: 1; }
+    .tab.active { color: var(--green); font-weight: 700; }
+    .tab.active .tab-symbol { position: relative; }
+    .tab.active .tab-symbol:after { content: ""; position: absolute; width: 4px; height: 4px; top: -4px; right: -5px; border-radius: 50%; background: var(--yellow); }
+
+    /* Direction 2: urgency and reciprocity lead the scan path. */
+    .turn-panel { padding: 12px; border: 1px solid #d9eee1; border-radius: 16px; background: linear-gradient(135deg, #f1faf4, #e8f5ed); }
+    .turn-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .turn-heading strong { font: 700 12px Manrope, sans-serif; }
+    .turn-heading span { color: #74877b; font-size: 9px; }
+    .turn-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid rgba(49, 130, 89, .12); }
+    .turn-item:first-of-type { border-top: 0; }
+    .turn-item img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
+    .turn-person { min-width: 0; flex: 1; }
+    .turn-person strong { display: block; font-size: 10px; }
+    .turn-person small { display: block; margin-top: 3px; color: #61796b; font-size: 8px; }
+    .streak { color: #ad5c2a; font-size: 9px; font-weight: 700; white-space: nowrap; }
+    .compact-section { margin-top: 16px; }
+    .compact-section .snap-row { min-height: 55px; }
+    .small-avatar { width: 35px; height: 35px; border-radius: 50%; object-fit: cover; }
+    .reply-cta { padding: 6px 8px; border: 0; border-radius: 7px; background: #177b58; color: white; font: 600 8px "DM Sans", sans-serif; }
+    .quiet-note { display: flex; align-items: center; gap: 7px; margin-top: 12px; padding: 9px; border-radius: 10px; background: #f5f7f5; color: #78857d; font-size: 9px; }
+    .quiet-note b { color: #44584b; }
+
+    /* Direction 3: image-led and deliberately lighter on metadata. */
+    .gallery-top { display: flex; justify-content: space-between; align-items: center; margin: 5px 0 13px; }
+    .gallery-top h3 { margin: 0; font: 800 23px Manrope, sans-serif; }
+    .count-pill { padding: 5px 8px; border-radius: 99px; background: #fff8ce; color: #6b5a0c; font-size: 9px; font-weight: 700; }
+    .gallery-title { margin: 0 0 8px; font-size: 10px; font-weight: 700; }
+    .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .snap-tile { position: relative; height: 143px; overflow: hidden; border-radius: 13px; background: #dce6df; }
+    .snap-tile img { width: 100%; height: 100%; object-fit: cover; }
+    .snap-tile:after { content: ""; position: absolute; inset: 35% 0 0; background: linear-gradient(transparent, rgba(11, 23, 17, .68)); }
+    .tile-label { position: absolute; z-index: 1; right: 8px; bottom: 8px; left: 8px; display: flex; align-items: center; gap: 6px; color: white; font-size: 9px; font-weight: 600; }
+    .tile-label img { width: 20px; height: 20px; border: 1px solid rgba(255,255,255,.8); border-radius: 50%; object-fit: cover; }
+    .tile-label span { min-width: 0; flex: 1; }
+    .tile-label small { display: block; margin-top: 2px; font-size: 8px; font-weight: 400; opacity: .82; }
+    .activity-rail { display: flex; gap: 12px; overflow: hidden; padding: 3px 0 2px; }
+    .rail-person { display: flex; flex: 0 0 47px; flex-direction: column; align-items: center; gap: 5px; color: #748078; font-size: 8px; }
+    .rail-person img { width: 39px; height: 39px; padding: 2px; border: 1px solid #d8e2db; border-radius: 50%; object-fit: cover; }
+    .rail-person.new img { border: 2px solid var(--yellow); padding: 2px; }
+    .seen-strip { margin-top: 12px; padding-top: 10px; border-top: 1px solid #edf1ee; }
+    .seen-strip .section-title { margin-top: 0; }
+    .seen-post { display: flex; align-items: center; gap: 8px; padding: 7px 0; }
+    .seen-post img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; }
+    .seen-post div { min-width: 0; flex: 1; }
+    .seen-post strong { display: block; font-size: 9px; }
+    .seen-post small { display: block; margin-top: 3px; color: #8a9690; font-size: 8px; }
+
+    @media (max-width: 900px) {
+      .board { padding: 25px 20px 36px; }
+      .concepts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .concept:last-child { grid-column: 1 / -1; width: min(100%, 430px); }
+      .concept:last-child .screen { min-height: 620px; }
+    }
+    @media (max-width: 600px) {
+      .board { padding: 23px 16px 32px; }
+      .masthead { display: block; margin-bottom: 22px; }
+      h1 { font-size: 24px; }
+      .masthead p { margin-top: 9px; font-size: 12px; }
+      .concepts { grid-template-columns: 1fr; gap: 22px; }
+      .concept:last-child { grid-column: auto; width: auto; }
+      .concept-head { min-height: 0; margin-bottom: 8px; }
+      .device { width: min(100%, 390px); margin: 0 auto; }
+      .screen { min-height: 590px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <header class="masthead">
+      <div>
+        <div class="eyebrow"><span class="eyebrow-mark"></span>InTouch · Produktdesign</div>
+        <h1>Drei Richtungen für Snaps</h1>
+      </div>
+      <p>Gleiche Inhalte, drei unterschiedliche Prioritäten: schnell erfassen, Streaks beantworten oder Snaps visuell entdecken.</p>
+    </header>
+
+    <section class="concepts" aria-label="Drei Snap-Designalternativen">
+      <article class="concept">
+        <div class="concept-head">
+          <span class="number">01</span>
+          <div><h2>Inbox</h2><p>Vertraut, ruhig, auf einen Blick sortiert</p></div>
+        </div>
+        <div class="device">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><span class="signal"><i></i><i></i><i></i><i></i></span><span>Wi-Fi</span><span class="battery"></span></span></div>
+          <div class="screen">
+            <div class="screen-content">
+              <div class="topline"><h3>Snaps</h3><div class="top-actions"><span class="icon-btn">⌕</span><img class="mini-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&q=80" alt="Dein Profil"></div></div>
+              <div class="segmented"><span class="selected">Inbox · 3</span><span>Heute</span></div>
+              <div class="section-title"><span>Neu für dich</span><b>3 ungesehen</b></div>
+              <div class="snap-row"><span class="avatar-wrap"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""></span><span class="row-copy"><span class="row-name">Mia <span class="row-time">2 Min.</span></span><span class="row-sub"><i class="unopened-dot"></i>Foto-Snap · Öffnen</span></span></div>
+              <div class="snap-row"><span class="avatar-wrap"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&q=80" alt=""></span><span class="row-copy"><span class="row-name">Jonas <span class="row-time">8 Min.</span></span><span class="row-sub"><i class="unopened-dot"></i>Video-Snap · Öffnen</span></span></div>
+              <div class="snap-row"><span class="avatar-wrap"><img src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=96&q=80" alt=""></span><span class="row-copy"><span class="row-name">Lena <span class="row-time">19 Min.</span></span><span class="row-sub"><i class="unopened-dot"></i>Foto-Snap · Öffnen</span></span></div>
+              <div class="section-title"><span>Heute angesehen</span><b>Streak-Kontext</b></div>
+              <div class="snap-row seen-row"><img class="small-avatar" src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=96&q=80" alt=""><span class="row-copy"><span class="row-name">Noah <span class="row-time">vor 1 Std.</span></span><span class="row-sub">Snap angesehen</span></span><span class="seen-tag">Gesehen</span></div>
+              <div class="snap-row seen-row"><img class="small-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&q=80" alt=""><span class="row-copy"><span class="row-name">Ava <span class="row-time">vor 3 Std.</span></span><span class="row-sub">Snap angesehen</span></span><span class="seen-tag">Gesehen</span></div>
+            </div>
+            <nav class="tabbar" aria-label="Hauptnavigation"><span class="tab"><b class="tab-symbol">⌂</b>Feed</span><span class="tab active"><b class="tab-symbol">◉</b>Snaps</span><span class="tab"><b class="tab-symbol">▤</b>Chats</span><span class="tab"><b class="tab-symbol">◎</b>Profil</span></nav>
+          </div>
+        </div>
+      </article>
+
+      <article class="concept">
+        <div class="concept-head">
+          <span class="number">02</span>
+          <div><h2>Streaks zuerst</h2><p>Antwortbedarf bekommt klare, faire Priorität</p></div>
+        </div>
+        <div class="device">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><span class="signal"><i></i><i></i><i></i><i></i></span><span>Wi-Fi</span><span class="battery"></span></span></div>
+          <div class="screen">
+            <div class="screen-content">
+              <div class="topline"><h3>Snaps</h3><div class="top-actions"><span class="icon-btn">⌕</span><img class="mini-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&q=80" alt="Dein Profil"></div></div>
+              <div class="turn-panel">
+                <div class="turn-heading"><strong>Dein Zug</strong><span>2 Antworten offen</span></div>
+                <div class="turn-item"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""><span class="turn-person"><strong>Mia</strong><small>hat dir einen Snap geschickt · 2 Min.</small></span><span class="streak">🔥 12</span><button class="reply-cta">Antworten</button></div>
+                <div class="turn-item"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&q=80" alt=""><span class="turn-person"><strong>Jonas</strong><small>Streak läuft heute aus</small></span><span class="streak">🔥 4</span><button class="reply-cta">Antworten</button></div>
+              </div>
+              <div class="compact-section">
+                <div class="section-title"><span>Neue Snaps</span><b>3 ungesehen</b></div>
+                <div class="snap-row"><span class="avatar-wrap"><img src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=96&q=80" alt=""></span><span class="row-copy"><span class="row-name">Lena <span class="row-time">19 Min.</span></span><span class="row-sub"><i class="unopened-dot"></i>Foto-Snap</span></span></div>
+                <div class="snap-row"><span class="avatar-wrap"><img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=96&q=80" alt=""></span><span class="row-copy"><span class="row-name">Noah <span class="row-time">vor 1 Std.</span></span><span class="row-sub"><i class="unopened-dot"></i>Video-Snap</span></span></div>
+              </div>
+              <div class="quiet-note"><span>✓</span><span><b>Alles andere kann warten.</b> Keine künstliche Dringlichkeit für normale Snaps.</span></div>
+              <div class="compact-section">
+                <div class="section-title"><span>Heute angesehen</span><b>2</b></div>
+                <div class="snap-row seen-row"><img class="small-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&q=80" alt=""><span class="row-copy"><span class="row-name">Ava <span class="row-time">vor 3 Std.</span></span><span class="row-sub">Snap angesehen</span></span></div>
+              </div>
+            </div>
+            <nav class="tabbar" aria-label="Hauptnavigation"><span class="tab"><b class="tab-symbol">⌂</b>Feed</span><span class="tab active"><b class="tab-symbol">◉</b>Snaps</span><span class="tab"><b class="tab-symbol">▤</b>Chats</span><span class="tab"><b class="tab-symbol">◎</b>Profil</span></nav>
+          </div>
+        </div>
+      </article>
+
+      <article class="concept">
+        <div class="concept-head">
+          <span class="number">03</span>
+          <div><h2>Snap-Galerie</h2><p>Bildmomente im Vordergrund, Details kompakt</p></div>
+        </div>
+        <div class="device">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><span class="signal"><i></i><i></i><i></i><i></i></span><span>Wi-Fi</span><span class="battery"></span></span></div>
+          <div class="screen">
+            <div class="screen-content">
+              <div class="gallery-top"><h3>Snaps</h3><span class="count-pill">3 ungesehen</span></div>
+              <p class="gallery-title">Neu für dich</p>
+              <div class="gallery">
+                <div class="snap-tile"><img src="https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=480&q=80" alt="Bergsee"><div class="tile-label"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""><span>Mia<small>vor 2 Min. · Foto</small></span></div></div>
+                <div class="snap-tile"><img src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=480&q=80" alt="Küste"><div class="tile-label"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&q=80" alt=""><span>Jonas<small>vor 8 Min. · Video</small></span></div></div>
+                <div class="snap-tile"><img src="https://images.unsplash.com/photo-1490730141103-6cac27aaab94?auto=format&fit=crop&w=480&q=80" alt="Abendlicht"><div class="tile-label"><img src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=96&q=80" alt=""><span>Lena<small>vor 19 Min. · Foto</small></span></div></div>
+                <div class="snap-tile"><img src="https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=480&q=80" alt="Wellen"><div class="tile-label"><img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=96&q=80" alt=""><span>Noah<small>vor 1 Std. · Foto</small></span></div></div>
+              </div>
+              <div class="seen-strip">
+                <div class="section-title"><span>Heute angesehen</span><b>Streak-Kontext</b></div>
+                <div class="activity-rail"><span class="rail-person new"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""><span>Mia · 🔥12</span></span><span class="rail-person"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&q=80" alt=""><span>Jonas · 🔥4</span></span><span class="rail-person"><img src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=96&q=80" alt=""><span>Lena</span></span></div>
+                <div class="seen-post"><img src="https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=96&q=80" alt=""><div><strong>Ava · angesehen</strong><small>Heute, 14:32</small></div><span class="seen-tag">Gesehen</span></div>
+              </div>
+            </div>
+            <nav class="tabbar" aria-label="Hauptnavigation"><span class="tab"><b class="tab-symbol">⌂</b>Feed</span><span class="tab active"><b class="tab-symbol">◉</b>Snaps</span><span class="tab"><b class="tab-symbol">▤</b>Chats</span><span class="tab"><b class="tab-symbol">◎</b>Profil</span></nav>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

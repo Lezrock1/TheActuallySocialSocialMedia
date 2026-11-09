@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="90%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#fbe4fb"/>
+    </radialGradient>
+    <radialGradient id="a" cx="30%" cy="22%" r="95%">
+      <stop offset="0" stop-color="#fbcfe8"/>
+      <stop offset="0.3" stop-color="#e879f9"/>
+      <stop offset="0.65" stop-color="#c026d3"/>
+      <stop offset="1" stop-color="#86198f"/>
+    </radialGradient>
+    <radialGradient id="b" cx="35%" cy="22%" r="95%">
+      <stop offset="0" stop-color="#f5d0fe"/>
+      <stop offset="0.35" stop-color="#d946ef"/>
+      <stop offset="0.75" stop-color="#a21caf"/>
+      <stop offset="1" stop-color="#701a75"/>
+    </radialGradient>
+    <radialGradient id="lens" cx="40%" cy="35%" r="80%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#f5a3f2" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#d946ef" stop-opacity="0.6"/>
+    </radialGradient>
+    <radialGradient id="core">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="clipA"><ellipse cx="200" cy="205" rx="138" ry="122" transform="rotate(-18 200 205)"/></clipPath>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="16"/></filter>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="9"/></filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <ellipse cx="270" cy="430" rx="170" ry="20" fill="#c026d3" opacity="0.35" filter="url(#soft)"/>
+  <ellipse cx="200" cy="205" rx="138" ry="122" transform="rotate(-18 200 205)" fill="url(#a)"/>
+  <circle cx="322" cy="318" r="125" fill="url(#b)"/>
+  <g clip-path="url(#clipA)">
+    <circle cx="322" cy="318" r="125" fill="url(#lens)"/>
+    <circle cx="322" cy="318" r="124" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="3"/>
+  </g>
+  <ellipse cx="150" cy="140" rx="46" ry="26" transform="rotate(-30 150 140)" fill="#fff" opacity="0.4" filter="url(#blur)"/>
+  <circle cx="262" cy="262" r="58" fill="url(#core)" filter="url(#blur)"/>
+  <circle cx="262" cy="262" r="30" fill="#fff"/>
+</svg>

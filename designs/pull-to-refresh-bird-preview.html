@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pull-to-refresh Vogel Vorschau</title>
+<style>
+  :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; color: #18181b; background: #f4f4f5; }
+  * { box-sizing: border-box; }
+  body { min-height: 100vh; margin: 0; padding: 32px 16px; }
+  main { width: min(100%, 410px); margin: 0 auto; }
+  header { margin: 0 auto 18px; width: min(100%, 410px); }
+  h1 { margin: 0 0 5px; font-size: 19px; }
+  header p { margin: 0; color: #71717a; font-size: 13px; }
+  .phone { position: relative; height: min(690px, calc(100dvh - 112px)); min-height: 480px; overflow: hidden; border: 1px solid #e4e4e7; border-radius: 30px; background: #fff; box-shadow: 0 18px 50px rgb(24 24 27 / 12%); touch-action: none; user-select: none; }
+  .statusbar { height: 50px; border-bottom: 1px solid #f4f4f5; padding: 17px 22px; color: #71717a; font-size: 12px; font-weight: 600; }
+  .refresh { position: absolute; z-index: 3; left: 50%; top: 12px; display: grid; width: 42px; height: 42px; place-items: center; color: #c026d3; opacity: 0; transform: translate(-50%, 0) scale(.82); transition: opacity 120ms linear; pointer-events: none; }
+  .bird { width: 36px; height: 36px; overflow: visible; }
+  .bird-wing { transform-box: fill-box; transform-origin: 45% 80%; }
+  .ready .bird-wing, .waiting .bird-wing { animation: wing 260ms cubic-bezier(.45,0,.55,1) infinite alternate; }
+  @keyframes wing { to { transform: rotate(-20deg) scaleY(.72); } }
+  .content { height: calc(100% - 50px); overflow: hidden; padding: 10px 18px 72px; }
+  .story-row { display: flex; gap: 12px; padding: 10px 0 20px; }
+  .story { width: 48px; text-align: center; color: #71717a; font-size: 9px; }
+  .avatar { width: 44px; height: 44px; margin: 0 auto 5px; border: 2px solid #d946ef; border-radius: 50%; background: linear-gradient(135deg,#f9a8d4,#8b5cf6); }
+  .post { margin: 10px 0 14px; padding: 14px; border: 1px solid #e4e4e7; border-radius: 15px; background: #fff; }
+  .person { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; font-size: 12px; font-weight: 650; }
+  .tiny { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg,#fb7185,#facc15); }
+  .line { height: 8px; margin: 7px 0; border-radius: 5px; background: #e4e4e7; }
+  .line.short { width: 68%; }
+  .photo { height: 205px; margin-top: 12px; border-radius: 10px; background: linear-gradient(140deg,#f0abfc 0%,#d946ef 45%,#7c3aed 100%); }
+  .caption { position: absolute; right: 0; bottom: 0; left: 0; padding: 18px 14px max(14px, env(safe-area-inset-bottom)); border-top: 1px solid #e4e4e7; background: rgb(255 255 255 / 94%); text-align: center; color: #71717a; font-size: 12px; }
+  .reduced .bird-wing { animation: none !important; }
+</style>
+</head>
+<body>
+<header><h1>Vogel-Refresh</h1><p>Im oberen Bereich nach unten ziehen. Beim Loslassen flattert der Vogel.</p></header>
+<main>
+  <section class="phone" id="phone" aria-label="Interaktive Vorschau">
+    <div class="refresh" id="refresh" role="status" aria-live="polite" aria-label="Pull to refresh">
+      <svg class="bird" id="bird" viewBox="0 0 32 32" aria-hidden="true">
+        <g id="bird-body">
+          <path d="m9.5 17.8-7.5-5.2 3.5 5-3.5 5 7.7-3.2Z" fill="currentColor"/>
+          <path d="M7.6 18.6c5.3-3.8 10.1-5.6 14.6-5.6 3.2 0 5.3 1.5 5.3 3.8 0 2.7-2.7 4.5-6.8 4.5-4.4 0-8.5-.8-13.1-1.6Z" fill="currentColor"/>
+          <path class="bird-wing" d="M19.4 17.8C16.7 11.4 12.2 6.1 6.8 2.5c1.3 7 4.6 12 9.2 15.2Z" fill="#e9a8f4"/>
+          <path d="m27 15.3 4.5 1.5-4.5 1.5Z" fill="#fbbf24"/>
+          <circle cx="25.1" cy="14.6" r=".65" fill="#31123b"/>
+        </g>
+      </svg>
+    </div>
+    <div class="statusbar">9:41 <span style="float:right">●●●  ▰</span></div>
+    <div class="content">
+      <div class="story-row"><div class="story"><div class="avatar"></div>You</div><div class="story"><div class="avatar"></div>Mia</div><div class="story"><div class="avatar"></div>Noah</div><div class="story"><div class="avatar"></div>Ivy</div><div class="story"><div class="avatar"></div>Leo</div></div>
+      <article class="post"><div class="person"><div class="tiny"></div>@mia</div><div class="line"></div><div class="line short"></div><div class="photo"></div></article>
+      <article class="post"><div class="person"><div class="tiny"></div>@noah</div><div class="line"></div><div class="line short"></div><div class="line"></div></article>
+      <article class="post"><div class="person"><div class="tiny"></div>@ivy</div><div class="line"></div><div class="line short"></div></article>
+    </div>
+    <div class="caption" id="caption">Zieh nach unten zum Aktualisieren</div>
+  </section>
+</main>
+<script>
+  const phone = document.querySelector("#phone");
+  const refresh = document.querySelector("#refresh");
+  const caption = document.querySelector("#caption");
+  const threshold = 78;
+  let startY = null;
+  let distance = 0;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced) document.body.classList.add("reduced");
+  function update(value) {
+    distance = Math.min(value, 88);
+    const shown = distance > 0;
+    refresh.style.opacity = String(shown ? Math.min(1, distance / 12) : 0);
+    refresh.style.transform = `translate(-50%, ${Math.min(distance * .48, 36)}px) scale(${.82 + Math.min(1, distance / threshold) * .18})`;
+    refresh.classList.toggle("ready", distance >= threshold);
+    refresh.setAttribute("aria-label", distance >= threshold ? "Release to refresh" : "Pull to refresh");
+    caption.textContent = distance >= threshold ? "Loslassen! Jippie!" : "Zieh nach unten zum Aktualisieren";
+  }
+  phone.addEventListener("pointerdown", (event) => {
+    if (phone.scrollTop > 0 || event.target.closest("button")) return;
+    startY = event.clientY;
+    phone.setPointerCapture(event.pointerId);
+  });
+  phone.addEventListener("pointermove", (event) => {
+    if (startY === null) return;
+    const pull = event.clientY - startY;
+    if (pull > 0) update(pull * .72);
+    else update(0);
+  });
+  function release() {
+    if (startY === null) return;
+    startY = null;
+    if (distance < threshold) { update(0); return; }
+    refresh.style.opacity = "1";
+    refresh.style.transform = "translate(-50%, 0) scale(1)";
+    refresh.classList.remove("ready");
+    refresh.classList.add("waiting");
+    refresh.setAttribute("aria-label", "Refreshing");
+    caption.textContent = "Flatter, flatter …";
+    window.setTimeout(() => {
+      caption.textContent = "Aktualisiert ✓";
+      window.setTimeout(() => { refresh.classList.remove("waiting"); update(0); caption.textContent = "Zieh nach unten zum Aktualisieren"; }, 700);
+    }, 600);
+  }
+  phone.addEventListener("pointerup", release);
+  phone.addEventListener("pointercancel", release);
+</script>
+</body>
+</html>

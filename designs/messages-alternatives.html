@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InTouch · Messages Designrichtungen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #17251e;
+      --muted: #748179;
+      --line: #e6ebe7;
+      --soft: #f4f7f5;
+      --green: #147d59;
+      --green-dark: #12694c;
+      --green-soft: #e9f5ee;
+      --yellow: #ffdf35;
+      --white: #fff;
+      font-family: "DM Sans", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at 7% 0%, rgba(122, 202, 163, .16), transparent 34rem),
+        radial-gradient(ellipse at 100% 9%, rgba(255, 223, 53, .12), transparent 30rem),
+        linear-gradient(145deg, #f5f8f5, #eef4f0 56%, #f8faf7);
+    }
+    .board { width: min(1480px, 100%); margin: auto; padding: 32px 28px 48px; }
+    .masthead { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+    .eyebrow { display: flex; align-items: center; gap: 8px; color: var(--green); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .mark { width: 9px; height: 9px; border-radius: 3px; background: var(--yellow); transform: rotate(12deg); }
+    h1 { margin: 8px 0 0; font: 800 28px/1.12 Manrope, sans-serif; letter-spacing: 0; }
+    .masthead p { max-width: 430px; margin: 0 0 2px; color: #647269; font-size: 13px; line-height: 1.55; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 20px; }
+    .concept { min-width: 0; }
+    .concept-head { display: flex; min-height: 59px; align-items: flex-start; gap: 10px; margin: 0 3px 10px; }
+    .number { display: grid; width: 29px; height: 29px; flex: 0 0 auto; place-items: center; border: 1px solid #d7e4dc; border-radius: 10px; background: rgba(255,255,255,.7); color: var(--green); font: 800 12px Manrope, sans-serif; }
+    .concept h2 { margin: 0; font: 700 15px/1.35 Manrope, sans-serif; }
+    .concept-head p { margin: 3px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .device { overflow: hidden; border: 1px solid #d9e2dc; border-radius: 24px; background: var(--white); box-shadow: 0 15px 38px rgba(30,61,44,.10), 0 2px 7px rgba(30,61,44,.05); }
+    .status { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 17px; font-size: 9px; font-weight: 700; }
+    .sys-icons { display: flex; align-items: center; gap: 4px; }
+    .bars { display: flex; height: 10px; align-items: flex-end; gap: 1px; }
+    .bars i { width: 2px; border-radius: 2px; background: currentColor; }
+    .bars i:nth-child(1) { height: 3px; }.bars i:nth-child(2) { height: 5px; }.bars i:nth-child(3) { height: 7px; }.bars i:nth-child(4) { height: 9px; }
+    .battery { position: relative; width: 14px; height: 7px; border: 1px solid currentColor; border-radius: 2px; }
+    .battery:before { position: absolute; inset: 1px 3px 1px 1px; border-radius: 1px; background: currentColor; content: ""; }
+    .battery:after { position: absolute; top: 1px; right: -3px; width: 2px; height: 3px; border-radius: 0 2px 2px 0; background: currentColor; content: ""; }
+    .screen { min-height: 610px; display: flex; flex-direction: column; }
+    .content { flex: 1; padding: 8px 15px 14px; }
+    .title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 5px 0 14px; }
+    .title-row h3 { margin: 0; font: 800 22px/1.15 Manrope, sans-serif; letter-spacing: 0; }
+    .actions { display: flex; align-items: center; gap: 6px; }
+    .icon { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: #55645b; font-size: 13px; }
+    .me { width: 30px; height: 30px; border: 2px solid white; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 1px var(--line); }
+    .search { height: 35px; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 0 11px; border: 1px solid var(--line); border-radius: 11px; color: #8a958e; font-size: 10px; }
+    .search b { margin-left: auto; font-size: 12px; font-weight: 400; }
+    .chips { display: flex; gap: 5px; overflow: hidden; margin-bottom: 12px; }
+    .chip { padding: 6px 9px; border: 1px solid var(--line); border-radius: 99px; color: #707c74; font-size: 9px; font-weight: 600; white-space: nowrap; }
+    .chip.on { border-color: #18372a; background: #18372a; color: white; }
+    .chip.green { border-color: #d5e9dc; background: var(--green-soft); color: var(--green-dark); }
+    .section { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 5px; color: #7c8980; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+    .section small { color: #9ba59e; font-size: 9px; font-weight: 500; text-transform: none; }
+    .row { min-height: 61px; display: flex; align-items: center; gap: 9px; border-bottom: 1px solid #eff2ef; }
+    .avatar { width: 39px; height: 39px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
+    .avatar.ring { padding: 2px; border: 2px solid var(--yellow); }
+    .copy { min-width: 0; flex: 1; }
+    .name { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; color: #25352c; font-size: 10px; font-weight: 700; }
+    .time { color: #909a93; font-size: 8px; font-weight: 500; white-space: nowrap; }
+    .preview { display: block; overflow: hidden; margin-top: 3px; color: #859088; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .preview.unread { color: #516158; font-weight: 600; }
+    .badge { min-width: 18px; height: 18px; display: grid; flex: 0 0 auto; place-items: center; padding: 0 5px; border-radius: 99px; background: var(--green); color: white; font-size: 8px; font-weight: 700; }
+    .pin { color: #87948b; font-size: 12px; }
+    .pinned-row { background: linear-gradient(90deg, #f3faf5, transparent 68%); }
+    .tabbar { height: 56px; display: flex; align-items: center; justify-content: space-around; border-top: 1px solid #edf1ee; background: white; }
+    .tab { display: flex; min-width: 44px; flex-direction: column; align-items: center; gap: 3px; color: #a0aaa4; font-size: 8px; }
+    .tab i { font-size: 15px; font-style: normal; line-height: 1; }
+    .tab.active { color: var(--green); font-weight: 700; }
+    .tab.active i { position: relative; }
+    .tab.active i:after { position: absolute; top: -4px; right: -5px; width: 4px; height: 4px; border-radius: 50%; background: var(--yellow); content: ""; }
+
+    /* Unread-first direction */
+    .priority { padding: 11px; border: 1px solid #d7eadf; border-radius: 14px; background: linear-gradient(135deg, #f2faf5, #eaf5ee); }
+    .priority-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .priority-head strong { font: 700 11px Manrope, sans-serif; }
+    .priority-head span { color: var(--green-dark); font-size: 8px; font-weight: 700; }
+    .priority .row { min-height: 55px; border-color: rgba(42,119,79,.12); }
+    .priority .avatar { width: 34px; height: 34px; }
+    .priority-cta { padding: 5px 7px; border: 0; border-radius: 7px; background: var(--green); color: white; font: 700 8px "DM Sans", sans-serif; }
+    .quiet { margin-top: 11px; padding: 8px 9px; border-radius: 9px; background: #f3f6f4; color: #77837b; font-size: 8px; line-height: 1.5; }
+    .quiet b { color: #40544a; }
+
+    /* Split-pane direction */
+    .split-device { min-height: 610px; }
+    .split-app { height: 610px; display: grid; grid-template-columns: 43% 57%; }
+    .split-list { overflow: hidden; border-right: 1px solid var(--line); background: #fbfcfb; }
+    .split-list-head { padding: 11px 10px 8px; }
+    .split-list-head h3 { margin: 1px 0 8px; font: 800 17px Manrope, sans-serif; }
+    .split-search { height: 27px; display: flex; align-items: center; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; color: #89948d; font-size: 8px; }
+    .split-chat { display: flex; align-items: center; gap: 6px; padding: 9px 8px; border-bottom: 1px solid #edf1ee; }
+    .split-chat.selected { background: var(--green-soft); box-shadow: inset 2px 0 var(--green); }
+    .split-chat img { width: 27px; height: 27px; border-radius: 50%; object-fit: cover; }
+    .split-chat-text { min-width: 0; flex: 1; }
+    .split-chat-text strong { display: block; overflow: hidden; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+    .split-chat-text small { display: block; overflow: hidden; margin-top: 3px; color: #89948d; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+    .split-room { min-width: 0; display: flex; flex-direction: column; background: #fff; }
+    .split-room-head { display: flex; align-items: center; gap: 6px; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+    .split-room-head img { width: 27px; height: 27px; border-radius: 50%; object-fit: cover; }
+    .split-room-head strong { display: block; font-size: 8px; }
+    .split-room-head small { display: block; margin-top: 2px; color: var(--green); font-size: 6px; }
+    .split-messages { display: flex; flex: 1; flex-direction: column; justify-content: flex-end; gap: 8px; padding: 9px 7px; }
+    .bubble { max-width: 90%; padding: 7px 8px; border-radius: 11px 11px 11px 3px; background: #f0f3f1; color: #46534b; font-size: 7px; line-height: 1.5; }
+    .bubble.mine { align-self: flex-end; border-radius: 11px 11px 3px 11px; background: #e5f3e9; color: #264735; }
+    .bubble-time { display: block; margin-top: 3px; color: #89958d; font-size: 6px; text-align: right; }
+    .typing { align-self: flex-start; color: #88958d; font-size: 7px; }
+    .composer-mini { display: flex; align-items: center; gap: 5px; margin: 6px; padding: 7px; border: 1px solid var(--line); border-radius: 12px; color: #9aa49e; font-size: 7px; }
+    .composer-mini span:last-child { margin-left: auto; color: var(--green); }
+
+    /* People-first direction */
+    .people-strip { display: flex; gap: 12px; overflow: hidden; padding: 2px 0 9px; }
+    .person { display: flex; flex: 0 0 43px; flex-direction: column; align-items: center; gap: 4px; color: #77837b; font-size: 8px; }
+    .person img { width: 38px; height: 38px; padding: 2px; border: 1px solid #dce6df; border-radius: 50%; object-fit: cover; }
+    .person.online img { border: 2px solid #62b987; }
+    .online-dot { width: 6px; height: 6px; display: inline-block; margin-right: 2px; border-radius: 50%; background: #49a773; }
+    .group-pill { padding: 4px 7px; border: 1px solid #e4ebe6; border-radius: 7px; background: white; color: #79857d; font-size: 8px; }
+
+    /* Timeline direction */
+    .day-label { display: flex; align-items: center; gap: 8px; margin: 15px 0 5px; color: #78847d; font-size: 9px; font-weight: 700; }
+    .day-label:after { height: 1px; flex: 1; background: #edf1ee; content: ""; }
+    .timeline-row { position: relative; display: flex; align-items: center; gap: 9px; min-height: 61px; }
+    .timeline-row:before { position: absolute; top: 0; bottom: 0; left: 19px; width: 1px; background: #e4ebe6; content: ""; }
+    .timeline-row .avatar { position: relative; z-index: 1; border: 2px solid white; }
+    .timeline-row .badge { margin-left: auto; }
+    .date-chip { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; color: #819087; font-size: 7px; white-space: nowrap; }
+
+    @media (max-width: 1050px) {
+      .board { padding: 26px 20px 38px; }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .concept:last-child { grid-column: 1 / -1; width: min(100%, 590px); }
+      .concept:last-child .screen { min-height: 610px; }
+    }
+    @media (max-width: 620px) {
+      .board { padding: 23px 15px 32px; }
+      .masthead { display: block; margin-bottom: 20px; }
+      h1 { font-size: 24px; }
+      .masthead p { margin-top: 9px; font-size: 12px; }
+      .grid { grid-template-columns: 1fr; gap: 21px; }
+      .concept:last-child { grid-column: auto; width: auto; }
+      .concept-head { min-height: 0; margin-bottom: 8px; }
+      .device { width: min(100%, 390px); margin: 0 auto; }
+      .split-device { width: min(100%, 470px); }
+    }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <header class="masthead">
+      <div><div class="eyebrow"><span class="mark"></span>InTouch · Produktdesign</div><h1>Fünf Richtungen für Messages</h1></div>
+      <p>Fünf unterschiedliche Scan-Wege für dieselben Chats: klassisch, ungelesen zuerst, nebeneinander, menschenzentriert oder chronologisch.</p>
+    </header>
+
+    <section class="grid" aria-label="Fünf Messages-Designalternativen">
+      <article class="concept">
+        <div class="concept-head"><span class="number">01</span><div><h2>Fokussierte Inbox</h2><p>Vertraute Liste mit Schnellzugriffen und Pins</p></div></div>
+        <div class="device"><div class="status"><span>9:41</span><span class="sys-icons"><span class="bars"><i></i><i></i><i></i><i></i></span> Wi-Fi <span class="battery"></span></span></div>
+          <div class="screen"><div class="content">
+            <div class="title-row"><h3>Messages</h3><div class="actions"><span class="icon">⌕</span><span class="icon">＋</span><img class="me" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&q=80" alt="Profil"></div></div>
+            <div class="search">⌕ <span>Search chats</span><b>⌘ K</b></div>
+            <div class="chips"><span class="chip on">All</span><span class="chip">Unread 3</span><span class="chip">Groups</span></div>
+            <div class="section"><span>Pinned</span><small>2 chats</small></div>
+            <div class="row pinned-row"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Mia <span class="time">2m</span></span><span class="preview unread">Are we still on for tonight?</span></span><span class="badge">2</span></div>
+            <div class="row pinned-row"><img class="avatar" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Weekend crew <span class="time">18m</span></span><span class="preview">Noah: Sent the location</span></span><span class="pin">⌖</span></div>
+            <div class="section"><span>Recent</span><small>Updated just now</small></div>
+            <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Lena <span class="time">1h</span></span><span class="preview">Voice message · 0:14</span></span></div>
+            <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Noah <span class="time">3h</span></span><span class="preview">You: Perfect, see you there</span></span></div>
+            <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Ava <span class="time">Yesterday</span></span><span class="preview">Photo · Open to view</span></span></div>
+          </div><nav class="tabbar"><span class="tab"><i>⌂</i>Feed</span><span class="tab"><i>◉</i>Snaps</span><span class="tab active"><i>▤</i>Messages</span><span class="tab"><i>◎</i>Profile</span></nav></div>
+        </div>
+      </article>
+
+      <article class="concept">
+        <div class="concept-head"><span class="number">02</span><div><h2>Ungelesen zuerst</h2><p>Wichtige Antworten oben, ohne alles urgent zu machen</p></div></div>
+        <div class="device"><div class="status"><span>9:41</span><span class="sys-icons"><span class="bars"><i></i><i></i><i></i><i></i></span> Wi-Fi <span class="battery"></span></span></div>
+          <div class="screen"><div class="content">
+            <div class="title-row"><h3>Messages</h3><div class="actions"><span class="icon">⌕</span><span class="icon">＋</span><img class="me" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&q=80" alt="Profil"></div></div>
+            <div class="priority"><div class="priority-head"><strong>Needs your reply</strong><span>3 unread</span></div>
+              <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Mia <span class="time">2m</span></span><span class="preview unread">Are we still on for tonight?</span></span><button class="priority-cta">Reply</button></div>
+              <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Weekend crew <span class="time">18m</span></span><span class="preview unread">Noah: Sent the location</span></span><span class="badge">2</span></div>
+              <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Lena <span class="time">1h</span></span><span class="preview unread">Voice message · 0:14</span></span><span class="badge">1</span></div>
+            </div>
+            <div class="quiet"><b>Everything else can wait.</b> Read chats stay in their usual order below.</div>
+            <div class="section"><span>All conversations</span><small>Most recent</small></div>
+            <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Noah <span class="time">3h</span></span><span class="preview">You: Perfect, see you there</span></span></div>
+            <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Ava <span class="time">Yesterday</span></span><span class="preview">Photo · Open to view</span></span></div>
+          </div><nav class="tabbar"><span class="tab"><i>⌂</i>Feed</span><span class="tab"><i>◉</i>Snaps</span><span class="tab active"><i>▤</i>Messages</span><span class="tab"><i>◎</i>Profile</span></nav></div>
+        </div>
+      </article>
+
+      <article class="concept">
+        <div class="concept-head"><span class="number">03</span><div><h2>Zwei-Spalten-Workspace</h2><p>Für Desktop: Chats links, aktiver Austausch rechts</p></div></div>
+        <div class="device split-device"><div class="status"><span>9:41</span><span class="sys-icons"><span class="bars"><i></i><i></i><i></i><i></i></span> Wi-Fi <span class="battery"></span></span></div>
+          <div class="split-app">
+            <aside class="split-list"><div class="split-list-head"><h3>Messages</h3><div class="split-search">⌕ &nbsp;Search chats</div></div>
+              <div class="split-chat selected"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""><span class="split-chat-text"><strong>Mia</strong><small>Are we still on for tonight?</small></span><span class="badge">2</span></div>
+              <div class="split-chat"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&q=80" alt=""><span class="split-chat-text"><strong>Weekend crew</strong><small>Noah: Sent the location</small></span></div>
+              <div class="split-chat"><img src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=96&q=80" alt=""><span class="split-chat-text"><strong>Lena</strong><small>Voice message · 0:14</small></span></div>
+              <div class="split-chat"><img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=96&q=80" alt=""><span class="split-chat-text"><strong>Noah</strong><small>You: Perfect, see you there</small></span></div>
+              <div class="split-chat"><img src="https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=96&q=80" alt=""><span class="split-chat-text"><strong>Ava</strong><small>Photo · Open to view</small></span></div>
+            </aside>
+            <section class="split-room"><header class="split-room-head"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""><span><strong>Mia</strong><small>End-to-end encrypted</small></span></header>
+              <div class="split-messages"><div class="bubble">Hey! Are we still on for tonight?<span class="bubble-time">6:41 PM</span></div><div class="bubble mine">Absolutely. Want me to book a table?<span class="bubble-time">6:43 PM · Read</span></div><div class="bubble">Yes please, somewhere outside if the weather holds.<span class="bubble-time">6:45 PM</span></div><span class="typing">Mia is typing…</span></div>
+              <div class="composer-mini"><span>＋</span><span>Message Mia</span><span>➤</span></div>
+            </section>
+          </div>
+          <nav class="tabbar"><span class="tab"><i>⌂</i>Feed</span><span class="tab"><i>◉</i>Snaps</span><span class="tab active"><i>▤</i>Messages</span><span class="tab"><i>◎</i>Profile</span></nav>
+        </div>
+      </article>
+
+      <article class="concept">
+        <div class="concept-head"><span class="number">04</span><div><h2>Menschen zuerst</h2><p>Direkte Kontakte und Gruppen im Vordergrund</p></div></div>
+        <div class="device"><div class="status"><span>9:41</span><span class="sys-icons"><span class="bars"><i></i><i></i><i></i><i></i></span> Wi-Fi <span class="battery"></span></span></div>
+          <div class="screen"><div class="content">
+            <div class="title-row"><h3>Messages</h3><div class="actions"><span class="icon">＋</span><img class="me" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&q=80" alt="Profil"></div></div>
+            <div class="search">⌕ <span>Find a person or chat</span></div>
+            <div class="section"><span>Active now</span><small><span class="online-dot"></span>4 online</small></div>
+            <div class="people-strip"><span class="person online"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""><span>Mia</span></span><span class="person online"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&q=80" alt=""><span>Jonas</span></span><span class="person online"><img src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=96&q=80" alt=""><span>Lena</span></span><span class="person"><img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=96&q=80" alt=""><span>Noah</span></span><span class="person"><img src="https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=96&q=80" alt=""><span>Ava</span></span></div>
+            <div class="chips"><span class="chip on">People</span><span class="group-pill">Groups</span><span class="group-pill">Unread</span></div>
+            <div class="section"><span>Close connections</span><small>5 chats</small></div>
+            <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Mia <span class="time">2m</span></span><span class="preview unread">Are we still on for tonight?</span></span><span class="badge">2</span></div>
+            <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Jonas <span class="time">11m</span></span><span class="preview">Sent a Snap</span></span></div>
+            <div class="row"><img class="avatar" src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Lena <span class="time">1h</span></span><span class="preview">Voice message · 0:14</span></span></div>
+            <div class="section"><span>Groups</span><small>2</small></div><div class="row"><span class="avatar" style="display:grid;place-items:center;background:#edf2ee;font-size:9px;font-weight:700">5</span><span class="copy"><span class="name">Weekend crew <span class="time">18m</span></span><span class="preview">Noah: Sent the location</span></span></div>
+          </div><nav class="tabbar"><span class="tab"><i>⌂</i>Feed</span><span class="tab"><i>◉</i>Snaps</span><span class="tab active"><i>▤</i>Messages</span><span class="tab"><i>◎</i>Profile</span></nav></div>
+        </div>
+      </article>
+
+      <article class="concept">
+        <div class="concept-head"><span class="number">05</span><div><h2>Chronologischer Verlauf</h2><p>Ein klarer Strom, gruppiert nach Zeit</p></div></div>
+        <div class="device"><div class="status"><span>9:41</span><span class="sys-icons"><span class="bars"><i></i><i></i><i></i><i></i></span> Wi-Fi <span class="battery"></span></span></div>
+          <div class="screen"><div class="content">
+            <div class="title-row"><h3>Messages</h3><div class="actions"><span class="icon">⌕</span><span class="icon">＋</span><img class="me" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&q=80" alt="Profil"></div></div>
+            <div class="search">⌕ <span>Search messages</span></div>
+            <div class="chips"><span class="chip on">Recent</span><span class="chip">Unread</span><span class="chip">Groups</span></div>
+            <div class="day-label">Today <small>3 conversations</small></div>
+            <div class="timeline-row"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Mia <span class="time">2m</span></span><span class="preview unread">Are we still on for tonight?</span></span><span class="badge">2</span></div>
+            <div class="timeline-row"><img class="avatar" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Weekend crew <span class="time">18m</span></span><span class="preview">Noah: Sent the location</span></span></div>
+            <div class="timeline-row"><img class="avatar" src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Lena <span class="time">1h</span></span><span class="preview">Voice message · 0:14</span></span></div>
+            <div class="day-label">Yesterday <small>2 conversations</small></div>
+            <div class="timeline-row"><img class="avatar" src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Noah <span class="time">Yesterday</span></span><span class="preview">You: Perfect, see you there</span></span></div>
+            <div class="timeline-row"><img class="avatar" src="https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=96&q=80" alt=""><span class="copy"><span class="name">Ava <span class="time">Yesterday</span></span><span class="preview">Photo · Open to view</span></span></div>
+            <div class="quiet">Pinned chats stay at the top of each day.</div>
+          </div><nav class="tabbar"><span class="tab"><i>⌂</i>Feed</span><span class="tab"><i>◉</i>Snaps</span><span class="tab active"><i>▤</i>Messages</span><span class="tab"><i>◎</i>Profile</span></nav></div>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

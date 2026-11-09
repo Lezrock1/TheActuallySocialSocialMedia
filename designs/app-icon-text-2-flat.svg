@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#fdf4ff"/>
+  <rect x="64" y="84" width="214" height="152" rx="54" fill="#c026d3"/>
+  <path d="M98 228L72 292L152 236Z" fill="#c026d3"/>
+  <rect x="150" y="224" width="300" height="158" rx="54" fill="#7c3aed" stroke="#fdf4ff" stroke-width="12"/>
+  <path d="M394 376L422 440L334 380Z" fill="#7c3aed"/>
+  <g font-family="'Avenir Next','SF Pro Rounded','Helvetica Neue',Arial,sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#fff">
+    <text x="171" y="162" font-size="116" textLength="108" lengthAdjust="spacingAndGlyphs">in</text>
+    <text x="300" y="304" font-size="92" textLength="240" lengthAdjust="spacingAndGlyphs">touch</text>
+  </g>
+</svg>

@@ -19,18 +19,21 @@ function icsDate(date: Date): string {
 }
 
 function escapeIcs(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+  return value.replace(/\\/g, "\\\\").replace(/\r\n|\r|\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,");
 }
 
-function calendarHref(title: string, startsAt: string, place: string): string {
+function calendarFile(eventId: string | undefined, title: string, startsAt: string, place: string): File | null {
   const start = new Date(startsAt);
+  if (Number.isNaN(start.getTime())) return null;
   const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
     "PRODID:-//InTouch//Meetup//EN",
     "BEGIN:VEVENT",
-    `UID:${icsDate(start)}-${Math.abs(title.length * 31 + place.length)}@intouch`,
+    `UID:${escapeIcs(eventId ?? `${icsDate(start)}-${Math.abs(title.length * 31 + place.length)}`)}@intouch`,
     `DTSTAMP:${icsDate(new Date())}`,
     `DTSTART:${icsDate(start)}`,
     `DTEND:${icsDate(end)}`,
@@ -39,10 +42,35 @@ function calendarHref(title: string, startsAt: string, place: string): string {
     "END:VEVENT",
     "END:VCALENDAR",
   ];
-  return `data:text/calendar;charset=utf-8,${encodeURIComponent(lines.join("\r\n"))}`;
+  const filename = `${title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "meetup"}.ics`;
+  return new File([lines.join("\r\n")], filename, { type: "text/calendar;charset=utf-8" });
+}
+
+function downloadCalendarFile(file: File): void {
+  const url = URL.createObjectURL(file);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function addToCalendar(eventId: string | undefined, title: string, startsAt: string, place: string): void {
+  const file = calendarFile(eventId, title, startsAt, place);
+  if (!file) return;
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    void navigator.share({ title: title || "Meetup", files: [file] }).catch((error: unknown) => {
+      if (!(error instanceof DOMException) || error.name !== "AbortError") downloadCalendarFile(file);
+    });
+    return;
+  }
+  downloadCalendarFile(file);
 }
 
 export default function MeetupCard({
+  eventId,
   title,
   startsAt,
   place,
@@ -60,6 +88,7 @@ export default function MeetupCard({
   reminderMinutes = null,
   onReminderChange,
 }: {
+  eventId?: string;
   title: string;
   startsAt: string;
   place: string;
@@ -131,14 +160,19 @@ export default function MeetupCard({
           {isCancelled ? "Cancelled" : past ? "Ended" : isGoing ? "✓ I'm in" : "I'm in"}
         </button>
       </div>
+      {attendees.length > 0 && (
+        <p aria-label={`Going: ${attendees.map((person) => `@${person.username}`).join(", ")}`} className={`break-words px-3 pb-3 text-[11px] leading-4 ${dark ? "text-white/75" : "text-gray-600"}`}>
+          Going: {attendees.map((person) => `@${person.username}`).join(", ")}
+        </p>
+      )}
       {!past && !isCancelled && (
-        <a
-          href={calendarHref(title, startsAt, place)}
-          download="meetup.ics"
-          className={`block border-t px-3 py-2 text-center text-[11px] font-medium ${dark ? "border-white/20 text-white/80 hover:bg-white/10" : "border-gray-100 text-blue-600 hover:bg-gray-50"}`}
+        <button
+          type="button"
+          onClick={() => addToCalendar(eventId, title, startsAt, place)}
+          className={`block w-full border-t px-3 py-2 text-center text-[11px] font-medium ${dark ? "border-white/20 text-white/80 hover:bg-white/10" : "border-gray-100 text-blue-600 hover:bg-gray-50"}`}
         >
           Add to calendar
-        </a>
+        </button>
       )}
       {!past && !isCancelled && onReminderChange && (
         <div className={`relative border-t px-3 py-2 ${dark ? "border-white/20" : "border-gray-100"}`}>

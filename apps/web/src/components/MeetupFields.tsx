@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { PublicUser } from "@app/shared";
 import { input, btnPrimary } from "../lib/ui.js";
 import Sheet from "./Sheet.js";
 
@@ -108,15 +109,18 @@ export default function MeetupSheet({
   onClose,
   onSubmit,
   initialDraft,
+  contacts = [],
   mode = "create",
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (draft: MeetupDraft) => Promise<void>;
+  onSubmit: (draft: MeetupDraft, inviteeUserIds?: string[]) => Promise<void>;
   initialDraft?: MeetupDraft;
+  contacts?: PublicUser[];
   mode?: "create" | "edit";
 }) {
   const [draft, setDraft] = useState(() => initialDraft ?? defaultMeetupDraft());
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const initialTitle = initialDraft?.title;
@@ -129,6 +133,7 @@ export default function MeetupSheet({
     setDraft(initialTitle !== undefined && initialWhen !== undefined && initialPlace !== undefined && initialNote !== undefined
       ? { title: initialTitle, when: initialWhen, place: initialPlace, note: initialNote }
       : defaultMeetupDraft());
+    setSelectedContactIds([]);
     setError(null);
   }, [initialTitle, initialWhen, initialPlace, initialNote, open]);
 
@@ -141,8 +146,9 @@ export default function MeetupSheet({
     setSending(true);
     setError(null);
     try {
-      await onSubmit(draft);
+      await onSubmit(draft, selectedContactIds);
       setDraft(defaultMeetupDraft());
+      setSelectedContactIds([]);
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not send the meetup.");
@@ -166,9 +172,38 @@ export default function MeetupSheet({
       }
     >
       <p className="mb-3 text-xs leading-5 text-gray-500">
-        Everyone in this chat can tap “I'm in”. Date and place stay end-to-end encrypted.
+        {contacts.length > 0
+          ? "Selected contacts and everyone in this chat will share the meetup and RSVP list."
+          : "Everyone in this chat can tap “I'm in”. Date and place stay end-to-end encrypted."}
       </p>
       <MeetupFields draft={draft} onChange={setDraft} />
+      {contacts.length > 0 && (
+        <fieldset className="mt-4">
+          <legend className="mb-2 text-xs font-semibold text-gray-700">Add contacts</legend>
+          <div className="max-h-44 overflow-y-auto rounded-xl border border-gray-200">
+            {contacts.map((contact) => {
+              const checked = selectedContactIds.includes(contact.id);
+              return (
+                <label key={contact.id} className="flex min-h-11 cursor-pointer items-center gap-3 border-b border-gray-100 px-3 last:border-b-0 hover:bg-gray-50">
+                  <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[10px] font-semibold text-gray-600">
+                    {contact.username.slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-800">{contact.displayName || `@${contact.username}`}</span>
+                  <input
+                    type="checkbox"
+                    aria-label={`Invite @${contact.username}`}
+                    checked={checked}
+                    onChange={() => setSelectedContactIds((current) => checked
+                      ? current.filter((id) => id !== contact.id)
+                      : [...current, contact.id])}
+                    className="h-4 w-4 accent-emerald-700"
+                  />
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
     </Sheet>
   );
 }
