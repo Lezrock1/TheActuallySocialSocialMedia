@@ -154,12 +154,13 @@ export default function RefreshIndicatorGlyph({
       )}
       {bird === "flappy" && (
         <g shapeRendering="crispEdges">
-          <path d="M50 40h10V30h40v10h20v10h10v10h20v10h-20v10h-10v10H70V80H50V70H40V50h10Z" fill="currentColor" />
-          <path className={wingClassName} d="M90 70H80V60H70V50H60V40H50V30h30v10h10v10h10v10H90Z" fill="#f2cb68" />
-          <path d="M120 50h20v10h10v10h-20v-10h-10Z" fill="#db7658" />
-          <path d="M100 40h10v10h-10Z" fill="#f5f3ed" />
-          <path d="M110 40h5v5h-5Z" fill="#263a43" />
-          <path d="M70 70h10v5H70Z" fill="#d5eee3" />
+          <path d="M58 50h10V40h10V30h40v10h10v10h10v20h-10v10h-10v10H80V80H70V70H60V60H50V50Z" fill="currentColor" />
+          <path d="M60 60H40V50H30v20h10v10h20V70h8v-7h-8Z" fill="#d7ae2e" />
+          <path className={wingClassName} d="M78 60H68V50H58V45H48V55H40V65H50V72H68V68h10Z" fill="#fff4d5" />
+          <path d="M140 53h10v5h10v10h-10v5h-10Z" fill="#ef7948" />
+          <path d="M108 38h12v12h-12Z" fill="#fffaf0" />
+          <path d="M115 41h5v5h-5Z" fill="#26343b" />
+          <path d="M88 74h18v6H88Z" fill="#e3bd4d" />
         </g>
       )}
     </svg>

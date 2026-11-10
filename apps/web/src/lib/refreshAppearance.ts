@@ -34,7 +34,7 @@ export interface RefreshAppearance {
 
 const STORAGE_KEY = "intouch:refresh-appearance";
 const CHANGE_EVENT = "intouch:refresh-appearance-change";
-const DEFAULT_APPEARANCE: RefreshAppearance = { bird: "swallow", color: null };
+const DEFAULT_APPEARANCE: RefreshAppearance = { bird: "flappy", color: null };
 
 const BIRD_COLORS: Record<RefreshBird, string> = {
   swallow: "#193e42",
@@ -47,7 +47,7 @@ const BIRD_COLORS: Record<RefreshBird, string> = {
   woodpecker: "#303938",
   puffin: "#252f38",
   toucan: "#263536",
-  flappy: "#168f9a",
+  flappy: "#f2cd3d",
   classic: "#c026d3",
 };
 

@@ -416,7 +416,10 @@ test("Appearance keeps theme stable through color changes, navigation and repeat
 
 test("refresh indicator bird and color preferences persist and apply to the feed", async ({ page }) => {
   await page.goto("/settings/appearance");
+  await page.evaluate(() => localStorage.removeItem("intouch:refresh-appearance"));
+  await page.reload();
   const indicators = page.getByRole("radiogroup", { name: "Refresh indicator", exact: true });
+  await expect(indicators.getByRole("radio", { name: "Flappy Bird", exact: true })).toHaveAttribute("aria-checked", "true");
   await indicators.getByRole("radio", { name: "Kingfisher", exact: true }).click();
   await page.getByRole("button", { name: "Teal refresh color", exact: true }).click();
   await page.reload();
