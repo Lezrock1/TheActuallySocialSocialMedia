@@ -520,6 +520,49 @@ test("every refresh bird visibly animates its wing while pulled", async ({ page 
   }
 });
 
+test("sent Snaps show Delivered and update to Opened when the recipient views them", async ({ browser, page, context }) => {
+  const mia = await browser.newContext({
+    baseURL: "http://localhost:5173",
+    storageState: ".auth/mia.json",
+    extraHTTPHeaders: { "x-forwarded-for": "198.51.100.96" },
+  });
+  let snapId;
+  try {
+    const miaUser = await database.user.findUniqueOrThrow({ where: { username: "mia" } });
+    const mediaKey = await upload(context);
+    const text = `receipt-${Date.now()}`;
+    const created = await context.request.post(`${API}/snaps`, {
+      data: { imageKey: mediaKey, text, recipientUsernames: ["mia"] },
+    });
+    expect(created.status()).toBe(201);
+    snapId = (await created.json()).snapId;
+
+    await page.goto("/snaps");
+    await expect(page.getByRole("tab", { name: "Sent", exact: true })).toHaveCount(0);
+    const miaRow = page.getByRole("region", { name: "Received Snaps" }).getByRole("button", { name: /@mia Sent/ });
+    await expect(miaRow).toBeVisible();
+    const unopenedInbox = await mia.request.get(`${API}/snaps/inbox`);
+    expect((await unopenedInbox.json()).snaps.some((snap) => snap.id === snapId)).toBe(true);
+
+    const viewed = await mia.request.post(`${API}/snaps/${snapId}/view`);
+    expect(viewed.status()).toBe(204);
+    await expect.poll(async () => {
+      const sent = await context.request.get(`${API}/snaps/sent`);
+      const receipt = (await sent.json()).snaps.find((snap) => snap.id === snapId && snap.recipient.id === miaUser.id);
+      return receipt?.viewedAt ?? null;
+    }).not.toBeNull();
+    const openedInbox = await mia.request.get(`${API}/snaps/inbox`);
+    expect((await openedInbox.json()).snaps.some((snap) => snap.id === snapId)).toBe(false);
+    await page.goto("/snaps");
+    await expect(page.getByRole("heading", { name: "Snaps", exact: true })).toBeVisible();
+    const openedRow = page.getByRole("region", { name: "Received Snaps" }).getByRole("button", { name: /@mia Opened/ });
+    await expect(openedRow).toBeVisible();
+  } finally {
+    if (snapId) await database.snap.delete({ where: { id: snapId } }).catch(() => undefined);
+    await mia.close();
+  }
+});
+
 test("mobile list preferences persist and chat ordering lives in Settings", async ({ page }, info) => {
   await page.goto("/notifications");
   const unread = page.getByRole("switch", { name: "Unread only", exact: true });

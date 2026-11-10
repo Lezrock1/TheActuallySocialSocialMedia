@@ -7,7 +7,6 @@ import {
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { toPublicUser } from "../serializers.js";
-import { deleteMediaIfUnreferenced } from "../storage.js";
 import { ownsMedia } from "../mediaAccess.js";
 import { isBlocked } from "../visibility.js";
 import { completeUserNotifications, createUserNotification } from "../notifications.js";
@@ -201,6 +200,21 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  app.get("/snaps/sent", { preHandler: requireAuth }, async (request, reply) => {
+    const sentSnaps = await prisma.snap.findMany({
+      where: { senderId: request.userId!, expiresAt: { gt: new Date() } },
+      include: { recipients: { include: { user: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    return reply.send({ snaps: sentSnaps.flatMap((snap) => snap.recipients.map((recipient) => ({
+      id: snap.id,
+      recipient: toPublicUser(recipient.user),
+      createdAt: snap.createdAt.toISOString(),
+      viewedAt: recipient.viewedAt?.toISOString() ?? null,
+    }))) });
+  });
+
   // Snaps sent to the current user that haven't been viewed or expired yet -
   // true view-once: once opened, a snap disappears from the inbox for good.
   app.get("/snaps/inbox", { preHandler: requireAuth }, async (request, reply) => {
@@ -283,14 +297,6 @@ export async function snapRoutes(app: FastifyInstance): Promise<void> {
           where: { id: recipient.id },
           data: { viewedAt: new Date() },
         });
-
-        const remainingUnviewed = await prisma.snapRecipient.count({
-          where: { snapId: request.params.id, viewedAt: null },
-        });
-        if (remainingUnviewed === 0) {
-          await prisma.snap.delete({ where: { id: snap.id } });
-          await deleteMediaIfUnreferenced(snap.imageKey);
-        }
         emitToUsers(app.io, [request.userId!, snap.senderId], "snaps:changed", {});
       }
       return reply.code(204).send();

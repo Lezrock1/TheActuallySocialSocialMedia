@@ -88,6 +88,7 @@ function useNavCounts() {
     const refresh = () => {
       void queryClient.invalidateQueries({ queryKey: ["snaps", "unread-count"] });
       void queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] });
+      void queryClient.invalidateQueries({ queryKey: ["snaps-sent"] });
       void queryClient.invalidateQueries({ queryKey: ["snap-streaks"] });
     };
     socket.on("snaps:changed", refresh);

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { InboxSnap, PublicUser, SnapStreakSummary } from "@app/shared";
+import type { InboxSnap, PublicUser, SentSnapReceipt, SnapStreakSummary } from "@app/shared";
 import { apiFetch } from "../lib/api.js";
 import { downloadMediaBlob } from "../lib/upload.js";
 import {
@@ -28,6 +28,11 @@ interface SnapInboxData {
 
 async function fetchInbox(): Promise<SnapInboxData> {
   return apiFetch<SnapInboxData>("/snaps/inbox");
+}
+
+async function fetchSentSnaps(): Promise<SentSnapReceipt[]> {
+  const result = await apiFetch<{ snaps: SentSnapReceipt[] }>("/snaps/sent");
+  return result.snaps;
 }
 
 async function fetchFollowing(username: string): Promise<PublicUser[]> {
@@ -95,6 +100,10 @@ export default function SnapsPage() {
     queryKey: ["snaps-inbox"],
     queryFn: fetchInbox,
   });
+  const { data: sentSnaps = [] } = useQuery({
+    queryKey: ["snaps-sent"],
+    queryFn: fetchSentSnaps,
+  });
   const snaps = inbox?.snaps ?? [];
   useEffect(() => {
     const upcoming = (inbox?.snaps ?? []).filter((snap) => !markedSnapsRef.current.has(snap.id)).slice(0, 2);
@@ -127,14 +136,36 @@ export default function SnapsPage() {
   });
 
   const streakByFriend = new Map(streaks.map((streak) => [streak.friend.id, streak]));
+  const sentSnapByFriend = new Map<string, SentSnapReceipt>();
+  for (const receipt of sentSnaps) {
+    if (!sentSnapByFriend.has(receipt.recipient.id)) sentSnapByFriend.set(receipt.recipient.id, receipt);
+  }
   const dedupedSeenToday = useMemo(() => {
     const unreadIds = new Set(snaps.map((snap) => snap.id));
     return seenToday.filter((snap) => !unreadIds.has(snap.id));
   }, [seenToday, snaps]);
-  const snapFriends = [...new Map([...following, ...snaps.map((snap) => snap.sender), ...seenToday.map((snap) => snap.sender)].map((friend) => [friend.id, friend])).values()]
-    .map((friend) => ({ friend, snap: snaps.find((snap) => snap.sender.id === friend.id), seen: dedupedSeenToday.find((snap) => snap.sender.id === friend.id), streak: streakByFriend.get(friend.id) }))
-    .filter(({ friend, snap, streak }) => `${friend.username} ${friend.displayName ?? ""}`.toLowerCase().includes(friendSearch.toLowerCase().replace(/^@/, "")) && (listFilter !== "unread" || !!snap) && (listFilter !== "streaks" || !!streak?.currentStreak))
-    .sort((first, second) => Number(!!second.snap) - Number(!!first.snap) || (second.snap?.createdAt ?? second.streak?.lastExchangeAt ?? "").localeCompare(first.snap?.createdAt ?? first.streak?.lastExchangeAt ?? "") || first.friend.username.localeCompare(second.friend.username));
+  const snapFriends = [...new Map([
+    ...following,
+    ...snaps.map((snap) => snap.sender),
+    ...seenToday.map((snap) => snap.sender),
+    ...sentSnaps.map((receipt) => receipt.recipient),
+  ].map((friend) => [friend.id, friend])).values()]
+    .map((friend) => ({
+      friend,
+      snap: snaps.find((snap) => snap.sender.id === friend.id),
+      seen: dedupedSeenToday.find((snap) => snap.sender.id === friend.id),
+      sentSnap: sentSnapByFriend.get(friend.id),
+      streak: streakByFriend.get(friend.id),
+    }))
+    .filter(({ friend, snap, sentSnap, streak }) =>
+      `${friend.username} ${friend.displayName ?? ""}`.toLowerCase().includes(friendSearch.toLowerCase().replace(/^@/, "")) &&
+      (listFilter !== "unread" || !!snap) &&
+      (listFilter !== "streaks" || !!streak?.currentStreak)
+    )
+    .sort((first, second) => Number(!!second.snap) - Number(!!first.snap) ||
+      (second.snap?.createdAt ?? second.sentSnap?.createdAt ?? second.streak?.lastExchangeAt ?? "")
+        .localeCompare(first.snap?.createdAt ?? first.sentSnap?.createdAt ?? first.streak?.lastExchangeAt ?? "") ||
+      first.friend.username.localeCompare(second.friend.username));
 
   async function openFriendChat(username: string) {
     if (openingChat) return;
@@ -361,6 +392,7 @@ export default function SnapsPage() {
     <div className="mx-auto w-full max-w-2xl px-4 py-4 pb-28 sm:py-8 sm:pb-8">
       <PullToRefresh enabled={!viewing} onRefresh={() => Promise.all([
         queryClient.invalidateQueries({ queryKey: ["snaps-inbox"] }),
+        queryClient.invalidateQueries({ queryKey: ["snaps-sent"] }),
         queryClient.invalidateQueries({ queryKey: ["snap-streaks"] }),
         queryClient.invalidateQueries({ queryKey: ["snaps", "unread-count"] }),
       ])} />
@@ -380,8 +412,13 @@ export default function SnapsPage() {
             {(inboxLoading || followingLoading) && <><p role="status" className="sr-only">Loading Snaps...</p><SnapRowsSkeleton /></>}
             {(inboxFailed || followingFailed) && <div role="alert" className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-red-600"><span>Could not load all Snap friends.</span><button type="button" onClick={() => { void retryInbox(); void retryFollowing(); }} className="min-h-11 shrink-0 px-2 font-semibold">Retry</button></div>}
             <div>
-              {snapFriends.map(({ friend, snap, seen, streak }, rowIndex) => {
-                const status = snap ? "new" : seen ? "opened" : streak?.waitingForThem ? "delivered" : "chat";
+              {snapFriends.map(({ friend, snap, seen, sentSnap, streak }, rowIndex) => {
+                const status = snap
+                  ? "new"
+                  : sentSnap
+                    ? sentSnap.viewedAt ? "sent-opened" : "sent-delivered"
+                    : seen ? "opened" : streak?.waitingForThem ? "delivered" : "chat";
+                const activityAt = snap?.createdAt || sentSnap?.createdAt || seen?.viewedAt || seen?.createdAt;
                 return (
                 <div key={friend.id} style={{ animationDelay: `${Math.min(rowIndex, 8) * 30}ms` }} className="snap-row-enter flex items-center gap-1 border-b border-gray-100 py-2">
                 <button
@@ -397,18 +434,23 @@ export default function SnapsPage() {
                   <span className="min-w-0 flex-1">
                     <span className={`block truncate text-sm text-gray-900 ${snap ? "font-bold" : "font-medium"}`}>{friend.displayName || `@${friend.username}`}</span>
                     <span className={`mt-1 flex items-center gap-1.5 text-xs ${snap ? "font-semibold text-red-600" : "text-gray-500"}`}>
-                      <svg aria-hidden="true" viewBox="0 0 16 16" className={`h-3.5 w-3.5 shrink-0 ${status === "chat" ? "text-sky-600" : "text-red-500"}`} fill={status === "new" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <svg aria-hidden="true" viewBox="0 0 16 16" className={`h-4 w-4 shrink-0 ${status === "chat" ? "text-sky-600" : "text-red-500"}`} fill={status === "new" || status === "sent-delivered" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
                         {status === "new" && <rect x="3" y="3" width="10" height="10" rx="2" />}
                         {status === "opened" && <rect x="3" y="3" width="10" height="10" rx="2" />}
                         {status === "delivered" && <path d="M2.5 8h10m-3.5-3.5L12.5 8 9 11.5" />}
+                        {(status === "sent-delivered" || status === "sent-opened") && <path d="M2.25 5.8H7.8Q9.15 5.8 9.15 4.45V2.65Q9.15 2.2 9.5 2.5L14.65 7.6Q15.05 8 14.65 8.4L9.5 13.5Q9.15 13.8 9.15 13.35V11.55Q9.15 10.2 7.8 10.2H2.25Q1.75 10.2 1.75 9.7V6.3Q1.75 5.8 2.25 5.8Z" />}
                         {status === "chat" && <rect x="3" y="3" width="10" height="10" rx="2" />}
                       </svg>
-                      <span className="truncate">{snap ? `New Snap · ${snaps.filter((item) => item.sender.id === friend.id).length}` : seen ? "Opened" : streak?.waitingForThem ? "Delivered" : "Tap to chat"}</span>
+                      <span className="truncate">
+                        {snap ? `New Snap · ${snaps.filter((item) => item.sender.id === friend.id).length}`
+                          : sentSnap ? sentSnap.viewedAt ? "Opened" : "Sent"
+                          : seen ? "Opened" : streak?.waitingForThem ? "Delivered" : "Tap to chat"}
+                      </span>
                     </span>
                     {snap?.isEncrypted && <span className="sr-only">End-to-end encrypted</span>}
                   </span>
                   <span className="flex w-14 shrink-0 flex-col items-end gap-1 whitespace-nowrap text-[11px] text-gray-500">
-                    {(snap || seen) && <time dateTime={snap?.createdAt || seen?.viewedAt || seen?.createdAt}>{formatActivityTime(snap?.createdAt || seen?.viewedAt || seen!.createdAt)}</time>}
+                    {activityAt && <time dateTime={activityAt}>{formatActivityTime(activityAt)}</time>}
                     {!!streak?.currentStreak && (
                       <span
                         aria-label={streak.atRisk ? `${streak.currentStreak} day streak, expires soon` : `${streak.currentStreak} day streak`}

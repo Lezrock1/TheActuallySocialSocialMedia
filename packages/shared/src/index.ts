@@ -568,6 +568,13 @@ export interface InboxSnap {
   viewedAt: string | null;
 }
 
+export interface SentSnapReceipt {
+  id: string;
+  recipient: PublicUser;
+  createdAt: string;
+  viewedAt: string | null;
+}
+
 export interface SnapStreakSummary {
   friend: PublicUser;
   currentStreak: number;
